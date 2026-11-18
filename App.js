@@ -41,8 +41,10 @@ const REACTIONS = [
 
 export default function App() {
   const [session, setSession] = useState(null);
+  const [isSignUpScreen, setIsSignUpScreen] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [posts, setPosts] = useState([]);
   const [content, setContent] = useState('');
   const [imageUri, setImageUri] = useState(null);
@@ -72,14 +74,65 @@ export default function App() {
     );
   }
 
-  const handleAuth = async (isSignUp) => {
+  const switchAuthMode = (toSignUp) => {
+    setEmail('');
+    setPassword('');
+    setPasswordConfirm('');
+    setIsSignUpScreen(toSignUp);
+  };
+
+  const handleLogin = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert('알림', '이메일과 비밀번호를 입력해 주세요.');
+      return;
+    }
+
     setLoading(true);
-    const { error } = isSignUp
-      ? await supabase.auth.signUp({ email, password })
-      : await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: trimmedEmail,
+      password,
+    });
     setLoading(false);
-    if (error) Alert.alert('알림', error.message);
-    else if (isSignUp) Alert.alert('가입 완료', '이제 로그인해 주세요!');
+
+    if (error) Alert.alert('로그인 실패', error.message);
+  };
+
+  const handleSignUp = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      Alert.alert('알림', '이메일을 입력해 주세요.');
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert('알림', '비밀번호는 6자 이상 입력해 주세요.');
+      return;
+    }
+    if (password !== passwordConfirm) {
+      Alert.alert('알림', '비밀번호가 일치하지 않습니다.');
+      return;
+    }
+
+    setLoading(true);
+    const { data, error } = await supabase.auth.signUp({
+      email: trimmedEmail,
+      password,
+    });
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('회원가입 실패', error.message);
+      return;
+    }
+
+    // 이메일 인증이 꺼져 있으면 가입과 동시에 자동 로그인(session 생성)됨
+    if (data?.session) {
+      Alert.alert('가입 완료', '환영합니다!');
+    } else {
+      Alert.alert('가입 완료', '이메일 인증 후 로그인해 주세요!', [
+        { text: '확인', onPress: () => switchAuthMode(false) },
+      ]);
+    }
   };
 
   const fetchPosts = async () => {
@@ -151,15 +204,66 @@ export default function App() {
   };
 
   if (!session) {
+    // 1. 별도 회원가입 화면
+    if (isSignUpScreen) {
+      return (
+        <SafeAreaView style={styles.authContainer}>
+          <Text style={styles.logo}>회원가입</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="이메일"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="비밀번호 (6자 이상)"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="비밀번호 확인"
+            value={passwordConfirm}
+            onChangeText={setPasswordConfirm}
+            secureTextEntry
+          />
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleSignUp} disabled={loading}>
+            {loading ? <ActivityIndicator color="#3C1E1E" /> : <Text style={styles.btnText}>가입하기</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnSecondary} onPress={() => switchAuthMode(false)} disabled={loading}>
+            <Text style={styles.btnSecondaryText}>← 로그인 화면으로 돌아가기</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      );
+    }
+
+    // 2. 기본 로그인 화면
     return (
       <SafeAreaView style={styles.authContainer}>
         <Text style={styles.logo}>내 스토리</Text>
-        <TextInput style={styles.input} placeholder="이메일" value={email} onChangeText={setEmail} autoCapitalize="none" />
-        <TextInput style={styles.input} placeholder="비밀번호 (6자 이상)" value={password} onChangeText={setPassword} secureTextEntry />
-        <TouchableOpacity style={styles.btnPrimary} onPress={() => handleAuth(false)} disabled={loading}>
-          <Text style={styles.btnText}>로그인</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="이메일"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="비밀번호 (6자 이상)"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+        <TouchableOpacity style={styles.btnPrimary} onPress={handleLogin} disabled={loading}>
+          {loading ? <ActivityIndicator color="#3C1E1E" /> : <Text style={styles.btnText}>로그인</Text>}
         </TouchableOpacity>
-        <TouchableOpacity style={styles.btnSecondary} onPress={() => handleAuth(true)} disabled={loading}>
+        <TouchableOpacity style={styles.btnSecondary} onPress={() => switchAuthMode(true)} disabled={loading}>
           <Text style={styles.btnSecondaryText}>이메일로 회원가입</Text>
         </TouchableOpacity>
       </SafeAreaView>
