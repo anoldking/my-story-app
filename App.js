@@ -8,11 +8,19 @@ import { createClient } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 
-const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL,
-  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  { auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false } }
-);
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+
+const supabase = (supabaseUrl && supabaseKey)
+  ? createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        storage: AsyncStorage,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false,
+      },
+    })
+  : null;
 
 const REACTIONS = [
   { type: 'like', label: '❤️ 좋아요' },
@@ -32,13 +40,30 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
-    supabase.auth.onAuthStateChange((_event, session) => setSession(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription?.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (session) fetchPosts();
+    if (session && supabase) fetchPosts();
   }, [session]);
+
+  if (!supabase) {
+    return (
+      <SafeAreaView style={styles.authContainer}>
+        <Text style={styles.logo}>설정 확인 필요</Text>
+        <Text style={{ textAlign: 'center', color: '#333', lineHeight: 22 }}>
+          Supabase 연결 정보가 앱에 포함되지 않았습니다.{'\n'}
+          URL: {supabaseUrl ? '연결됨' : '비어 있음'}{'\n'}
+          KEY: {supabaseKey ? '연결됨' : '비어 있음'}
+        </Text>
+      </SafeAreaView>
+    );
+  }
 
   const handleAuth = async (isSignUp) => {
     setLoading(true);
@@ -164,7 +189,7 @@ export default function App() {
 
       <FlatList
         data={posts}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
           <View style={styles.card}>
             <Text style={styles.author}>{item.profiles?.nickname || '친구'}</Text>
