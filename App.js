@@ -11,16 +11,25 @@ import * as ImageManipulator from 'expo-image-manipulator';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
 
-const supabase = (supabaseUrl && supabaseKey)
-  ? createClient(supabaseUrl, supabaseKey, {
+let supabase = null;
+let initError = '';
+
+try {
+  if (supabaseUrl && supabaseKey) {
+    supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
         storage: AsyncStorage,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
       },
-    })
-  : null;
+    });
+  } else {
+    initError = `환경변수 누락 (URL: ${Boolean(supabaseUrl)}, KEY: ${Boolean(supabaseKey)})`;
+  }
+} catch (e) {
+  initError = e?.message || String(e);
+}
 
 const REACTIONS = [
   { type: 'like', label: '❤️ 좋아요' },
@@ -55,11 +64,9 @@ export default function App() {
   if (!supabase) {
     return (
       <SafeAreaView style={styles.authContainer}>
-        <Text style={styles.logo}>설정 확인 필요</Text>
-        <Text style={{ textAlign: 'center', color: '#333', lineHeight: 22 }}>
-          Supabase 연결 정보가 앱에 포함되지 않았습니다.{'\n'}
-          URL: {supabaseUrl ? '연결됨' : '비어 있음'}{'\n'}
-          KEY: {supabaseKey ? '연결됨' : '비어 있음'}
+        <Text style={styles.logo}>실행 오류 원인</Text>
+        <Text style={{ textAlign: 'center', color: '#D32F2F', fontSize: 15, lineHeight: 22 }}>
+          {initError || '알 수 없는 초기화 오류'}
         </Text>
       </SafeAreaView>
     );
