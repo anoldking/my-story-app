@@ -39,6 +39,64 @@ const REACTIONS = [
   { type: 'cheer', label: '💪 힘내요' },
 ];
 
+// Supabase 영문 에러 메시지를 한국어로 변환하는 함수
+const getKoreanErrorMessage = (error) => {
+  if (!error) return '알 수 없는 오류가 발생했습니다.';
+
+  const code = (error.code || '').toLowerCase();
+  const msg = (error.message || '').toLowerCase();
+
+  // 1. 인증(로그인/회원가입) 관련 에러
+  if (msg.includes('invalid login credentials') || code === 'invalid_credentials') {
+    return '이메일 또는 비밀번호가 올바르지 않습니다.';
+  }
+  if (msg.includes('missing email or phone')) {
+    return '이메일을 입력해 주세요.';
+  }
+  if (msg.includes('anonymous sign-ins are disabled')) {
+    return '이메일과 비밀번호를 입력해 주세요. (비회원 로그인 불가)';
+  }
+  if (msg.includes('user already registered') || code === 'user_already_exists') {
+    return '이미 가입된 이메일 주소입니다.';
+  }
+  if (msg.includes('password should be at least') || code === 'weak_password') {
+    return '비밀번호는 최소 6자 이상이어야 합니다.';
+  }
+  if (msg.includes('unable to validate email address') || msg.includes('invalid email')) {
+    return '올바른 이메일 형식이 아닙니다.';
+  }
+  if (msg.includes('email not confirmed') || code === 'email_not_confirmed') {
+    return '이메일 인증이 완료되지 않았습니다. 메일함을 확인해 주세요.';
+  }
+  if (msg.includes('rate limit') || code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit') {
+    return '요청 횟수가 너무 많습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  if (msg.includes('signup is disabled') || code === 'signup_disabled') {
+    return '현재 신규 회원가입이 제한되어 있습니다.';
+  }
+
+  // 2. 네트워크 및 데이터베이스/스토리지 에러
+  if (msg.includes('network request failed') || msg.includes('fetch failed')) {
+    return '인터넷 연결 상태를 확인해 주세요.';
+  }
+  if (msg.includes('row-level security') || code === '42501') {
+    return '해당 작업에 대한 접근 권한이 없습니다.';
+  }
+  if (msg.includes('payload too large') || msg.includes('maximum allowed size')) {
+    return '첨부한 사진 용량이 너무 큽니다.';
+  }
+
+  // 매칭되지 않는 기타 에러
+  return `요청을 처리하지 못했습니다.\n(${error.message})`;
+};
+
+// 한국어 '확인' 버튼이 적용된 공통 알림 팝업
+const showAlert = (title, message, onConfirm) => {
+  Alert.alert(title, message, [
+    { text: '확인', onPress: onConfirm },
+  ]);
+};
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [isSignUpScreen, setIsSignUpScreen] = useState(false);
@@ -83,8 +141,12 @@ export default function App() {
 
   const handleLogin = async () => {
     const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      Alert.alert('알림', '이메일과 비밀번호를 입력해 주세요.');
+    if (!trimmedEmail) {
+      showAlert('알림', '이메일을 입력해 주세요.');
+      return;
+    }
+    if (!password) {
+      showAlert('알림', '비밀번호를 입력해 주세요.');
       return;
     }
 
@@ -95,21 +157,23 @@ export default function App() {
     });
     setLoading(false);
 
-    if (error) Alert.alert('로그인 실패', error.message);
+    if (error) {
+      showAlert('로그인 실패', getKoreanErrorMessage(error));
+    }
   };
 
   const handleSignUp = async () => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      Alert.alert('알림', '이메일을 입력해 주세요.');
+      showAlert('알림', '이메일을 입력해 주세요.');
       return;
     }
     if (password.length < 6) {
-      Alert.alert('알림', '비밀번호는 6자 이상 입력해 주세요.');
+      showAlert('알림', '비밀번호는 6자 이상 입력해 주세요.');
       return;
     }
     if (password !== passwordConfirm) {
-      Alert.alert('알림', '비밀번호가 일치하지 않습니다.');
+      showAlert('알림', '비밀번호가 일치하지 않습니다.');
       return;
     }
 
@@ -121,17 +185,16 @@ export default function App() {
     setLoading(false);
 
     if (error) {
-      Alert.alert('회원가입 실패', error.message);
+      showAlert('회원가입 실패', getKoreanErrorMessage(error));
       return;
     }
 
-    // 이메일 인증이 꺼져 있으면 가입과 동시에 자동 로그인(session 생성)됨
     if (data?.session) {
-      Alert.alert('가입 완료', '환영합니다!');
+      showAlert('가입 완료', '환영합니다!');
     } else {
-      Alert.alert('가입 완료', '이메일 인증 후 로그인해 주세요!', [
-        { text: '확인', onPress: () => switchAuthMode(false) },
-      ]);
+      showAlert('가입 완료', '이메일 인증 후 로그인해 주세요!', () => {
+        switchAuthMode(false);
+      });
     }
   };
 
@@ -173,10 +236,14 @@ export default function App() {
         .from('post-images')
         .upload(fileName, arrayBuffer, { contentType: 'image/jpeg' });
 
-      if (!uploadError) {
-        const { data } = supabase.storage.from('post-images').getPublicUrl(fileName);
-        uploadedUrls.push(data.publicUrl);
+      if (uploadError) {
+        setLoading(false);
+        showAlert('사진 업로드 실패', getKoreanErrorMessage(uploadError));
+        return;
       }
+
+      const { data } = supabase.storage.from('post-images').getPublicUrl(fileName);
+      uploadedUrls.push(data.publicUrl);
     }
 
     const { error } = await supabase.from('posts').insert({
@@ -187,8 +254,9 @@ export default function App() {
     });
 
     setLoading(false);
-    if (error) Alert.alert('오류', error.message);
-    else {
+    if (error) {
+      showAlert('등록 실패', getKoreanErrorMessage(error));
+    } else {
       setContent('');
       setImageUri(null);
       fetchPosts();
@@ -204,7 +272,6 @@ export default function App() {
   };
 
   if (!session) {
-    // 1. 별도 회원가입 화면
     if (isSignUpScreen) {
       return (
         <SafeAreaView style={styles.authContainer}>
@@ -241,7 +308,6 @@ export default function App() {
       );
     }
 
-    // 2. 기본 로그인 화면
     return (
       <SafeAreaView style={styles.authContainer}>
         <Text style={styles.logo}>내 스토리</Text>
