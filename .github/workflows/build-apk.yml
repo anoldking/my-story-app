@@ -24,7 +24,9 @@ jobs:
           java-version: '17'
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install
+          npx expo install --fix
 
       - name: Prebuild Android
         run: npx expo prebuild --platform android --clean
@@ -47,3 +49,4 @@ jobs:
           tag_name: latest-apk
           name: 최신 테스트 앱 (APK)
           files: android/app/build/outputs/apk/release/app-release.apk
+          overwrite: true
