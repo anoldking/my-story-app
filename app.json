@@ -6,7 +6,11 @@
     "orientation": "portrait",
     "icon": "./icon.png",
     "android": {
-      "package": "com.anoldking.mystory"
+      "package": "com.anoldking.mystory",
+      "adaptiveIcon": {
+        "foregroundImage": "./icon.png",
+        "backgroundColor": "#283663"
+      }
     },
     "plugins": [
       [
