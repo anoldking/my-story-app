@@ -39,14 +39,12 @@ const REACTIONS = [
   { type: 'cheer', label: '💪 힘내요' },
 ];
 
-// Supabase 영문 에러 메시지를 한국어로 변환하는 함수
 const getKoreanErrorMessage = (error) => {
   if (!error) return '알 수 없는 오류가 발생했습니다.';
 
   const code = (error.code || '').toLowerCase();
   const msg = (error.message || '').toLowerCase();
 
-  // 1. 인증(로그인/회원가입) 관련 에러
   if (msg.includes('invalid login credentials') || code === 'invalid_credentials') {
     return '이메일 또는 비밀번호가 올바르지 않습니다.';
   }
@@ -54,7 +52,7 @@ const getKoreanErrorMessage = (error) => {
     return '이메일을 입력해 주세요.';
   }
   if (msg.includes('anonymous sign-ins are disabled')) {
-    return '이메일과 비밀번호를 입력해 주세요. (비회원 로그인 불가)';
+    return '이메일과 비밀번호를 입력해 주세요.';
   }
   if (msg.includes('user already registered') || code === 'user_already_exists') {
     return '이미 가입된 이메일 주소입니다.';
@@ -71,26 +69,22 @@ const getKoreanErrorMessage = (error) => {
   if (msg.includes('rate limit') || code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit') {
     return '요청 횟수가 너무 많습니다. 잠시 후 다시 시도해 주세요.';
   }
-  if (msg.includes('signup is disabled') || code === 'signup_disabled') {
-    return '현재 신규 회원가입이 제한되어 있습니다.';
-  }
-
-  // 2. 네트워크 및 데이터베이스/스토리지 에러
   if (msg.includes('network request failed') || msg.includes('fetch failed')) {
     return '인터넷 연결 상태를 확인해 주세요.';
   }
   if (msg.includes('row-level security') || code === '42501') {
     return '해당 작업에 대한 접근 권한이 없습니다.';
   }
+  if (msg.includes('bucket not found')) {
+    return '사진 저장소(post-images)가 설정되지 않았습니다.';
+  }
   if (msg.includes('payload too large') || msg.includes('maximum allowed size')) {
     return '첨부한 사진 용량이 너무 큽니다.';
   }
 
-  // 매칭되지 않는 기타 에러
   return `요청을 처리하지 못했습니다.\n(${error.message})`;
 };
 
-// 한국어 '확인' 버튼이 적용된 공통 알림 팝업
 const showAlert = (title, message, onConfirm) => {
   Alert.alert(title, message, [
     { text: '확인', onPress: onConfirm },
@@ -107,6 +101,10 @@ export default function App() {
   const [content, setContent] = useState('');
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // 글 수정용 상태
+  const [editingPostId, setEditingPostId] = useState(null);
+  const [editingContent, setEditingContent] = useState('');
 
   useEffect(() => {
     if (!supabase) return;
@@ -207,60 +205,141 @@ export default function App() {
   };
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
-    if (!result.canceled) {
-      const manipulated = await ImageManipulator.manipulateAsync(
-        result.assets[0].uri,
-        [{ resize: { width: 1080 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
-      );
-      setImageUri(manipulated.uri);
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        showAlert('권한 필요', '사진을 첨부하려면 스마트폰 설정에서 사진/미디어 접근 권한을 허용해 주세요.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : ['images'],
+        allowsEditing: false,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        const manipulated = await ImageManipulator.manipulateAsync(
+          result.assets[0].uri,
+          [{ resize: { width: 1080 } }],
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        setImageUri(manipulated.uri);
+      }
+    } catch (e) {
+      showAlert('사진 선택 오류', `사진을 불러오지 못했습니다.\n(${e?.message || e})`);
     }
   };
 
   const createPost = async () => {
-    if (!content.trim() && !imageUri) return;
+    if (!content.trim() && !imageUri) {
+      showAlert('알림', '내용을 입력하거나 사진을 첨부해 주세요.');
+      return;
+    }
+
     setLoading(true);
     let uploadedUrls = [];
 
-    if (imageUri) {
-      const fileName = `${session.user.id}/${Date.now()}.jpg`;
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
-      const arrayBuffer = await new Response(blob).arrayBuffer();
+    try {
+      if (imageUri) {
+        const fileName = `${session.user.id}/${Date.now()}.jpg`;
+        const response = await fetch(imageUri);
+        const arrayBuffer = await response.arrayBuffer();
 
-      const { error: uploadError } = await supabase.storage
-        .from('post-images')
-        .upload(fileName, arrayBuffer, { contentType: 'image/jpeg' });
+        const { error: uploadError } = await supabase.storage
+          .from('post-images')
+          .upload(fileName, arrayBuffer, {
+            contentType: 'image/jpeg',
+            upsert: false,
+          });
 
-      if (uploadError) {
-        setLoading(false);
-        showAlert('사진 업로드 실패', getKoreanErrorMessage(uploadError));
-        return;
+        if (uploadError) {
+          setLoading(false);
+          showAlert('사진 업로드 실패', getKoreanErrorMessage(uploadError));
+          return;
+        }
+
+        const { data } = supabase.storage.from('post-images').getPublicUrl(fileName);
+        uploadedUrls.push(data.publicUrl);
       }
 
-      const { data } = supabase.storage.from('post-images').getPublicUrl(fileName);
-      uploadedUrls.push(data.publicUrl);
+      const { error } = await supabase.from('posts').insert({
+        author_id: session.user.id,
+        content: content.trim(),
+        image_urls: uploadedUrls,
+        visibility: 'public',
+      });
+
+      setLoading(false);
+      if (error) {
+        showAlert('등록 실패', getKoreanErrorMessage(error));
+      } else {
+        setContent('');
+        setImageUri(null);
+        fetchPosts();
+      }
+    } catch (e) {
+      setLoading(false);
+      showAlert('오류', `게시글 등록 중 오류가 발생했습니다.\n(${e?.message || e})`);
+    }
+  };
+
+  // 글 수정 시작
+  const startEditPost = (post) => {
+    setEditingPostId(post.id);
+    setEditingContent(post.content || '');
+  };
+
+  // 글 수정 저장
+  const saveEditPost = async (postId) => {
+    if (!editingContent.trim()) {
+      showAlert('알림', '수정할 내용을 입력해 주세요.');
+      return;
     }
 
-    const { error } = await supabase.from('posts').insert({
-      author_id: session.user.id,
-      content,
-      image_urls: uploadedUrls,
-      visibility: 'public',
-    });
-
+    setLoading(true);
+    const { error } = await supabase
+      .from('posts')
+      .update({ content: editingContent.trim() })
+      .eq('id', postId);
     setLoading(false);
+
     if (error) {
-      showAlert('등록 실패', getKoreanErrorMessage(error));
+      showAlert('수정 실패', getKoreanErrorMessage(error));
     } else {
-      setContent('');
-      setImageUri(null);
+      setEditingPostId(null);
+      setEditingContent('');
       fetchPosts();
     }
+  };
+
+  // 글 삭제 확인 및 실행
+  const confirmDeletePost = (postId) => {
+    Alert.alert('글 삭제', '정말 이 글을 삭제하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          setLoading(true);
+          const { error } = await supabase
+            .from('posts')
+            .delete()
+            .eq('id', postId);
+          setLoading(false);
+
+          if (error) {
+            showAlert('삭제 실패', getKoreanErrorMessage(error));
+          } else {
+            if (editingPostId === postId) {
+              setEditingPostId(null);
+              setEditingContent('');
+            }
+            fetchPosts();
+          }
+        },
+      },
+    ]);
   };
 
   const toggleReaction = async (postId, type) => {
@@ -353,7 +432,14 @@ export default function App() {
           onChangeText={setContent}
           multiline
         />
-        {imageUri && <Image source={{ uri: imageUri }} style={styles.previewImage} />}
+        {imageUri && (
+          <View style={styles.previewWrapper}>
+            <Image source={{ uri: imageUri }} style={styles.previewImage} />
+            <TouchableOpacity style={styles.removePreviewBtn} onPress={() => setImageUri(null)}>
+              <Text style={styles.removePreviewText}>✕ 사진 취소</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.writeActions}>
           <TouchableOpacity onPress={pickImage} style={styles.photoBtn}>
             <Text style={styles.photoBtnText}>📷 사진 첨부</Text>
@@ -367,24 +453,73 @@ export default function App() {
       <FlatList
         data={posts}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Text style={styles.author}>{item.profiles?.nickname || '친구'}</Text>
-            <Text style={styles.date}>{new Date(item.created_at).toLocaleString('ko-KR')}</Text>
-            {item.content ? <Text style={styles.postText}>{item.content}</Text> : null}
-            {item.image_urls?.[0] && <Image source={{ uri: item.image_urls[0] }} style={styles.postImage} />}
-            <View style={styles.reactionRow}>
-              {REACTIONS.map((r) => {
-                const count = item.reactions?.filter((x) => x.type === r.type).length || 0;
-                return (
-                  <TouchableOpacity key={r.type} style={styles.reactionBtn} onPress={() => toggleReaction(item.id, r.type)}>
-                    <Text style={styles.reactionText}>{r.label} {count > 0 ? count : ''}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+        renderItem={({ item }) => {
+          const isMyPost = item.author_id === session.user.id;
+          const isEditing = editingPostId === item.id;
+
+          return (
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View>
+                  <Text style={styles.author}>{item.profiles?.nickname || '친구'}</Text>
+                  <Text style={styles.date}>{new Date(item.created_at).toLocaleString('ko-KR')}</Text>
+                </View>
+
+                {isMyPost && !isEditing && (
+                  <View style={styles.ownerActions}>
+                    <TouchableOpacity onPress={() => startEditPost(item)} style={styles.editBtn}>
+                      <Text style={styles.editBtnText}>수정</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => confirmDeletePost(item.id)} style={styles.deleteBtn}>
+                      <Text style={styles.deleteBtnText}>삭제</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {isEditing ? (
+                <View style={styles.editBox}>
+                  <TextInput
+                    style={styles.editInput}
+                    value={editingContent}
+                    onChangeText={setEditingContent}
+                    multiline
+                    autoFocus
+                  />
+                  <View style={styles.editActions}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setEditingPostId(null);
+                        setEditingContent('');
+                      }}
+                      style={styles.cancelEditBtn}
+                    >
+                      <Text style={styles.cancelEditText}>취소</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => saveEditPost(item.id)} style={styles.saveEditBtn}>
+                      <Text style={styles.saveEditText}>저장</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                item.content ? <Text style={styles.postText}>{item.content}</Text> : null
+              )}
+
+              {item.image_urls?.[0] && <Image source={{ uri: item.image_urls[0] }} style={styles.postImage} />}
+
+              <View style={styles.reactionRow}>
+                {REACTIONS.map((r) => {
+                  const count = item.reactions?.filter((x) => x.type === r.type).length || 0;
+                  return (
+                    <TouchableOpacity key={r.type} style={styles.reactionBtn} onPress={() => toggleReaction(item.id, r.type)}>
+                      <Text style={styles.reactionText}>{r.label} {count > 0 ? count : ''}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
-          </View>
-        )}
+          );
+        }}
       />
     </SafeAreaView>
   );
@@ -404,15 +539,31 @@ const styles = StyleSheet.create({
   logoutText: { color: '#3C1E1E', fontSize: 13 },
   writeBox: { backgroundColor: '#fff', padding: 14, marginBottom: 8 },
   writeInput: { minHeight: 60, fontSize: 15, textAlignVertical: 'top' },
-  previewImage: { width: '100%', height: 180, borderRadius: 8, marginVertical: 8 },
+  previewWrapper: { marginVertical: 8 },
+  previewImage: { width: '100%', height: 180, borderRadius: 8 },
+  removePreviewBtn: { alignSelf: 'flex-end', marginTop: 6, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#EEE', borderRadius: 4 },
+  removePreviewText: { fontSize: 12, color: '#555' },
   writeActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   photoBtn: { padding: 8, backgroundColor: '#F0F0F0', borderRadius: 6 },
   photoBtnText: { fontSize: 13, color: '#333' },
   postBtn: { backgroundColor: '#3C1E1E', paddingHorizontal: 18, paddingVertical: 8, borderRadius: 6 },
   postBtnText: { color: '#fff', fontWeight: 'bold' },
   card: { backgroundColor: '#fff', padding: 16, marginBottom: 8 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
   author: { fontWeight: 'bold', fontSize: 16, color: '#222' },
-  date: { fontSize: 11, color: '#999', marginBottom: 8 },
+  date: { fontSize: 11, color: '#999', marginTop: 2 },
+  ownerActions: { flexDirection: 'row', gap: 6 },
+  editBtn: { backgroundColor: '#F0F0F0', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4 },
+  editBtnText: { fontSize: 12, color: '#333' },
+  deleteBtn: { backgroundColor: '#FFEBEE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4 },
+  deleteBtnText: { fontSize: 12, color: '#D32F2F' },
+  editBox: { marginBottom: 10 },
+  editInput: { borderWidth: 1, borderColor: '#CCC', borderRadius: 6, padding: 10, fontSize: 15, minHeight: 60, textAlignVertical: 'top', backgroundColor: '#FAFAFA' },
+  editActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
+  cancelEditBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#EEE', borderRadius: 4 },
+  cancelEditText: { fontSize: 13, color: '#555' },
+  saveEditBtn: { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#3C1E1E', borderRadius: 4 },
+  saveEditText: { fontSize: 13, color: '#fff', fontWeight: 'bold' },
   postText: { fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 10 },
   postImage: { width: '100%', height: 260, borderRadius: 8, marginBottom: 10 },
   reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 10 },
