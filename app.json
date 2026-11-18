@@ -4,6 +4,7 @@
     "slug": "my-story-app",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./icon.png",
     "newArchEnabled": false,
     "android": {
       "package": "com.anoldking.mystory"
