@@ -9,7 +9,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 const LEFT_RAIL_WIDTH = 52;
 const RIGHT_RAIL_WIDTH = 52;
@@ -1082,6 +1092,8 @@ export default function App() {
   const [viewingImage, setViewingImage] = useState(null);
 
   const [unreadCountBySender, setUnreadCountBySender] = useState({});
+  const [incomingMsgBanner, setIncomingMsgBanner] = useState(null);
+  const bannerTimerRef = useRef(null);
 
   const [chatPartner, setChatPartner] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -1098,6 +1110,30 @@ export default function App() {
         setEmail((prev) => prev || savedEmail);
       }
     });
+  }, []);
+
+  // 폰 상단 푸시 알림 탭 시 해당 보낸 사람 대화방으로 이동
+  useEffect(() => {
+    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const senderId = response?.notification?.request?.content?.data?.senderId;
+      if (!senderId || !session?.user?.id || senderId === session.user.id) return;
+      const targetMember = members.find((m) => m.id === senderId) || {
+        id: senderId,
+        nickname: response?.notification?.request?.content?.title || '친구',
+        avatar_url: null,
+      };
+      openInlineChatInMessagesTab(targetMember);
+    });
+
+    return () => {
+      responseSub?.remove();
+    };
+  }, [session?.user?.id, members]);
+
+  useEffect(() => {
+    return () => {
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -1207,6 +1243,7 @@ export default function App() {
   useEffect(() => {
     if (session && supabase) {
       loadAndCountProfile(session.user);
+      registerPushTokenForUser(session.user.id);
       fetchFriendsAndRequests();
       fetchUnreadCountsBySender(session.user.id);
       fetchPosts();
@@ -1232,8 +1269,11 @@ export default function App() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'messages' },
-        () => {
+        (payload) => {
           fetchUnreadCountsBySender(session.user.id);
+          if (payload.eventType === 'INSERT' && payload.new?.receiver_id === session.user.id) {
+            triggerIncomingMessageBanner(payload.new);
+          }
         }
       )
       .subscribe();
@@ -1242,7 +1282,7 @@ export default function App() {
       supabase.removeChannel(reqChannel);
       supabase.removeChannel(unreadChannel);
     };
-  }, [session]);
+  }, [session, members, chatPartner?.id, mainTab]);
 
   useEffect(() => {
     if (selectedPostId && supabase && session) {
@@ -1348,6 +1388,73 @@ export default function App() {
     );
   }
 
+  // 푸시 토큰 발급 및 profiles.push_token 저장
+  const registerPushTokenForUser = async (userId) => {
+    if (!userId) return;
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('messages', {
+          name: '새 메시지 알림',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          sound: 'default',
+        });
+      }
+
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== 'granted') return;
+
+      const projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ||
+        Constants?.easConfig?.projectId ||
+        undefined;
+
+      const tokenResult = projectId
+        ? await Notifications.getExpoPushTokenAsync({ projectId })
+        : await Notifications.getExpoPushTokenAsync();
+
+      const expoToken = tokenResult?.data;
+      if (expoToken) {
+        await supabase
+          .from('profiles')
+          .update({ push_token: expoToken })
+          .eq('id', userId);
+      }
+    } catch {
+      // 에뮬레이터나 EAS projectId 미설정 환경에서는 조용히 건너뜀
+    }
+  };
+
+  // 앱 사용 중 새 메시지 알림 배너 표시
+  const triggerIncomingMessageBanner = (msgRow) => {
+    if (!msgRow || msgRow.sender_id === session?.user?.id) return;
+    if (chatPartner?.id === msgRow.sender_id && mainTab === 'chats') return;
+
+    const senderProfile = members.find((m) => m.id === msgRow.sender_id);
+    const previewText = msgRow.image_url
+      ? '사진을 보냈습니다.'
+      : msgRow.file_url
+        ? `파일을 보냈습니다: ${msgRow.file_name || '첨부파일'}`
+        : (msgRow.content || '새 메시지를 보냈습니다.');
+
+    setIncomingMsgBanner({
+      senderId: msgRow.sender_id,
+      senderName: senderProfile?.nickname || '친구',
+      avatarUrl: senderProfile?.avatar_url || null,
+      text: previewText,
+    });
+
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => {
+      setIncomingMsgBanner(null);
+    }, 4000);
+  };
+
   const handleOpenExternalLink = async (rawUrl) => {
     if (!rawUrl) return;
     try {
@@ -1362,7 +1469,6 @@ export default function App() {
     }
   };
 
-  // 보낸 메시지 길게 눌러 삭제
   const handleDeleteSentMessage = (msgItem) => {
     if (!msgItem || msgItem.sender_id !== session?.user?.id) return;
 
@@ -2498,7 +2604,6 @@ export default function App() {
   const incomingCount = incomingRequests.length;
   const totalUnreadMessages = Object.values(unreadCountBySender).reduce((sum, n) => sum + (n || 0), 0);
 
-  // 아직 읽지 않은 메시지가 있는 상대방 목록 (읽지 않은 개수 내림차순 정렬)
   const unreadSendersSorted = Object.entries(unreadCountBySender)
     .filter(([senderId, count]) => senderId !== session.user.id && (count || 0) > 0)
     .sort((a, b) => (b[1] || 0) - (a[1] || 0))
@@ -2513,7 +2618,6 @@ export default function App() {
       };
     });
 
-  // 메시지 목록 정렬: '나와의 채팅' 항상 최상위 고정 -> 나머지 회원은 안 읽은 개수 내림차순 -> 이름순
   const sortedChatMembers = (() => {
     const myId = session.user.id;
     const meItem = members.find((m) => m.id === myId) || {
@@ -3001,7 +3105,6 @@ export default function App() {
     </View>
   );
 
-  // 선택된 채팅창: 아래로 최대 크기로 길게 펼쳐지고, 내가 보낸 메시지를 길게 누르면 삭제 가능
   const renderInlineChatDrawer = (partner) => {
     const isSelfChat = partner.id === session.user.id;
 
@@ -3474,6 +3577,40 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {incomingMsgBanner && (
+        <TouchableOpacity
+          style={styles.topMsgToastBanner}
+          activeOpacity={0.9}
+          onPress={() => {
+            const targetId = incomingMsgBanner.senderId;
+            const targetMember = members.find((m) => m.id === targetId) || {
+              id: targetId,
+              nickname: incomingMsgBanner.senderName,
+              avatar_url: incomingMsgBanner.avatarUrl,
+            };
+            setIncomingMsgBanner(null);
+            openInlineChatInMessagesTab(targetMember);
+          }}
+        >
+          {incomingMsgBanner.avatarUrl ? (
+            <Image source={{ uri: incomingMsgBanner.avatarUrl }} style={styles.toastAvatar} />
+          ) : (
+            <View style={[styles.toastAvatar, styles.ktDefaultAvatar]}>
+              <Ionicons name="chatbubble" size={15} color="#0288D1" />
+            </View>
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toastSenderText} numberOfLines={1}>
+              {incomingMsgBanner.senderName}
+            </Text>
+            <Text style={styles.toastBodyText} numberOfLines={1}>
+              {incomingMsgBanner.text}
+            </Text>
+          </View>
+          <Text style={styles.toastOpenHint}>보기</Text>
+        </TouchableOpacity>
+      )}
+
       <View style={styles.mainShellRow}>
         {/* 화면 왼쪽 세로 메뉴바 */}
         <View style={styles.leftVerticalMenuBar}>
@@ -3632,7 +3769,7 @@ export default function App() {
           )}
         </View>
 
-        {/* 오른쪽 여백 세로 레일: 아직 읽지 않은 메시지가 있는 상대 프로필 (읽지 않은 개수 내림차순, 스크롤 가능) */}
+        {/* 오른쪽 여백 세로 레일 */}
         <View style={styles.rightUnreadRailBar}>
           <ScrollView
             style={{ width: '100%' }}
@@ -4010,6 +4147,46 @@ const styles = StyleSheet.create({
   },
 
   container: { flex: 1, backgroundColor: '#FFFFFF' },
+  topMsgToastBanner: {
+    position: 'absolute',
+    top: 12,
+    left: 14,
+    right: 14,
+    zIndex: 1300,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#18181B',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  toastAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  toastSenderText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  toastBodyText: {
+    color: '#E4E4E7',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  toastOpenHint: {
+    color: '#38BDF8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
   mainShellRow: {
     flex: 1,
     flexDirection: 'row',
@@ -4068,7 +4245,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
 
-  // --- 오른쪽 여백 세로 안 읽은 메시지 프로필 레일 ---
   rightUnreadRailBar: {
     width: RIGHT_RAIL_WIDTH,
     backgroundColor: '#FFFFFF',
