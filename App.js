@@ -23,6 +23,18 @@ const GRID_ITEM_SIZE = (CONTENT_WIDTH - 4) / 3;
 const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - LEFT_RAIL_WIDTH);
 const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.44);
 
+const VISIBILITY_OPTIONS = [
+  { key: 'public', label: '전체공개', icon: 'globe-outline' },
+  { key: 'friends', label: '친구공개', icon: 'people-outline' },
+  { key: 'private', label: '혼자보기', icon: 'lock-closed-outline' },
+];
+
+const getVisibilityLabel = (visibility) => {
+  if (visibility === 'friends') return '친구공개';
+  if (visibility === 'private') return '혼자보기';
+  return '전체공개';
+};
+
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
 
@@ -384,6 +396,7 @@ const PostDetailPopup = ({
   const [aspectRatio, setAspectRatio] = useState(1);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [editVisibility, setEditVisibility] = useState('public');
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
@@ -393,6 +406,7 @@ const PostDetailPopup = ({
   useEffect(() => {
     setIsEditing(false);
     setEditValue(post?.content || '');
+    setEditVisibility(post?.visibility || 'public');
     setCommentText('');
     setIsZoomed(false);
     const imgUri = post?.image_urls?.[0];
@@ -438,9 +452,14 @@ const PostDetailPopup = ({
             </View>
           )}
           <View style={{ flex: 1 }}>
-            <Text style={styles.whitePopupTitle} numberOfLines={1}>
-              {post.profiles?.nickname || defaultNickname || '내 스토리'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.whitePopupTitle} numberOfLines={1}>
+                {post.profiles?.nickname || defaultNickname || '내 스토리'}
+              </Text>
+              <View style={styles.visibilityPill}>
+                <Text style={styles.visibilityPillText}>{getVisibilityLabel(post.visibility)}</Text>
+              </View>
+            </View>
             <Text style={{ color: '#777777', fontSize: 11 }}>
               {new Date(post.created_at).toLocaleString('ko-KR')}
             </Text>
@@ -453,6 +472,7 @@ const PostDetailPopup = ({
               style={styles.whitePopupMiniBtn}
               onPress={() => {
                 setEditValue(post.content || '');
+                setEditVisibility(post.visibility || 'public');
                 setIsEditing(true);
               }}
             >
@@ -516,6 +536,27 @@ const PostDetailPopup = ({
         <View style={styles.whiteDetailBodyBox}>
           {isEditing ? (
             <View style={{ marginBottom: 12 }}>
+              <View style={styles.visibilitySelectorRow}>
+                {VISIBILITY_OPTIONS.map((opt) => {
+                  const active = editVisibility === opt.key;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[styles.visibilitySelectChip, active && styles.visibilitySelectChipActive]}
+                      onPress={() => setEditVisibility(opt.key)}
+                    >
+                      <Ionicons
+                        name={opt.icon}
+                        size={13}
+                        color={active ? '#FFFFFF' : '#475569'}
+                      />
+                      <Text style={[styles.visibilitySelectText, active && styles.visibilitySelectTextActive]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
               <TextInput
                 style={styles.whiteDetailEditInput}
                 value={editValue}
@@ -533,7 +574,7 @@ const PostDetailPopup = ({
                 <TouchableOpacity
                   style={[styles.whitePopupMiniBtn, { backgroundColor: '#0288D1' }]}
                   onPress={async () => {
-                    await onSaveEdit(post.id, editValue);
+                    await onSaveEdit(post.id, editValue, editVisibility);
                     setIsEditing(false);
                   }}
                 >
@@ -662,6 +703,7 @@ export default function App() {
   const [mainTab, setMainTab] = useState('home');
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [incomingListExpanded, setIncomingListExpanded] = useState(true);
   const [onlyFavoritesFeed, setOnlyFavoritesFeed] = useState(false);
 
   const [profile, setProfile] = useState({
@@ -680,15 +722,18 @@ export default function App() {
   const [tempCoverUri, setTempCoverUri] = useState(null);
 
   const [members, setMembers] = useState([]);
-  const [favoriteIds, setFavoriteIds] = useState([]);
+  // 친구 관계 & 신청 상태: { [otherUserId]: { id, requester_id, addressee_id, status } }
+  const [friendRelationMap, setFriendRelationMap] = useState({});
+  // 나에게 온 친구 신청 목록 (pending)
+  const [incomingRequests, setIncomingRequests] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [favSectionOpen, setFavSectionOpen] = useState(true);
   const [friendsSectionOpen, setFriendsSectionOpen] = useState(true);
   const [selectedFriend, setSelectedFriend] = useState(null);
 
   const [posts, setPosts] = useState([]);
   const [writeModalVisible, setWriteModalVisible] = useState(false);
   const [content, setContent] = useState('');
+  const [visibility, setVisibility] = useState('public');
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -821,10 +866,28 @@ export default function App() {
   useEffect(() => {
     if (session && supabase) {
       loadAndCountProfile(session.user);
-      fetchFriendsAndFavorites();
+      fetchFriendsAndRequests();
       fetchPosts();
       fetchAllComments();
     }
+  }, [session]);
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+    const reqChannel = supabase
+      .channel(`realtime_friend_requests_${session.user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'friend_requests' },
+        () => {
+          fetchFriendsAndRequests();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(reqChannel);
+    };
   }, [session]);
 
   useEffect(() => {
@@ -919,6 +982,21 @@ export default function App() {
       </SafeAreaView>
     );
   }
+
+  const acceptedFriendIds = Object.entries(friendRelationMap)
+    .filter(([, rel]) => rel?.status === 'accepted')
+    .map(([otherId]) => otherId);
+
+  const isPostVisibleToMe = (post) => {
+    const uid = session?.user?.id;
+    if (!uid) return false;
+    if (post.author_id === uid) return true;
+    const vis = post.visibility || 'public';
+    if (vis === 'public') return true;
+    if (vis === 'friends') return acceptedFriendIds.includes(post.author_id);
+    if (vis === 'private') return false;
+    return true;
+  };
 
   const handleLogout = async () => {
     setAccountMenuOpen(false);
@@ -1073,39 +1151,231 @@ export default function App() {
     }
   };
 
-  const fetchFriendsAndFavorites = async () => {
+  const fetchFriendsAndRequests = async () => {
+    const myId = session.user.id;
     const { data: memberData } = await supabase
       .from('profiles')
       .select('id, nickname, bio, avatar_url, cover_url')
       .order('nickname', { ascending: true });
 
-    if (memberData) setMembers(memberData);
+    const list = memberData || [];
+    setMembers(list);
 
-    const { data: favData } = await supabase
-      .from('friend_favorites')
-      .select('friend_id')
-      .eq('user_id', session.user.id);
+    const { data: reqData, error: reqError } = await supabase
+      .from('friend_requests')
+      .select('*')
+      .or(`requester_id.eq.${myId},addressee_id.eq.${myId}`)
+      .order('created_at', { ascending: false });
 
-    if (favData) {
-      setFavoriteIds(favData.map((row) => row.friend_id));
+    if (reqError || !Array.isArray(reqData)) {
+      setFriendRelationMap({});
+      setIncomingRequests([]);
+      return;
     }
+
+    const relMap = {};
+    const pendingToMe = [];
+
+    for (const row of reqData) {
+      if (row.requester_id === myId) {
+        relMap[row.addressee_id] = row;
+      } else if (row.addressee_id === myId) {
+        relMap[row.requester_id] = row;
+        if (row.status === 'pending') {
+          const requesterProfile = list.find((m) => m.id === row.requester_id);
+          pendingToMe.push({
+            ...row,
+            requesterProfile: requesterProfile || {
+              id: row.requester_id,
+              nickname: '회원',
+              bio: '',
+              avatar_url: null,
+            },
+          });
+        }
+      }
+    }
+
+    setFriendRelationMap(relMap);
+    setIncomingRequests(pendingToMe);
   };
 
-  const toggleFavoriteFriend = async (friendId) => {
-    const isAlreadyFav = favoriteIds.includes(friendId);
-    if (isAlreadyFav) {
-      setFavoriteIds((prev) => prev.filter((id) => id !== friendId));
-      await supabase
-        .from('friend_favorites')
-        .delete()
-        .eq('user_id', session.user.id)
-        .eq('friend_id', friendId);
-    } else {
-      setFavoriteIds((prev) => [...prev, friendId]);
-      await supabase
-        .from('friend_favorites')
-        .insert({ user_id: session.user.id, friend_id: friendId });
+  // 친구 신청 보내기 (이미 상대가 내게 신청한 상태라면 바로 수락)
+  const sendFriendRequest = async (targetUserId) => {
+    const myId = session.user.id;
+    if (!targetUserId || targetUserId === myId) return;
+
+    const existing = friendRelationMap[targetUserId];
+    if (existing?.status === 'pending' && existing.addressee_id === myId) {
+      await acceptFriendRequest(existing.id, targetUserId);
+      return;
     }
+
+    const optimisticRow = {
+      id: existing?.id || `temp_${Date.now()}`,
+      requester_id: myId,
+      addressee_id: targetUserId,
+      status: 'pending',
+    };
+    setFriendRelationMap((prev) => ({ ...prev, [targetUserId]: optimisticRow }));
+
+    const { data, error } = await supabase
+      .from('friend_requests')
+      .upsert(
+        {
+          requester_id: myId,
+          addressee_id: targetUserId,
+          status: 'pending',
+        },
+        { onConflict: 'requester_id,addressee_id' }
+      )
+      .select()
+      .single();
+
+    if (error) {
+      showAlert('친구 신청 실패', getKoreanErrorMessage(error));
+      fetchFriendsAndRequests();
+      return;
+    }
+
+    if (data) {
+      setFriendRelationMap((prev) => ({ ...prev, [targetUserId]: data }));
+    }
+    showAlert('친구 신청 완료', '상대방이 수락하면 친구가 되어 서로의 친구공개 글이 공유됩니다.');
+  };
+
+  // 친구 신청 취소 또는 친구 끊기
+  const cancelOrRemoveFriend = async (targetUserId) => {
+    const existing = friendRelationMap[targetUserId];
+    if (!existing) return;
+
+    Alert.alert(
+      existing.status === 'accepted' ? '친구 해제' : '친구 신청 취소',
+      existing.status === 'accepted'
+        ? '친구 관계를 해제하시겠습니까? 친구공개 글 공유가 중단됩니다.'
+        : '보낸 친구 신청을 취소하시겠습니까?',
+      [
+        { text: '닫기', style: 'cancel' },
+        {
+          text: '확인',
+          style: 'destructive',
+          onPress: async () => {
+            setFriendRelationMap((prev) => {
+              const next = { ...prev };
+              delete next[targetUserId];
+              return next;
+            });
+
+            if (existing.id && !String(existing.id).startsWith('temp_')) {
+              await supabase.from('friend_requests').delete().eq('id', existing.id);
+            } else {
+              await supabase
+                .from('friend_requests')
+                .delete()
+                .eq('requester_id', existing.requester_id)
+                .eq('addressee_id', existing.addressee_id);
+            }
+            fetchFriendsAndRequests();
+          },
+        },
+      ]
+    );
+  };
+
+  // 받은 친구 신청 수락
+  const acceptFriendRequest = async (requestId, requesterId) => {
+    setIncomingRequests((prev) => prev.filter((r) => r.id !== requestId));
+    setFriendRelationMap((prev) => ({
+      ...prev,
+      [requesterId]: {
+        ...(prev[requesterId] || {}),
+        id: requestId,
+        requester_id: requesterId,
+        addressee_id: session.user.id,
+        status: 'accepted',
+      },
+    }));
+
+    const { error } = await supabase
+      .from('friend_requests')
+      .update({ status: 'accepted' })
+      .eq('id', requestId);
+
+    if (error) {
+      showAlert('수락 실패', getKoreanErrorMessage(error));
+    } else {
+      showAlert('친구 수락 완료', '친구가 되었습니다! 이제 서로의 친구공개 게시글이 함께 보입니다.');
+    }
+    fetchFriendsAndRequests();
+  };
+
+  // 받은 친구 신청 거절
+  const rejectFriendRequest = async (requestId, requesterId) => {
+    setIncomingRequests((prev) => prev.filter((r) => r.id !== requestId));
+    setFriendRelationMap((prev) => {
+      const next = { ...prev };
+      delete next[requesterId];
+      return next;
+    });
+
+    const { error } = await supabase
+      .from('friend_requests')
+      .delete()
+      .eq('id', requestId);
+
+    if (error) {
+      showAlert('거절 실패', getKoreanErrorMessage(error));
+    }
+    fetchFriendsAndRequests();
+  };
+
+  const renderFriendStatusActionButton = (targetUserId, compact = false) => {
+    const myId = session.user.id;
+    if (!targetUserId || targetUserId === myId) return null;
+
+    const rel = friendRelationMap[targetUserId];
+    if (!rel) {
+      return (
+        <TouchableOpacity
+          style={[styles.friendActionChip, compact && styles.friendActionChipCompact]}
+          onPress={() => sendFriendRequest(targetUserId)}
+        >
+          <Text style={styles.friendActionChipText}>친구신청</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    if (rel.status === 'accepted') {
+      return (
+        <TouchableOpacity
+          style={[styles.friendActionChip, styles.friendActionChipAccepted, compact && styles.friendActionChipCompact]}
+          onPress={() => cancelOrRemoveFriend(targetUserId)}
+        >
+          <Text style={styles.friendActionChipAcceptedText}>친구됨</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    // status === 'pending'
+    if (rel.addressee_id === myId) {
+      return (
+        <TouchableOpacity
+          style={[styles.friendActionChip, styles.friendActionChipIncoming, compact && styles.friendActionChipCompact]}
+          onPress={() => acceptFriendRequest(rel.id, targetUserId)}
+        >
+          <Text style={styles.friendActionChipIncomingText}>신청수락</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        style={[styles.friendActionChip, styles.friendActionChipPending, compact && styles.friendActionChipCompact]}
+        onPress={() => cancelOrRemoveFriend(targetUserId)}
+      >
+        <Text style={styles.friendActionChipPendingText}>신청중</Text>
+      </TouchableOpacity>
+    );
   };
 
   const markMessagesAsRead = async (partnerId) => {
@@ -1395,7 +1665,7 @@ export default function App() {
 
       setProfile((prev) => ({ ...prev, ...updates }));
       setEditProfileModal(false);
-      fetchFriendsAndFavorites();
+      fetchFriendsAndRequests();
       fetchPosts();
       showAlert('완료', '프로필이 저장되었습니다!');
     } catch (e) {
@@ -1559,7 +1829,7 @@ export default function App() {
         author_id: session.user.id,
         content: content.trim(),
         image_urls: uploadedUrls,
-        visibility: 'public',
+        visibility: visibility || 'public',
       });
 
       setLoading(false);
@@ -1568,6 +1838,7 @@ export default function App() {
       } else {
         setContent('');
         setImageUri(null);
+        setVisibility('public');
         setWriteModalVisible(false);
         fetchPosts();
       }
@@ -1577,15 +1848,18 @@ export default function App() {
     }
   };
 
-  const saveEditPost = async (postId, newText) => {
+  const saveEditPost = async (postId, newText, nextVisibility) => {
     if (!newText.trim()) {
       showAlert('알림', '수정할 내용을 입력해 주세요.');
       return;
     }
     setLoading(true);
+    const payload = { content: newText.trim() };
+    if (nextVisibility) payload.visibility = nextVisibility;
+
     const { error } = await supabase
       .from('posts')
-      .update({ content: newText.trim() })
+      .update(payload)
       .eq('id', postId);
     setLoading(false);
 
@@ -1714,10 +1988,14 @@ export default function App() {
     );
   }
 
+  const visiblePosts = posts.filter(isPostVisibleToMe);
   const otherMembers = members.filter((m) => m.id !== session.user.id);
   const feedPosts = onlyFavoritesFeed
-    ? posts.filter((p) => p.author_id === session.user.id || favoriteIds.includes(p.author_id))
-    : posts;
+    ? visiblePosts.filter((p) => p.author_id === session.user.id || acceptedFriendIds.includes(p.author_id))
+    : visiblePosts;
+
+  const myStoryPosts = visiblePosts.filter((p) => p.author_id === session.user.id);
+  const incomingCount = incomingRequests.length;
 
   const currentAccountEmail = session.user?.email || '';
   const currentAccountName = profile.nickname || (currentAccountEmail ? currentAccountEmail.split('@')[0] : '내 계정');
@@ -1725,7 +2003,7 @@ export default function App() {
   const renderHomeFeedHeader = () => (
     <View style={styles.igHeaderContainer}>
       <View style={styles.igTopBar}>
-        <View style={{ width: 28 }} />
+        <View style={{ width: 32 }} />
 
         <TouchableOpacity
           style={styles.igCenterBrandBtn}
@@ -1755,6 +2033,14 @@ export default function App() {
           }}
         >
           <Ionicons name="menu" size={23} color="#111111" />
+          {incomingCount > 0 && (
+            <>
+              <View style={styles.menuAlertDot} />
+              <View style={styles.menuApplicantBadge}>
+                <Text style={styles.menuApplicantBadgeText}>{incomingCount}</Text>
+              </View>
+            </>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -1773,6 +2059,45 @@ export default function App() {
               ) : null}
             </View>
           </View>
+
+          <View style={styles.igDropdownDivider} />
+
+          <TouchableOpacity
+            style={styles.accountPopoverActionRow}
+            onPress={() => setIncomingListExpanded(!incomingListExpanded)}
+          >
+            <Ionicons name="notifications-outline" size={16} color="#0288D1" />
+            <Text style={styles.accountPopoverActionText}>친구 신청</Text>
+            <View style={styles.applicantCountPill}>
+              <Text style={styles.applicantCountPillText}>{incomingCount}명</Text>
+            </View>
+          </TouchableOpacity>
+
+          {incomingListExpanded && incomingCount > 0 && (
+            <View style={styles.incomingRequestBox}>
+              {incomingRequests.map((req) => (
+                <View key={req.id} style={styles.incomingRequestRow}>
+                  <Text style={styles.incomingRequesterName} numberOfLines={1}>
+                    {req.requesterProfile?.nickname || '회원'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 5 }}>
+                    <TouchableOpacity
+                      style={styles.acceptMiniBtn}
+                      onPress={() => acceptFriendRequest(req.id, req.requester_id)}
+                    >
+                      <Text style={styles.acceptMiniBtnText}>수락</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.rejectMiniBtn}
+                      onPress={() => rejectFriendRequest(req.id, req.requester_id)}
+                    >
+                      <Text style={styles.rejectMiniBtnText}>거절</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.igDropdownDivider} />
 
@@ -1805,7 +2130,7 @@ export default function App() {
             onPress={() => {
               setBrandMenuOpen(false);
               setOnlyFavoritesFeed(false);
-              fetchFriendsAndFavorites();
+              fetchFriendsAndRequests();
               setMainTab('friends');
             }}
           >
@@ -1824,7 +2149,7 @@ export default function App() {
           >
             <Ionicons name={onlyFavoritesFeed ? 'star' : 'star-outline'} size={17} color="#111111" />
             <Text style={styles.igDropdownLabel}>
-              {onlyFavoritesFeed ? '즐겨찾기 필터 끄기 (전체 보기)' : '즐겨찾기'}
+              {onlyFavoritesFeed ? '친구공개 필터 끄기 (전체 보기)' : '친구공개 모아보기'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1842,6 +2167,7 @@ export default function App() {
             setAccountMenuOpen(false);
             setImageUri(null);
             setContent('');
+            setVisibility('public');
             setWriteModalVisible(true);
           }}
         >
@@ -1890,7 +2216,6 @@ export default function App() {
 
   const renderHomeFeedPostItem = ({ item }) => {
     const isMyPost = item.author_id === session.user.id;
-    const isFriendFav = favoriteIds.includes(item.author_id);
     const isLikedByMe = Boolean(item.reactions?.some((x) => x.user_id === session.user.id));
     const totalReactions = item.reactions?.length || 0;
     const postComments = commentsByPost[String(item.id)] || [];
@@ -1920,30 +2245,18 @@ export default function App() {
               </View>
             )}
             <View>
-              <Text style={styles.igPostAuthorName}>{authorName}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.igPostAuthorName}>{authorName}</Text>
+                <View style={styles.visibilityPill}>
+                  <Text style={styles.visibilityPillText}>{getVisibilityLabel(item.visibility)}</Text>
+                </View>
+              </View>
               <Text style={styles.igPostDate}>{dateText}</Text>
             </View>
           </TouchableOpacity>
 
           <View style={styles.igPostRightActions}>
-            {!isMyPost && (
-              <TouchableOpacity
-                style={[
-                  styles.minimalFollowBtn,
-                  isFriendFav && styles.minimalFollowBtnActive,
-                ]}
-                onPress={() => toggleFavoriteFriend(item.author_id)}
-              >
-                <Text
-                  style={[
-                    styles.minimalFollowText,
-                    isFriendFav && styles.minimalFollowTextActive,
-                  ]}
-                >
-                  {isFriendFav ? '친구됨' : '친구하기'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            {!isMyPost && renderFriendStatusActionButton(item.author_id, true)}
             <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
               <Ionicons name="ellipsis-horizontal" size={18} color="#444444" />
             </TouchableOpacity>
@@ -2017,43 +2330,34 @@ export default function App() {
       (m.bio || '').toLowerCase().includes(q)
     );
   });
-  const favoriteFriends = filteredMembers.filter((m) => favoriteIds.includes(m.id));
 
   const renderFriendRow = (friend) => {
-    const isFav = favoriteIds.includes(friend.id);
     return (
-      <TouchableOpacity
-        key={friend.id}
-        style={styles.ktFriendRow}
-        activeOpacity={0.75}
-        onPress={() => setSelectedFriend(friend)}
-      >
-        {friend.avatar_url ? (
-          <Image source={{ uri: friend.avatar_url }} style={styles.ktFriendAvatar} />
-        ) : (
-          <View style={[styles.ktFriendAvatar, styles.ktDefaultAvatar]}>
-            <Ionicons name="person" size={20} color="#64748B" />
-          </View>
-        )}
-        <View style={{ flex: 1 }}>
-          <Text style={styles.ktFriendName}>{friend.nickname || '친구'}</Text>
-          {friend.bio ? (
-            <Text style={styles.ktFriendBio} numberOfLines={1}>
-              {friend.bio}
-            </Text>
-          ) : null}
-        </View>
+      <View key={friend.id} style={styles.ktFriendRow}>
         <TouchableOpacity
-          style={styles.ktFavStarBtn}
-          onPress={() => toggleFavoriteFriend(friend.id)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}
+          activeOpacity={0.75}
+          onPress={() => setSelectedFriend(friend)}
         >
-          <Ionicons
-            name={isFav ? 'star' : 'star-outline'}
-            size={20}
-            color={isFav ? '#F59E0B' : '#CBD5E1'}
-          />
+          {friend.avatar_url ? (
+            <Image source={{ uri: friend.avatar_url }} style={styles.ktFriendAvatar} />
+          ) : (
+            <View style={[styles.ktFriendAvatar, styles.ktDefaultAvatar]}>
+              <Ionicons name="person" size={20} color="#64748B" />
+            </View>
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.ktFriendName}>{friend.nickname || '친구'}</Text>
+            {friend.bio ? (
+              <Text style={styles.ktFriendBio} numberOfLines={1}>
+                {friend.bio}
+              </Text>
+            ) : null}
+          </View>
         </TouchableOpacity>
-      </TouchableOpacity>
+
+        {renderFriendStatusActionButton(friend.id, true)}
+      </View>
     );
   };
 
@@ -2079,6 +2383,42 @@ export default function App() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
+        {incomingCount > 0 && (
+          <View style={styles.ktSection}>
+            <Text style={styles.ktSectionTitle}>받은 친구 신청 {incomingCount}명</Text>
+            {incomingRequests.map((req) => (
+              <View key={req.id} style={styles.ktFriendRow}>
+                {req.requesterProfile?.avatar_url ? (
+                  <Image source={{ uri: req.requesterProfile.avatar_url }} style={styles.ktFriendAvatar} />
+                ) : (
+                  <View style={[styles.ktFriendAvatar, styles.ktDefaultAvatar]}>
+                    <Ionicons name="person" size={20} color="#64748B" />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.ktFriendName}>{req.requesterProfile?.nickname || '회원'}</Text>
+                  <Text style={styles.ktFriendBio}>친구 신청을 보냈습니다</Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={styles.acceptMiniBtn}
+                    onPress={() => acceptFriendRequest(req.id, req.requester_id)}
+                  >
+                    <Text style={styles.acceptMiniBtnText}>수락</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.rejectMiniBtn}
+                    onPress={() => rejectFriendRequest(req.id, req.requester_id)}
+                  >
+                    <Text style={styles.rejectMiniBtnText}>거절</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+            <View style={styles.ktDivider} />
+          </View>
+        )}
+
         <TouchableOpacity
           style={styles.ktSelfBanner}
           onPress={() =>
@@ -2104,31 +2444,11 @@ export default function App() {
         <View style={styles.ktSection}>
           <TouchableOpacity
             style={styles.ktSectionHeader}
-            onPress={() => setFavSectionOpen(!favSectionOpen)}
-          >
-            <Text style={styles.ktSectionTitle}>즐겨찾는 친구 {favoriteFriends.length}</Text>
-            <Ionicons name={favSectionOpen ? 'chevron-up' : 'chevron-down'} size={15} color="#999999" />
-          </TouchableOpacity>
-
-          {favSectionOpen && (
-            favoriteFriends.length > 0 ? (
-              favoriteFriends.map(renderFriendRow)
-            ) : (
-              <Text style={styles.ktEmptySectionText}>
-                친구 오른쪽의 ☆ 별표를 누르면 즐겨찾기에 등록됩니다.
-              </Text>
-            )
-          )}
-        </View>
-
-        <View style={styles.ktDivider} />
-
-        <View style={styles.ktSection}>
-          <TouchableOpacity
-            style={styles.ktSectionHeader}
             onPress={() => setFriendsSectionOpen(!friendsSectionOpen)}
           >
-            <Text style={styles.ktSectionTitle}>전체 친구 {filteredMembers.length}</Text>
+            <Text style={styles.ktSectionTitle}>
+              회원 목록 {filteredMembers.length} (수락된 친구 {acceptedFriendIds.length}명)
+            </Text>
             <Ionicons name={friendsSectionOpen ? 'chevron-up' : 'chevron-down'} size={15} color="#999999" />
           </TouchableOpacity>
 
@@ -2137,7 +2457,7 @@ export default function App() {
               filteredMembers.map(renderFriendRow)
             ) : (
               <Text style={styles.ktEmptySectionText}>
-                {searchQuery ? '검색된 친구가 없습니다.' : '아직 가입된 다른 회원이 없습니다.'}
+                {searchQuery ? '검색된 회원이 없습니다.' : '아직 가입된 다른 회원이 없습니다.'}
               </Text>
             )
           )}
@@ -2335,7 +2655,7 @@ export default function App() {
     >
       <View style={styles.ktHeader}>
         <Text style={styles.ktPageTitle}>메시지</Text>
-        <TouchableOpacity style={styles.ktIconBtn} onPress={fetchFriendsAndFavorites}>
+        <TouchableOpacity style={styles.ktIconBtn} onPress={fetchFriendsAndRequests}>
           <Ionicons name="refresh-outline" size={20} color="#333333" />
         </TouchableOpacity>
       </View>
@@ -2494,6 +2814,7 @@ export default function App() {
                 onPress={() => {
                   setImageUri(null);
                   setContent('');
+                  setVisibility('public');
                   setWriteModalVisible(true);
                 }}
               >
@@ -2520,6 +2841,9 @@ export default function App() {
         {hasImage ? (
           <>
             <Image source={{ uri: item.image_urls[0] }} style={styles.gridImage} />
+            <View style={styles.gridVisBadge}>
+              <Text style={styles.gridVisBadgeText}>{getVisibilityLabel(item.visibility)}</Text>
+            </View>
             {item.content ? (
               <View style={styles.gridCaptionOverlay}>
                 <Text style={styles.gridCaptionText} numberOfLines={1}>
@@ -2530,6 +2854,7 @@ export default function App() {
           </>
         ) : (
           <View style={styles.gridTextOnlyBox}>
+            <Text style={styles.gridVisBadgeInline}>{getVisibilityLabel(item.visibility)}</Text>
             <Text style={styles.gridTextOnlyContent} numberOfLines={4}>
               {item.content}
             </Text>
@@ -2549,7 +2874,7 @@ export default function App() {
     );
   };
 
-  const selectedPostObj = posts.find((p) => p.id === selectedPostId) || null;
+  const selectedPostObj = visiblePosts.find((p) => p.id === selectedPostId) || null;
   const selectedPostComments = selectedPostId ? (commentsByPost[String(selectedPostId)] || []) : [];
 
   const isHomeActive = mainTab === 'home' && !onlyFavoritesFeed;
@@ -2586,7 +2911,7 @@ export default function App() {
             onPress={() => {
               setBrandMenuOpen(false);
               setAccountMenuOpen(false);
-              fetchFriendsAndFavorites();
+              fetchFriendsAndRequests();
               setMainTab('friends');
             }}
           >
@@ -2603,7 +2928,7 @@ export default function App() {
             onPress={() => {
               setBrandMenuOpen(false);
               setAccountMenuOpen(false);
-              fetchFriendsAndFavorites();
+              fetchFriendsAndRequests();
               setMainTab('chats');
             }}
           >
@@ -2639,6 +2964,7 @@ export default function App() {
               setAccountMenuOpen(false);
               setImageUri(null);
               setContent('');
+              setVisibility('public');
               setWriteModalVisible(true);
             }}
           >
@@ -2679,7 +3005,7 @@ export default function App() {
                 <View style={styles.emptyBox}>
                   <Text style={[styles.emptyText, { color: '#777' }]}>
                     {onlyFavoritesFeed
-                      ? '즐겨찾기한 친구의 새 게시물이 없습니다.\n왼쪽 하트 아이콘 또는 상단 [me ∨]에서 전체 보기로 전환해 보세요!'
+                      ? '친구공개로 공유된 게시물이 없습니다.\n친구 신청을 수락하거나 전체 보기로 전환해 보세요!'
                       : '아직 올라온 스토리가 없습니다.\n왼쪽 [+] 버튼을 눌러 첫 사진을 올려 보세요!'}
                   </Text>
                 </View>
@@ -2691,7 +3017,7 @@ export default function App() {
           {mainTab === 'chats' && renderChatsTabScreen()}
           {mainTab === 'story' && (
             <FlatList
-              data={posts}
+              data={myStoryPosts}
               numColumns={3}
               keyExtractor={(item) => String(item.id)}
               ListHeaderComponent={renderProfileHeader}
@@ -2774,19 +3100,9 @@ export default function App() {
               <Text style={styles.friendCardBio}>{selectedFriend.bio || '상태 메시지가 없습니다.'}</Text>
 
               <View style={styles.friendCardActions}>
-                <TouchableOpacity
-                  style={styles.friendCardActionBtn}
-                  onPress={() => toggleFavoriteFriend(selectedFriend.id)}
-                >
-                  <Ionicons
-                    name={favoriteIds.includes(selectedFriend.id) ? 'star' : 'star-outline'}
-                    size={19}
-                    color={favoriteIds.includes(selectedFriend.id) ? '#F59E0B' : '#333333'}
-                  />
-                  <Text style={styles.friendCardActionLabel}>
-                    {favoriteIds.includes(selectedFriend.id) ? '친구됨' : '친구하기'}
-                  </Text>
-                </TouchableOpacity>
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                  {renderFriendStatusActionButton(selectedFriend.id, false)}
+                </View>
 
                 <TouchableOpacity
                   style={[styles.friendCardActionBtn, styles.friendCardChatBtn]}
@@ -2882,6 +3198,30 @@ export default function App() {
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>새 게시물 올리기</Text>
+
+            <Text style={styles.fieldLabel}>공개 범위 설정</Text>
+            <View style={styles.visibilitySelectorRow}>
+              {VISIBILITY_OPTIONS.map((opt) => {
+                const active = visibility === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.visibilitySelectChip, active && styles.visibilitySelectChipActive]}
+                    onPress={() => setVisibility(opt.key)}
+                  >
+                    <Ionicons
+                      name={opt.icon}
+                      size={14}
+                      color={active ? '#FFFFFF' : '#475569'}
+                    />
+                    <Text style={[styles.visibilitySelectText, active && styles.visibilitySelectTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <TextInput
               style={[styles.modalInput, { height: 110, textAlignVertical: 'top' }]}
               placeholder="오늘 어떤 일이 있었나요?"
@@ -3097,17 +3437,44 @@ const styles = StyleSheet.create({
     transform: [{ skewX: '-8deg' }],
   },
   igTopRightBtn: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  menuAlertDot: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+  },
+  menuApplicantBadge: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#0288D1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuApplicantBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9.5,
+    fontWeight: 'bold',
   },
 
   accountPopoverMenu: {
     alignSelf: 'flex-end',
     marginRight: 14,
     marginBottom: 8,
-    width: 196,
+    width: 224,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
@@ -3147,11 +3514,63 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#18181B',
+    flex: 1,
+  },
+  applicantCountPill: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  applicantCountPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0288D1',
+  },
+  incomingRequestBox: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  incomingRequestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  incomingRequesterName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+    flex: 1,
+  },
+  acceptMiniBtn: {
+    backgroundColor: '#0288D1',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  acceptMiniBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  rejectMiniBtn: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  rejectMiniBtnText: {
+    color: '#475569',
+    fontSize: 11,
+    fontWeight: '600',
   },
 
   igBrandDropdown: {
     alignSelf: 'center',
-    width: 190,
+    width: 210,
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
     borderWidth: 1,
@@ -3249,6 +3668,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#18181B',
   },
+  visibilityPill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+  },
+  visibilityPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#475569',
+  },
   igPostDate: {
     fontSize: 11,
     color: '#A1A1AA',
@@ -3257,24 +3687,79 @@ const styles = StyleSheet.create({
   igPostRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
-  minimalFollowBtn: {
+
+  friendActionChip: {
+    backgroundColor: '#E0F2FE',
     paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendActionChipCompact: {
+    paddingHorizontal: 8,
     paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: '#F4F4F5',
   },
-  minimalFollowBtnActive: {
-    backgroundColor: '#FAFAFA',
+  friendActionChipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0288D1',
   },
-  minimalFollowText: {
-    fontSize: 11,
+  friendActionChipPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  friendActionChipPendingText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  friendActionChipIncoming: {
+    backgroundColor: '#0288D1',
+  },
+  friendActionChipIncomingText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  friendActionChipAccepted: {
+    backgroundColor: '#F1F5F9',
+  },
+  friendActionChipAcceptedText: {
+    fontSize: 11.5,
     fontWeight: '600',
-    color: '#18181B',
+    color: '#475569',
   },
-  minimalFollowTextActive: {
-    color: '#A1A1AA',
+
+  visibilitySelectorRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 10,
+  },
+  visibilitySelectChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  visibilitySelectChipActive: {
+    backgroundColor: '#0288D1',
+    borderColor: '#0288D1',
+  },
+  visibilitySelectText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  visibilitySelectTextActive: {
+    color: '#FFFFFF',
   },
 
   compactImageWrap: {
@@ -3482,7 +3967,6 @@ const styles = StyleSheet.create({
   ktFriendAvatar: { width: 44, height: 44, borderRadius: 16 },
   ktFriendName: { fontSize: 14, fontWeight: '600', color: '#191919' },
   ktFriendBio: { fontSize: 12, color: '#888888', marginTop: 2 },
-  ktFavStarBtn: { padding: 6 },
 
   friendCardModal: {
     backgroundColor: '#FFFFFF',
@@ -3614,6 +4098,30 @@ const styles = StyleSheet.create({
 
   gridItem: { width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, margin: 0.6, backgroundColor: '#2D2D2D' },
   gridImage: { width: '100%', height: '100%' },
+  gridVisBadge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+  },
+  gridVisBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
+    fontWeight: '600',
+  },
+  gridVisBadgeInline: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    color: '#E2E8F0',
+    fontSize: 9,
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    marginBottom: 3,
+  },
   gridCaptionOverlay: {
     position: 'absolute',
     bottom: 0,
