@@ -18,7 +18,7 @@ const SCREEN_WIDTH = getWindowWidth();
 const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
 const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (CONTENT_WIDTH - 4) / 3;
-const FEED_MEDIA_WIDTH = Math.max(220, CONTENT_WIDTH - 24);
+const FEED_MEDIA_WIDTH = Math.max(220, CONTENT_WIDTH - 28);
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
@@ -1551,12 +1551,14 @@ export default function App() {
   const renderHomeFeedPostItem = ({ item }) => {
     const isMyPost = item.author_id === session.user.id;
     const isFriendFav = favoriteIds.includes(item.author_id);
+    const myReaction = item.reactions?.find((x) => x.user_id === session.user.id);
+    const isLikedByMe = Boolean(myReaction);
     const totalReactions = item.reactions?.length || 0;
     const postComments = commentsByPost[String(item.id)] || [];
 
     return (
-      <View style={styles.igPostCard}>
-        <View style={styles.igPostHeader}>
+      <View style={styles.minimalPostCard}>
+        <View style={styles.minimalPostHeader}>
           <TouchableOpacity
             style={styles.igPostAuthorRow}
             onPress={() => {
@@ -1589,15 +1591,15 @@ export default function App() {
             {!isMyPost && (
               <TouchableOpacity
                 style={[
-                  styles.igFollowPillBtn,
-                  isFriendFav && styles.igFollowPillBtnActive,
+                  styles.minimalFollowBtn,
+                  isFriendFav && styles.minimalFollowBtnActive,
                 ]}
                 onPress={() => toggleFavoriteFriend(item.author_id)}
               >
                 <Text
                   style={[
-                    styles.igFollowPillText,
-                    isFriendFav && styles.igFollowPillTextActive,
+                    styles.minimalFollowText,
+                    isFriendFav && styles.minimalFollowTextActive,
                   ]}
                 >
                   {isFriendFav ? '친구됨' : '친구하기'}
@@ -1605,7 +1607,7 @@ export default function App() {
               </TouchableOpacity>
             )}
             <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
-              <Ionicons name="ellipsis-horizontal" size={18} color="#333333" />
+              <Ionicons name="ellipsis-horizontal" size={18} color="#444444" />
             </TouchableOpacity>
           </View>
         </View>
@@ -1624,56 +1626,43 @@ export default function App() {
           />
         )}
 
-        <View style={styles.igPostFooter}>
-          <View style={styles.igActionIconRow}>
-            <TouchableOpacity onPress={() => toggleReaction(item.id, 'like')} style={styles.igQuickIconBtn}>
-              <Ionicons name="heart-outline" size={21} color="#111111" />
+        <View style={styles.minimalPostFooter}>
+          <View style={styles.minimalStatsRow}>
+            <TouchableOpacity
+              style={styles.minimalStatBtn}
+              activeOpacity={0.75}
+              onPress={() => toggleReaction(item.id, 'like')}
+            >
+              <Ionicons
+                name={isLikedByMe ? 'heart' : 'heart-outline'}
+                size={20}
+                color={isLikedByMe ? '#E11D48' : '#18181B'}
+              />
+              <Text style={[styles.minimalStatCount, isLikedByMe && { color: '#E11D48', fontWeight: '700' }]}>
+                {totalReactions}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={styles.igQuickIconBtn}>
-              <Ionicons name="chatbubble-outline" size={20} color="#111111" />
+
+            <TouchableOpacity
+              style={styles.minimalStatBtn}
+              activeOpacity={0.75}
+              onPress={() => setSelectedPostId(item.id)}
+            >
+              <Ionicons name="chatbubble-outline" size={19} color="#18181B" />
+              <Text style={styles.minimalStatCount}>{postComments.length}</Text>
             </TouchableOpacity>
           </View>
-
-          <View style={styles.igReactionBar}>
-            {REACTIONS.map((r) => {
-              const count = item.reactions?.filter((x) => x.type === r.type).length || 0;
-              return (
-                <TouchableOpacity
-                  key={r.type}
-                  style={styles.igReactionPill}
-                  onPress={() => toggleReaction(item.id, r.type)}
-                >
-                  <Ionicons name={r.icon} size={13} color={r.color} />
-                  <Text style={styles.igReactionText}>
-                    {r.label} {count > 0 ? count : ''}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {totalReactions > 0 && (
-            <Text style={styles.igLikeSummary}>공감 {totalReactions}개</Text>
-          )}
 
           {item.content ? (
-            <Text style={styles.igPostCaption}>
-              <Text style={{ fontWeight: 'bold' }}>
-                {item.profiles?.nickname || profile.nickname || '친구'}{' '}
+            <TouchableOpacity activeOpacity={0.85} onPress={() => setSelectedPostId(item.id)}>
+              <Text style={styles.minimalPostCaption}>
+                <Text style={styles.minimalCaptionAuthor}>
+                  {item.profiles?.nickname || profile.nickname || '친구'}{' '}
+                </Text>
+                {item.content}
               </Text>
-              {item.content}
-            </Text>
+            </TouchableOpacity>
           ) : null}
-
-          <TouchableOpacity
-            style={styles.feedCommentTriggerBtn}
-            onPress={() => setSelectedPostId(item.id)}
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={14} color="#0277BD" />
-            <Text style={styles.feedCommentTriggerText}>
-              댓글 {postComments.length}개 보기 / 작성하기
-            </Text>
-          </TouchableOpacity>
         </View>
       </View>
     );
@@ -2126,7 +2115,7 @@ export default function App() {
           {mainTab === 'home' && (
             <FlatList
               style={{ flex: 1, backgroundColor: '#FFFFFF' }}
-              contentContainerStyle={{ paddingBottom: 24 }}
+              contentContainerStyle={{ paddingBottom: 28 }}
               data={feedPosts}
               keyExtractor={(item) => String(item.id)}
               ListHeaderComponent={renderHomeFeedHeader}
@@ -2625,7 +2614,7 @@ const styles = StyleSheet.create({
   igHeaderContainer: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: '#F3F4F6',
     paddingTop: 10,
     paddingBottom: 6,
   },
@@ -2683,10 +2672,10 @@ const styles = StyleSheet.create({
   igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 12 },
 
   igStoryBarContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingTop: 4,
     paddingBottom: 12,
-    gap: 10,
+    gap: 12,
   },
   igStoryItem: {
     alignItems: 'center',
@@ -2699,8 +2688,8 @@ const styles = StyleSheet.create({
   igStoryRing: {
     padding: 2,
     borderRadius: 32,
-    borderWidth: 2,
-    borderColor: '#E1306C',
+    borderWidth: 1.5,
+    borderColor: '#18181B',
     marginBottom: 5,
   },
   igStoryAvatar: {
@@ -2715,7 +2704,7 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#111111',
+    backgroundColor: '#18181B',
     borderWidth: 2,
     borderColor: '#FFFFFF',
     justifyContent: 'center',
@@ -2723,24 +2712,24 @@ const styles = StyleSheet.create({
   },
   igStoryName: {
     fontSize: 11,
-    color: '#222222',
+    color: '#3F3F46',
     textAlign: 'center',
   },
 
-  igPostCard: {
+  // --- 미니멀 & 간결 피드 카드 ---
+  minimalPostCard: {
     backgroundColor: '#FFFFFF',
-    paddingTop: 12,
-    paddingBottom: 16,
-    marginBottom: 8,
+    paddingTop: 18,
+    paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#F2F2F2',
   },
-  igPostHeader: {
+  minimalPostHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingBottom: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
   },
   igPostAuthorRow: {
     flexDirection: 'row',
@@ -2755,97 +2744,71 @@ const styles = StyleSheet.create({
   },
   igPostAuthorName: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#111111',
+    fontWeight: '700',
+    color: '#18181B',
   },
   igPostDate: {
     fontSize: 11,
-    color: '#8E8E8E',
+    color: '#A1A1AA',
     marginTop: 1,
   },
   igPostRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
-  igFollowPillBtn: {
-    backgroundColor: '#E3F2FD',
+  minimalFollowBtn: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: 999,
+    backgroundColor: '#F4F4F5',
   },
-  igFollowPillBtnActive: {
-    backgroundColor: '#F2F2F2',
+  minimalFollowBtnActive: {
+    backgroundColor: '#FAFAFA',
   },
-  igFollowPillText: {
+  minimalFollowText: {
     fontSize: 11,
-    fontWeight: 'bold',
-    color: '#0277BD',
+    fontWeight: '600',
+    color: '#18181B',
   },
-  igFollowPillTextActive: {
-    color: '#555555',
+  minimalFollowTextActive: {
+    color: '#A1A1AA',
   },
 
   feedImage: {
     width: FEED_MEDIA_WIDTH,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    backgroundColor: '#FAFAFA',
   },
-  igPostFooter: {
-    paddingHorizontal: 12,
-    paddingTop: 10,
+  minimalPostFooter: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
   },
-  igActionIconRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-  },
-  igQuickIconBtn: {
-    padding: 4,
-  },
-  igReactionBar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 8,
-  },
-  igReactionPill: {
+  minimalStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 14,
+    gap: 16,
+    marginBottom: 8,
   },
-  igReactionText: {
-    fontSize: 11,
-    color: '#222222',
-  },
-  igLikeSummary: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#111111',
-    marginBottom: 4,
-  },
-  igPostCaption: {
-    fontSize: 14,
-    color: '#222222',
-    lineHeight: 20,
-  },
-  feedCommentTriggerBtn: {
+  minimalStatBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginTop: 8,
-    paddingVertical: 6,
+    paddingVertical: 2,
   },
-  feedCommentTriggerText: {
-    fontSize: 12,
-    color: '#0277BD',
+  minimalStatCount: {
+    fontSize: 13,
     fontWeight: '600',
+    color: '#18181B',
+  },
+  minimalPostCaption: {
+    fontSize: 14,
+    color: '#27272A',
+    lineHeight: 21,
+  },
+  minimalCaptionAuthor: {
+    fontWeight: '700',
+    color: '#18181B',
   },
 
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
@@ -3407,6 +3370,12 @@ const styles = StyleSheet.create({
   },
   chatPlusBtnActive: {
     backgroundColor: '#E2E8F0',
+  },
+  chatPlusText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#444',
+    lineHeight: 22,
   },
   chatTextInput: {
     flex: 1,
