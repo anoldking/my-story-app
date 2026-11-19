@@ -400,13 +400,11 @@ const PostDetailPopup = ({
   const [editValue, setEditValue] = useState('');
   const [editVisibility, setEditVisibility] = useState('public');
 
-  // 댓글 작성창 열림 여부 및 대상 댓글(대댓글용)
   const [composerOpen, setComposerOpen] = useState(false);
   const [replyTargetComment, setReplyTargetComment] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
 
-  // 댓글/대댓글 인라인 수정 상태
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
 
@@ -464,7 +462,6 @@ const PostDetailPopup = ({
     const ok = await onAddComment(post.id, trimmed, parentId);
     setSubmittingComment(false);
     if (ok) {
-      // 댓글/대댓글 작성 후 입력창만 닫고 팝업 및 목록은 유지
       closeComposerOnly();
     }
   };
@@ -479,7 +476,6 @@ const PostDetailPopup = ({
     }
   };
 
-  // 최상위 댓글과 대댓글 분리
   const topLevelComments = comments.filter((c) => !c.parent_id);
   const repliesByParent = {};
   comments.forEach((c) => {
@@ -890,6 +886,8 @@ export default function App() {
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [viewingImage, setViewingImage] = useState(null);
 
+  const [unreadCountBySender, setUnreadCountBySender] = useState({});
+
   const [chatPartner, setChatPartner] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -1015,6 +1013,7 @@ export default function App() {
     if (session && supabase) {
       loadAndCountProfile(session.user);
       fetchFriendsAndRequests();
+      fetchUnreadCountsBySender(session.user.id);
       fetchPosts();
       fetchAllComments();
     }
@@ -1033,8 +1032,20 @@ export default function App() {
       )
       .subscribe();
 
+    const unreadChannel = supabase
+      .channel(`realtime_unread_badge_${session.user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages' },
+        () => {
+          fetchUnreadCountsBySender(session.user.id);
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(reqChannel);
+      supabase.removeChannel(unreadChannel);
     };
   }, [session]);
 
@@ -1091,7 +1102,9 @@ export default function App() {
             if (isRelevant) {
               if (newMsg.sender_id === partnerId && newMsg.receiver_id === myId && !newMsg.is_read) {
                 newMsg.is_read = true;
-                markMessagesAsRead(partnerId);
+                await markMessagesAsRead(partnerId);
+              } else if (newMsg.receiver_id === myId && !newMsg.is_read) {
+                await fetchUnreadCountsBySender(myId);
               }
 
               setChatMessages((prev) => {
@@ -1101,6 +1114,9 @@ export default function App() {
             }
           } else if (payload.eventType === 'UPDATE') {
             const updatedMsg = payload.new;
+            if (updatedMsg.receiver_id === myId) {
+              await fetchUnreadCountsBySender(myId);
+            }
             setChatMessages((prev) =>
               prev.map((m) => (m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m))
             );
@@ -1130,6 +1146,28 @@ export default function App() {
       </SafeAreaView>
     );
   }
+
+  const fetchUnreadCountsBySender = async (myId) => {
+    if (!myId) return;
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('sender_id')
+        .eq('receiver_id', myId)
+        .eq('is_read', false);
+
+      if (!error && Array.isArray(data)) {
+        const counts = {};
+        data.forEach((row) => {
+          if (!row?.sender_id) return;
+          counts[row.sender_id] = (counts[row.sender_id] || 0) + 1;
+        });
+        setUnreadCountBySender(counts);
+      }
+    } catch {
+      // 무시
+    }
+  };
 
   const acceptedFriendIds = Object.entries(friendRelationMap)
     .filter(([, rel]) => rel?.status === 'accepted')
@@ -1200,6 +1238,12 @@ export default function App() {
     return found?.nickname || '회원';
   };
 
+  const mapCommentRow = (row) => ({
+    ...row,
+    parent_id: row.parent_id || null,
+    authorName: resolveAuthorName(row.user_id),
+  });
+
   const fetchAllComments = async () => {
     try {
       const { data, error } = await supabase
@@ -1212,11 +1256,7 @@ export default function App() {
         data.forEach((row) => {
           const key = String(row.post_id);
           if (!grouped[key]) grouped[key] = [];
-          grouped[key].push({
-            ...row,
-            parent_id: row.parent_id || null,
-            authorName: resolveAuthorName(row.user_id),
-          });
+          grouped[key].push(mapCommentRow(row));
         });
         setCommentsByPost(grouped);
       }
@@ -1234,15 +1274,20 @@ export default function App() {
         .order('created_at', { ascending: true });
 
       if (!error && Array.isArray(data)) {
-        const mapped = data.map((row) => ({
-          ...row,
-          parent_id: row.parent_id || null,
-          authorName: resolveAuthorName(row.user_id),
-        }));
-        setCommentsByPost((prev) => ({
-          ...prev,
-          [String(postId)]: mapped,
-        }));
+        const key = String(postId);
+        const dbRows = data.map(mapCommentRow);
+        setCommentsByPost((prev) => {
+          const existing = prev[key] || [];
+          const dbIds = new Set(dbRows.map((r) => String(r.id)));
+          const merged = [
+            ...dbRows,
+            ...existing.filter((item) => !dbIds.has(String(item.id))),
+          ];
+          return {
+            ...prev,
+            [key]: merged,
+          };
+        });
       }
     } catch {
       // 무시
@@ -1251,6 +1296,7 @@ export default function App() {
 
   const handleAddComment = async (postId, text, parentId = null) => {
     const myName = profile.nickname || (session.user.email ? session.user.email.split('@')[0] : '나');
+    const key = String(postId);
     const localComment = {
       id: `local_${Date.now()}`,
       post_id: postId,
@@ -1267,7 +1313,7 @@ export default function App() {
         user_id: session.user.id,
         content: text,
       };
-      if (parentId) insertPayload.parent_id = parentId;
+      if (parentId) insertPayload.parent_id = String(parentId);
 
       const { data, error } = await supabase
         .from('comments')
@@ -1278,29 +1324,29 @@ export default function App() {
       if (error) {
         setCommentsByPost((prev) => ({
           ...prev,
-          [String(postId)]: [...(prev[String(postId)] || []), localComment],
+          [key]: [...(prev[key] || []), localComment],
         }));
         return true;
       }
 
       const savedRow = {
         ...data,
-        parent_id: data.parent_id || parentId || null,
+        parent_id: data.parent_id || (parentId ? String(parentId) : null),
         authorName: myName,
       };
       setCommentsByPost((prev) => {
-        const current = prev[String(postId)] || [];
-        if (current.some((item) => item.id === savedRow.id)) return prev;
+        const current = prev[key] || [];
+        if (current.some((item) => String(item.id) === String(savedRow.id))) return prev;
         return {
           ...prev,
-          [String(postId)]: [...current, savedRow],
+          [key]: [...current, savedRow],
         };
       });
       return true;
     } catch {
       setCommentsByPost((prev) => ({
         ...prev,
-        [String(postId)]: [...(prev[String(postId)] || []), localComment],
+        [key]: [...(prev[key] || []), localComment],
       }));
       return true;
     }
@@ -1345,7 +1391,7 @@ export default function App() {
           }));
 
           if (!String(commentId).startsWith('local_')) {
-            await supabase.from('comments').delete().eq('parent_id', commentId);
+            await supabase.from('comments').delete().eq('parent_id', String(commentId));
             const { error } = await supabase.from('comments').delete().eq('id', commentId);
             if (error) {
               showAlert('댓글 삭제 실패', getKoreanErrorMessage(error));
@@ -1580,12 +1626,21 @@ export default function App() {
 
   const markMessagesAsRead = async (partnerId) => {
     const myId = session.user.id;
+    setUnreadCountBySender((prev) => {
+      if (!prev[partnerId]) return prev;
+      const next = { ...prev };
+      delete next[partnerId];
+      return next;
+    });
+
     await supabase
       .from('messages')
       .update({ is_read: true })
       .eq('sender_id', partnerId)
       .eq('receiver_id', myId)
       .eq('is_read', false);
+
+    await fetchUnreadCountsBySender(myId);
   };
 
   const fetchChatMessages = async (partnerId) => {
@@ -2196,6 +2251,7 @@ export default function App() {
 
   const myStoryPosts = visiblePosts.filter((p) => p.author_id === session.user.id);
   const incomingCount = incomingRequests.length;
+  const totalUnreadMessages = Object.values(unreadCountBySender).reduce((sum, n) => sum + (n || 0), 0);
 
   const currentAccountEmail = session.user?.email || '';
   const currentAccountName = profile.nickname || (currentAccountEmail ? currentAccountEmail.split('@')[0] : '내 계정');
@@ -2855,7 +2911,13 @@ export default function App() {
     >
       <View style={styles.ktHeader}>
         <Text style={styles.ktPageTitle}>메시지</Text>
-        <TouchableOpacity style={styles.ktIconBtn} onPress={fetchFriendsAndRequests}>
+        <TouchableOpacity
+          style={styles.ktIconBtn}
+          onPress={() => {
+            fetchFriendsAndRequests();
+            fetchUnreadCountsBySender(session.user.id);
+          }}
+        >
           <Ionicons name="refresh-outline" size={20} color="#333333" />
         </TouchableOpacity>
       </View>
@@ -2863,12 +2925,20 @@ export default function App() {
       <FlatList
         data={members}
         keyExtractor={(item) => item.id}
-        extraData={{ activeChatId: chatPartner?.id, chatMessages, chatInput, sendingMsg, chatAttachMenuOpen }}
+        extraData={{
+          activeChatId: chatPartner?.id,
+          chatMessages,
+          chatInput,
+          sendingMsg,
+          chatAttachMenuOpen,
+          unreadCountBySender,
+        }}
         contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => {
           const isMe = item.id === session.user.id;
           const isExpanded = chatPartner?.id === item.id;
+          const unreadForSender = isMe ? 0 : (unreadCountBySender[item.id] || 0);
 
           return (
             <View style={[styles.memberCardGroup, isExpanded && styles.memberCardGroupExpanded]}>
@@ -2897,11 +2967,19 @@ export default function App() {
                     {item.bio || '터치하여 아래에서 대화하기'}
                   </Text>
                 </View>
-                <Ionicons
-                  name={isExpanded ? 'chevron-up' : 'chatbubble-outline'}
-                  size={18}
-                  color={isExpanded ? '#18181B' : '#2B6CB0'}
-                />
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {unreadForSender > 0 && (
+                    <View style={styles.unreadCounterBadge}>
+                      <Text style={styles.unreadCounterBadgeText}>{unreadForSender}</Text>
+                    </View>
+                  )}
+                  <Ionicons
+                    name={isExpanded ? 'chevron-up' : 'chatbubble-outline'}
+                    size={18}
+                    color={isExpanded ? '#18181B' : '#2B6CB0'}
+                  />
+                </View>
               </TouchableOpacity>
 
               {isExpanded && renderInlineChatDrawer(item)}
@@ -3128,15 +3206,25 @@ export default function App() {
               setBrandMenuOpen(false);
               setAccountMenuOpen(false);
               fetchFriendsAndRequests();
+              fetchUnreadCountsBySender(session.user.id);
               setMainTab('chats');
             }}
           >
-            <Ionicons
-              name={isChatsActive ? 'chatbubble' : 'chatbubble-outline'}
-              size={21}
-              color="#111111"
-              style={{ opacity: isChatsActive ? 1 : 0.45 }}
-            />
+            <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons
+                name={isChatsActive ? 'chatbubble' : 'chatbubble-outline'}
+                size={21}
+                color="#111111"
+                style={{ opacity: isChatsActive ? 1 : 0.45 }}
+              />
+              {totalUnreadMessages > 0 && (
+                <View style={styles.leftRailUnreadBadge}>
+                  <Text style={styles.leftRailUnreadText}>
+                    {totalUnreadMessages > 99 ? '99+' : totalUnreadMessages}
+                  </Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -3585,6 +3673,23 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  leftRailUnreadBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -9,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3.5,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leftRailUnreadText: {
+    color: '#FFFFFF',
+    fontSize: 9.5,
+    fontWeight: 'bold',
   },
   leftMenuAvatarRing: {
     padding: 1.5,
@@ -4663,6 +4768,20 @@ const styles = StyleSheet.create({
   memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
   meBadge: { backgroundColor: '#3C1E1E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   meBadgeText: { color: '#FEE500', fontSize: 10, fontWeight: 'bold' },
+  unreadCounterBadge: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadCounterBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: 'bold',
+  },
 
   inlineChatDrawer: {
     backgroundColor: '#EAF2F8',
