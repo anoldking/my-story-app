@@ -3,12 +3,13 @@ import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   FlatList, Image, ImageBackground, Alert, SafeAreaView,
   ActivityIndicator, ScrollView, Dimensions, KeyboardAvoidingView,
-  Platform, BackHandler, ToastAndroid
+  Platform, BackHandler, ToastAndroid, Linking
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as DocumentPicker from 'expo-document-picker';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const COVER_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3));
@@ -158,23 +159,23 @@ export default function App() {
   const [editingPostId, setEditingPostId] = useState(null);
   const [editingContent, setEditingContent] = useState('');
 
-  // 사진 크게 보기 상태
+  // 사진 크게 보기 상태 (게시글/앨범 및 채팅 사진 공용)
   const [selectedAlbumPost, setSelectedAlbumPost] = useState(null);
+  const [selectedChatImage, setSelectedChatImage] = useState(null);
 
-  // 메신저(1:1 실시간 채팅방) 상태
+  // 메신저(1:1 실시간 채팅방 & '+' 첨부 서랍) 상태
   const [chatPartner, setChatPartner] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
+  const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
   const chatListRef = useRef(null);
 
-  // 뒤로가기 두 번 눌러 종료하기 시간 기록용 ref
   const lastBackPressRef = useRef(0);
 
   // --- 안드로이드 하드웨어/제스처 뒤로가기 버튼 제어 ---
   useEffect(() => {
     const onHardwareBackPress = () => {
-      // 0. 로그인 전 회원가입 화면이라면 로그인 화면으로 복귀
       if (!session) {
         if (isSignUpScreen) {
           setIsSignUpScreen(false);
@@ -183,60 +184,61 @@ export default function App() {
         return false;
       }
 
-      // 1. 사진 전체 화면 크게 보기가 열려 있으면 닫기
+      if (selectedChatImage) {
+        setSelectedChatImage(null);
+        return true;
+      }
+
       if (selectedAlbumPost) {
         setSelectedAlbumPost(null);
         return true;
       }
 
-      // 2. 내 프로필 꾸미기 창이 열려 있으면 닫기
       if (editProfileModal) {
         setEditProfileModal(false);
         return true;
       }
 
-      // 3. 새 스토리 작성 창이 열려 있으면 닫기
       if (writeModalVisible) {
         setWriteModalVisible(false);
         return true;
       }
 
-      // 4. 친구 미니 프로필 카드가 열려 있으면 닫기
       if (selectedFriend) {
         setSelectedFriend(null);
         return true;
       }
 
-      // 5. 1:1 실시간 채팅방에 들어가 있으면 채팅방 나가기
+      if (chatAttachMenuOpen) {
+        setChatAttachMenuOpen(false);
+        return true;
+      }
+
       if (chatPartner) {
         setChatPartner(null);
         return true;
       }
 
-      // 6. 게시글 인라인 수정 중이면 수정 취소
       if (editingPostId) {
         setEditingPostId(null);
         setEditingContent('');
         return true;
       }
 
-      // 7. 친구 검색창이 열려 있으면 검색창 닫기
       if (searchVisible) {
         setSearchVisible(false);
         setSearchQuery('');
         return true;
       }
 
-      // 8. 다른 탭('chats' 또는 'story')에 있다면 홈('friends') 탭으로 이동
       if (mainTab !== 'friends') {
         setMainTab('friends');
         return true;
       }
 
-      // 9. 이미 홈('friends') 화면이라면 2초 이내 두 번 눌렀을 때만 앱 종료
       const now = Date.now();
       if (now - lastBackPressRef.current < 2000) {
-        return false; // 안드로이드 시스템에 종료 위임
+        return false;
       }
 
       lastBackPressRef.current = now;
@@ -251,10 +253,12 @@ export default function App() {
   }, [
     session,
     isSignUpScreen,
+    selectedChatImage,
     selectedAlbumPost,
     editProfileModal,
     writeModalVisible,
     selectedFriend,
+    chatAttachMenuOpen,
     chatPartner,
     editingPostId,
     searchVisible,
@@ -281,6 +285,7 @@ export default function App() {
   useEffect(() => {
     if (!supabase || !session || !chatPartner) return;
 
+    setChatAttachMenuOpen(false);
     const myId = session.user.id;
     const partnerId = chatPartner.id;
 
@@ -403,6 +408,7 @@ export default function App() {
     }
   };
 
+  // 일반 텍스트 메시지 전송
   const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text || !chatPartner || sendingMsg) return;
@@ -433,6 +439,119 @@ export default function App() {
         if (prev.some((m) => m.id === data.id)) return prev;
         return [...prev, data];
       });
+    }
+  };
+
+  // 채팅 '+' 메뉴 -> 사진 올리기
+  const handleSendChatPhoto = async () => {
+    if (!chatPartner || sendingMsg) return;
+    setChatAttachMenuOpen(false);
+
+    const uri = await selectFromGallery();
+    if (!uri) return;
+
+    setSendingMsg(true);
+    try {
+      const storagePath = `${session.user.id}/photo_${Date.now()}.jpg`;
+      const response = await fetch(uri);
+      const arrayBuffer = await response.arrayBuffer();
+
+      const { error: uploadErr } = await supabase.storage
+        .from('chat-files')
+        .upload(storagePath, arrayBuffer, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(storagePath);
+      const isSelfChat = chatPartner.id === session.user.id;
+
+      const { data: msgData, error: msgErr } = await supabase
+        .from('messages')
+        .insert({
+          sender_id: session.user.id,
+          receiver_id: chatPartner.id,
+          content: '',
+          image_url: urlData.publicUrl,
+          is_read: isSelfChat,
+        })
+        .select()
+        .single();
+
+      setSendingMsg(false);
+      if (msgErr) {
+        showAlert('사진 전송 실패', getKoreanErrorMessage(msgErr));
+      } else if (msgData) {
+        setChatMessages((prev) => {
+          if (prev.some((m) => m.id === msgData.id)) return prev;
+          return [...prev, msgData];
+        });
+      }
+    } catch (e) {
+      setSendingMsg(false);
+      showAlert('사진 전송 오류', `채팅 사진을 올리지 못했습니다.\n(${e?.message || e})`);
+    }
+  };
+
+  // 채팅 '+' 메뉴 -> 첨부파일(PDF, 문서, ZIP 등) 올리기
+  const handleSendChatFile = async () => {
+    if (!chatPartner || sendingMsg) return;
+    setChatAttachMenuOpen(false);
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const picked = result.assets[0];
+      const originalName = picked.name || '첨부파일';
+      const mimeType = picked.mimeType || 'application/octet-stream';
+      const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
+      const safeExt = extMatch ? extMatch[1] : 'bin';
+
+      // 한글 파일명으로 인한 Storage 경로 에러 방지를 위해 서버 경로는 영문/숫자로 생성
+      const storagePath = `${session.user.id}/file_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${safeExt}`;
+
+      setSendingMsg(true);
+      const response = await fetch(picked.uri);
+      const arrayBuffer = await response.arrayBuffer();
+
+      const { error: uploadErr } = await supabase.storage
+        .from('chat-files')
+        .upload(storagePath, arrayBuffer, { contentType: mimeType, upsert: true });
+
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(storagePath);
+      const isSelfChat = chatPartner.id === session.user.id;
+
+      const { data: msgData, error: msgErr } = await supabase
+        .from('messages')
+        .insert({
+          sender_id: session.user.id,
+          receiver_id: chatPartner.id,
+          content: '',
+          file_url: urlData.publicUrl,
+          file_name: originalName,
+          is_read: isSelfChat,
+        })
+        .select()
+        .single();
+
+      setSendingMsg(false);
+      if (msgErr) {
+        showAlert('파일 전송 실패', getKoreanErrorMessage(msgErr));
+      } else if (msgData) {
+        setChatMessages((prev) => {
+          if (prev.some((m) => m.id === msgData.id)) return prev;
+          return [...prev, msgData];
+        });
+      }
+    } catch (e) {
+      setSendingMsg(false);
+      showAlert('파일 첨부 오류', `파일을 첨부하지 못했습니다.\n(${e?.message || e})`);
     }
   };
 
@@ -1265,7 +1384,7 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 2: 1:1 실시간 채팅방 */}
+      {/* 오버레이 2: 1:1 실시간 채팅방 ('+' 사진 올리기 / 첨부파일 기능 포함) */}
       {chatPartner && (
         <KeyboardAvoidingView
           style={styles.messengerFullScreen}
@@ -1281,7 +1400,9 @@ export default function App() {
                   ? `${chatPartner.nickname || '나'} (나와의 채팅)`
                   : chatPartner.nickname || '대화방'}
               </Text>
-              <View style={{ width: 52 }} />
+              <View style={{ width: 52 }}>
+                {sendingMsg && <ActivityIndicator size="small" color="#3C1E1E" />}
+              </View>
             </View>
 
             <FlatList
@@ -1320,9 +1441,43 @@ export default function App() {
                       {!isMine && (
                         <Text style={styles.chatSenderName}>{chatPartner.nickname || '상대방'}</Text>
                       )}
-                      <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-                        <Text style={styles.bubbleText}>{item.content}</Text>
-                      </View>
+
+                      {/* 1) 사진 말풍선 */}
+                      {item.image_url ? (
+                        <TouchableOpacity
+                          activeOpacity={0.9}
+                          onPress={() => setSelectedChatImage(item.image_url)}
+                          style={styles.chatPhotoBubble}
+                        >
+                          <Image
+                            source={{ uri: item.image_url }}
+                            style={styles.chatBubbleImage}
+                            resizeMode="cover"
+                          />
+                        </TouchableOpacity>
+                      ) : item.file_url ? (
+                        /* 2) 첨부파일 말풍선 */
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          onPress={() => Linking.openURL(item.file_url)}
+                          style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, styles.fileBubbleBox]}
+                        >
+                          <View style={styles.fileIconCircle}>
+                            <Text style={{ fontSize: 18 }}>📎</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.fileBubbleName} numberOfLines={2}>
+                              {item.file_name || '첨부파일'}
+                            </Text>
+                            <Text style={styles.fileBubbleHint}>터치하여 파일 열기 / 저장</Text>
+                          </View>
+                        </TouchableOpacity>
+                      ) : (
+                        /* 3) 일반 텍스트 말풍선 */
+                        <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                          <Text style={styles.bubbleText}>{item.content}</Text>
+                        </View>
+                      )}
                     </View>
 
                     {!isMine && <Text style={styles.bubbleTime}>{timeStr}</Text>}
@@ -1332,20 +1487,31 @@ export default function App() {
               ListEmptyComponent={
                 <View style={{ padding: 40, alignItems: 'center' }}>
                   <Text style={{ color: '#4A5568', fontSize: 13 }}>
-                    첫 메시지를 보내 대화를 시작해 보세요!
+                    첫 메시지, 사진 또는 파일을 보내 대화를 시작해 보세요!
                   </Text>
                 </View>
               }
             />
 
+            {/* 하단 입력 바: 왼쪽 '+' 버튼 + 입력창 + 오른쪽 '전송' 버튼 */}
             <View style={styles.chatInputBar}>
+              <TouchableOpacity
+                style={[styles.chatPlusBtn, chatAttachMenuOpen && styles.chatPlusBtnActive]}
+                onPress={() => setChatAttachMenuOpen(!chatAttachMenuOpen)}
+                disabled={sendingMsg}
+              >
+                <Text style={styles.chatPlusText}>{chatAttachMenuOpen ? '✕' : '+'}</Text>
+              </TouchableOpacity>
+
               <TextInput
                 style={styles.chatTextInput}
                 placeholder="메시지를 입력하세요..."
                 value={chatInput}
                 onChangeText={setChatInput}
+                onFocus={() => setChatAttachMenuOpen(false)}
                 multiline
               />
+
               <TouchableOpacity
                 style={[styles.chatSendBtn, !chatInput.trim() && { opacity: 0.5 }]}
                 onPress={sendChatMessage}
@@ -1354,6 +1520,25 @@ export default function App() {
                 <Text style={styles.chatSendText}>전송</Text>
               </TouchableOpacity>
             </View>
+
+            {/* '+' 버튼을 눌렀을 때 펼쳐지는 사진 올리기 / 첨부파일 서랍 메뉴 */}
+            {chatAttachMenuOpen && (
+              <View style={styles.attachDrawer}>
+                <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatPhoto}>
+                  <View style={[styles.attachDrawerIconBox, { backgroundColor: '#48BB78' }]}>
+                    <Text style={{ fontSize: 24 }}>🖼️</Text>
+                  </View>
+                  <Text style={styles.attachDrawerLabel}>사진 올리기</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatFile}>
+                  <View style={[styles.attachDrawerIconBox, { backgroundColor: '#4299E1' }]}>
+                    <Text style={{ fontSize: 24 }}>📎</Text>
+                  </View>
+                  <Text style={styles.attachDrawerLabel}>파일 첨부</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </KeyboardAvoidingView>
       )}
@@ -1471,7 +1656,7 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 5: 사진 크게 보기 */}
+      {/* 오버레이 5: 게시글/앨범 사진 크게 보기 */}
       {Boolean(selectedAlbumPost) && selectedAlbumPost && (
         <View style={styles.fullImageBackdrop}>
           <View style={styles.fullImageContainer}>
@@ -1487,6 +1672,22 @@ export default function App() {
               {new Date(selectedAlbumPost.created_at).toLocaleString('ko-KR')}
             </Text>
             <TouchableOpacity style={styles.closeFullBtn} onPress={() => setSelectedAlbumPost(null)}>
+              <Text style={styles.closeFullText}>닫기</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* 오버레이 6: 채팅창 사진 터치 시 크게 보기 */}
+      {Boolean(selectedChatImage) && selectedChatImage && (
+        <View style={styles.fullImageBackdrop}>
+          <View style={styles.fullImageContainer}>
+            <Image
+              source={{ uri: selectedChatImage }}
+              style={styles.fullImage}
+              resizeMode="contain"
+            />
+            <TouchableOpacity style={styles.closeFullBtn} onPress={() => setSelectedChatImage(null)}>
               <Text style={styles.closeFullText}>닫기</Text>
             </TouchableOpacity>
           </View>
@@ -1850,6 +2051,44 @@ const styles = StyleSheet.create({
   bubbleMine: { backgroundColor: '#FEE500', borderBottomRightRadius: 2 },
   bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 2 },
   bubbleText: { fontSize: 14, color: '#222', lineHeight: 20 },
+
+  // 채팅 사진 및 첨부파일 말풍선 스타일
+  chatPhotoBubble: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  chatBubbleImage: {
+    width: 210,
+    height: 210,
+  },
+  fileBubbleBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minWidth: 190,
+  },
+  fileIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fileBubbleName: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#222',
+  },
+  fileBubbleHint: {
+    fontSize: 10,
+    color: '#666',
+    marginTop: 2,
+  },
+
   mineMetaCol: { alignItems: 'flex-end', justifyContent: 'flex-end', marginBottom: 2 },
   unreadBadgeText: {
     fontSize: 11,
@@ -1872,6 +2111,23 @@ const styles = StyleSheet.create({
     borderTopColor: '#DDD',
     gap: 8,
   },
+  chatPlusBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F0F0F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatPlusBtnActive: {
+    backgroundColor: '#E2E8F0',
+  },
+  chatPlusText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#444',
+    lineHeight: 22,
+  },
   chatTextInput: {
     flex: 1,
     backgroundColor: '#F5F5F5',
@@ -1883,6 +2139,33 @@ const styles = StyleSheet.create({
   },
   chatSendBtn: { backgroundColor: '#FEE500', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18 },
   chatSendText: { color: '#3C1E1E', fontWeight: 'bold', fontSize: 14 },
+
+  // '+' 버튼을 눌렀을 때 펼쳐지는 첨부 서랍 스타일
+  attachDrawer: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+    gap: 28,
+  },
+  attachDrawerItem: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  attachDrawerIconBox: {
+    width: 54,
+    height: 54,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  attachDrawerLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
+  },
 
   overlayBackdrop: {
     position: 'absolute',
