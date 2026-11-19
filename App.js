@@ -380,13 +380,15 @@ const FullscreenPhotoPopup = ({
   );
 };
 
-// 게시물 상세 팝업
+// 게시물 상세 팝업 (댓글 수정·삭제, 대댓글, 등록 후 자동 닫힘)
 const PostDetailPopup = ({
   post,
   currentUserId,
   defaultNickname,
   comments,
   onAddComment,
+  onUpdateComment,
+  onDeleteComment,
   onClose,
   onToggleReaction,
   onSaveEdit,
@@ -397,8 +399,13 @@ const PostDetailPopup = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [editVisibility, setEditVisibility] = useState('public');
+
   const [commentText, setCommentText] = useState('');
+  const [replyTarget, setReplyTarget] = useState(null); // { id, authorName }
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentValue, setEditingCommentValue] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+
   const [isZoomed, setIsZoomed] = useState(false);
   const winWidth = getWindowWidth();
   const winHeight = getWindowHeight();
@@ -408,6 +415,9 @@ const PostDetailPopup = ({
     setEditValue(post?.content || '');
     setEditVisibility(post?.visibility || 'public');
     setCommentText('');
+    setReplyTarget(null);
+    setEditingCommentId(null);
+    setEditingCommentValue('');
     setIsZoomed(false);
     const imgUri = post?.image_urls?.[0];
     if (!imgUri) return;
@@ -425,16 +435,122 @@ const PostDetailPopup = ({
   const isMyPost = post.author_id === currentUserId;
   const imgUri = post.image_urls?.[0];
 
+  const topLevelComments = comments.filter((c) => !c.parent_id);
+  const repliesByParent = {};
+  comments.forEach((c) => {
+    if (c.parent_id) {
+      const pKey = String(c.parent_id);
+      if (!repliesByParent[pKey]) repliesByParent[pKey] = [];
+      repliesByParent[pKey].push(c);
+    }
+  });
+
   const handleSubmitComment = async () => {
     const trimmed = commentText.trim();
     if (!trimmed || submittingComment) return;
     setSubmittingComment(true);
-    setCommentText('');
-    const ok = await onAddComment(post.id, trimmed);
+    const ok = await onAddComment(post.id, trimmed, replyTarget?.id || null);
     setSubmittingComment(false);
-    if (!ok) {
-      setCommentText(trimmed);
+    if (ok) {
+      setCommentText('');
+      setReplyTarget(null);
+      onClose(); // 댓글·대댓글 작성 후 창 자동 닫힘
     }
+  };
+
+  const handleSaveCommentEdit = async (commentId) => {
+    const trimmed = editingCommentValue.trim();
+    if (!trimmed) return;
+    await onUpdateComment(post.id, commentId, trimmed);
+    setEditingCommentId(null);
+    setEditingCommentValue('');
+  };
+
+  const renderCommentCard = (c, isReply = false) => {
+    const isMine = c.user_id === currentUserId;
+    const isEditingThis = editingCommentId === c.id;
+
+    return (
+      <View
+        key={String(c.id)}
+        style={[styles.commentItemRow, isReply && styles.replyCommentItemRow]}
+      >
+        <View style={styles.commentTopRow}>
+          <Text style={styles.commentAuthorText}>
+            {isReply ? `↳ ${c.authorName || '회원'}` : (c.authorName || '회원')}
+          </Text>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {!isReply && (
+              <TouchableOpacity
+                onPress={() => {
+                  setEditingCommentId(null);
+                  setReplyTarget({ id: c.id, authorName: c.authorName || '회원' });
+                }}
+              >
+                <Text style={styles.commentActionLink}>답글</Text>
+              </TouchableOpacity>
+            )}
+            {isMine && !isEditingThis && (
+              <>
+                <TouchableOpacity
+                  onPress={() => {
+                    setReplyTarget(null);
+                    setEditingCommentId(c.id);
+                    setEditingCommentValue(c.content || '');
+                  }}
+                >
+                  <Text style={styles.commentActionLink}>수정</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => onDeleteComment(post.id, c.id)}>
+                  <Text style={[styles.commentActionLink, { color: '#DC2626' }]}>삭제</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+
+        {isEditingThis ? (
+          <View style={{ marginTop: 6 }}>
+            <TextInput
+              style={styles.commentEditInlineInput}
+              value={editingCommentValue}
+              onChangeText={setEditingCommentValue}
+              multiline
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 6 }}>
+              <TouchableOpacity
+                style={styles.commentMiniActionBtn}
+                onPress={() => {
+                  setEditingCommentId(null);
+                  setEditingCommentValue('');
+                }}
+              >
+                <Text style={styles.commentMiniActionText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.commentMiniActionBtn, { backgroundColor: '#0288D1' }]}
+                onPress={() => handleSaveCommentEdit(c.id)}
+              >
+                <Text style={[styles.commentMiniActionText, { color: '#FFFFFF' }]}>저장</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.commentContentText}>{c.content}</Text>
+        )}
+
+        <Text style={styles.commentTimeText}>
+          {new Date(c.created_at).toLocaleString('ko-KR', {
+            month: 'numeric',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </Text>
+      </View>
+    );
   };
 
   return (
@@ -607,32 +723,38 @@ const PostDetailPopup = ({
           <View style={styles.commentSectionBox}>
             <Text style={styles.commentSectionTitle}>댓글 {comments.length}</Text>
 
-            {comments.length === 0 ? (
+            {topLevelComments.length === 0 ? (
               <Text style={styles.commentEmptyText}>아직 댓글이 없습니다. 첫 댓글을 남겨 보세요!</Text>
             ) : (
-              comments.map((c) => (
-                <View key={String(c.id)} style={styles.commentItemRow}>
-                  <Text style={styles.commentAuthorText}>{c.authorName || '회원'}</Text>
-                  <Text style={styles.commentContentText}>{c.content}</Text>
-                  <Text style={styles.commentTimeText}>
-                    {new Date(c.created_at).toLocaleString('ko-KR', {
-                      month: 'numeric',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                </View>
-              ))
+              topLevelComments.map((c) => {
+                const childReplies = repliesByParent[String(c.id)] || [];
+                return (
+                  <View key={String(c.id)}>
+                    {renderCommentCard(c, false)}
+                    {childReplies.map((reply) => renderCommentCard(reply, true))}
+                  </View>
+                );
+              })
             )}
           </View>
         </View>
       </ScrollView>
 
+      {replyTarget && (
+        <View style={styles.replyBannerBar}>
+          <Text style={styles.replyBannerText} numberOfLines={1}>
+            @{replyTarget.authorName}님에게 답글 남기는 중...
+          </Text>
+          <TouchableOpacity onPress={() => setReplyTarget(null)}>
+            <Ionicons name="close" size={16} color="#475569" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={styles.commentInputBar}>
         <TextInput
           style={styles.commentTextInput}
-          placeholder="댓글을 입력하세요..."
+          placeholder={replyTarget ? `${replyTarget.authorName}님에게 답글 입력...` : '댓글을 입력하세요...'}
           value={commentText}
           onChangeText={setCommentText}
           multiline
@@ -642,7 +764,7 @@ const PostDetailPopup = ({
           onPress={handleSubmitComment}
           disabled={!commentText.trim() || submittingComment}
         >
-          <Text style={styles.commentSubmitText}>등록</Text>
+          <Text style={styles.commentSubmitText}>{replyTarget ? '답글' : '등록'}</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -722,9 +844,7 @@ export default function App() {
   const [tempCoverUri, setTempCoverUri] = useState(null);
 
   const [members, setMembers] = useState([]);
-  // 친구 관계 & 신청 상태: { [otherUserId]: { id, requester_id, addressee_id, status } }
   const [friendRelationMap, setFriendRelationMap] = useState({});
-  // 나에게 온 친구 신청 목록 (pending)
   const [incomingRequests, setIncomingRequests] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [friendsSectionOpen, setFriendsSectionOpen] = useState(true);
@@ -1099,25 +1219,31 @@ export default function App() {
     }
   };
 
-  const handleAddComment = async (postId, text) => {
+  const handleAddComment = async (postId, text, parentId = null) => {
     const myName = profile.nickname || (session.user.email ? session.user.email.split('@')[0] : '나');
     const localComment = {
       id: `local_${Date.now()}`,
       post_id: postId,
       user_id: session.user.id,
+      parent_id: parentId || null,
       authorName: myName,
       content: text,
       created_at: new Date().toISOString(),
     };
 
     try {
+      const insertPayload = {
+        post_id: postId,
+        user_id: session.user.id,
+        content: text,
+      };
+      if (parentId) {
+        insertPayload.parent_id = parentId;
+      }
+
       const { data, error } = await supabase
         .from('comments')
-        .insert({
-          post_id: postId,
-          user_id: session.user.id,
-          content: text,
-        })
+        .insert(insertPayload)
         .select()
         .single();
 
@@ -1131,6 +1257,7 @@ export default function App() {
 
       const savedRow = {
         ...data,
+        parent_id: data.parent_id ?? parentId ?? null,
         authorName: myName,
       };
       setCommentsByPost((prev) => {
@@ -1149,6 +1276,54 @@ export default function App() {
       }));
       return true;
     }
+  };
+
+  const handleUpdateComment = async (postId, commentId, nextText) => {
+    const key = String(postId);
+    setCommentsByPost((prev) => ({
+      ...prev,
+      [key]: (prev[key] || []).map((c) =>
+        c.id === commentId ? { ...c, content: nextText } : c
+      ),
+    }));
+
+    if (!String(commentId).startsWith('local_')) {
+      const { error } = await supabase
+        .from('comments')
+        .update({ content: nextText })
+        .eq('id', commentId);
+      if (error) {
+        showAlert('댓글 수정 실패', getKoreanErrorMessage(error));
+        fetchCommentsForPost(postId);
+      }
+    }
+  };
+
+  const handleDeleteComment = (postId, commentId) => {
+    Alert.alert('댓글 삭제', '이 댓글을 삭제하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          const key = String(postId);
+          setCommentsByPost((prev) => ({
+            ...prev,
+            [key]: (prev[key] || []).filter(
+              (c) => c.id !== commentId && String(c.parent_id) !== String(commentId)
+            ),
+          }));
+
+          if (!String(commentId).startsWith('local_')) {
+            const { error } = await supabase.from('comments').delete().eq('id', commentId);
+            if (error) {
+              showAlert('댓글 삭제 실패', getKoreanErrorMessage(error));
+              fetchCommentsForPost(postId);
+            }
+          }
+        },
+      },
+    ]);
   };
 
   const fetchFriendsAndRequests = async () => {
@@ -1200,7 +1375,6 @@ export default function App() {
     setIncomingRequests(pendingToMe);
   };
 
-  // 친구 신청 보내기 (이미 상대가 내게 신청한 상태라면 바로 수락)
   const sendFriendRequest = async (targetUserId) => {
     const myId = session.user.id;
     if (!targetUserId || targetUserId === myId) return;
@@ -1244,7 +1418,6 @@ export default function App() {
     showAlert('친구 신청 완료', '상대방이 수락하면 친구가 되어 서로의 친구공개 글이 공유됩니다.');
   };
 
-  // 친구 신청 취소 또는 친구 끊기
   const cancelOrRemoveFriend = async (targetUserId) => {
     const existing = friendRelationMap[targetUserId];
     if (!existing) return;
@@ -1282,7 +1455,6 @@ export default function App() {
     );
   };
 
-  // 받은 친구 신청 수락
   const acceptFriendRequest = async (requestId, requesterId) => {
     setIncomingRequests((prev) => prev.filter((r) => r.id !== requestId));
     setFriendRelationMap((prev) => ({
@@ -1309,7 +1481,6 @@ export default function App() {
     fetchFriendsAndRequests();
   };
 
-  // 받은 친구 신청 거절
   const rejectFriendRequest = async (requestId, requesterId) => {
     setIncomingRequests((prev) => prev.filter((r) => r.id !== requestId));
     setFriendRelationMap((prev) => {
@@ -1356,7 +1527,6 @@ export default function App() {
       );
     }
 
-    // status === 'pending'
     if (rel.addressee_id === myId) {
       return (
         <TouchableOpacity
@@ -3269,6 +3439,8 @@ export default function App() {
         defaultNickname={profile.nickname}
         comments={selectedPostComments}
         onAddComment={handleAddComment}
+        onUpdateComment={handleUpdateComment}
+        onDeleteComment={handleDeleteComment}
         onClose={() => setSelectedPostId(null)}
         onToggleReaction={toggleReaction}
         onSaveEdit={saveEditPost}
@@ -4304,21 +4476,75 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 8,
   },
+  replyCommentItemRow: {
+    marginLeft: 18,
+    backgroundColor: '#F1F5F9',
+    borderLeftWidth: 2,
+    borderLeftColor: '#94A3B8',
+  },
+  commentTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
   commentAuthorText: {
     fontSize: 12,
     fontWeight: 'bold',
     color: '#01579B',
   },
+  commentActionLink: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  commentEditInlineInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    fontSize: 13.5,
+    color: '#18181B',
+  },
+  commentMiniActionBtn: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  commentMiniActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
   commentContentText: {
     fontSize: 14,
     color: '#222222',
-    marginTop: 3,
+    marginTop: 4,
     lineHeight: 20,
   },
   commentTimeText: {
     fontSize: 10,
     color: '#999999',
     marginTop: 4,
+  },
+  replyBannerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  replyBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+    flex: 1,
   },
   commentInputBar: {
     flexDirection: 'row',
