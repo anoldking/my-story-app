@@ -12,6 +12,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 
 const LEFT_RAIL_WIDTH = 52;
+const LAST_EMAIL_STORAGE_KEY = '@me_last_login_email';
 const getWindowWidth = () => Dimensions.get('window').width;
 const getWindowHeight = () => Dimensions.get('window').height;
 const SCREEN_WIDTH = getWindowWidth();
@@ -288,12 +289,10 @@ const FullscreenPhotoPopup = ({
         onZoomStateChange={setIsZoomed}
       />
 
-      {/* 좌측 상단 뒤로가기 버튼 */}
       <TouchableOpacity style={styles.fullscreenBackBtn} onPress={onClose} activeOpacity={0.8}>
         <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
       </TouchableOpacity>
 
-      {/* 하단 그라데이션 정보 바: 좌측 올린 사람 프로필·정보, 우측 좋아요 개수·채팅 버튼 */}
       <View style={styles.fullscreenBottomOverlay} pointerEvents="box-none">
         <View style={styles.fullscreenAuthorMeta}>
           <View style={styles.fullscreenAuthorHeader}>
@@ -707,6 +706,14 @@ export default function App() {
   const lastBackPressRef = useRef(0);
 
   useEffect(() => {
+    AsyncStorage.getItem(LAST_EMAIL_STORAGE_KEY).then((savedEmail) => {
+      if (savedEmail) {
+        setEmail((prev) => prev || savedEmail);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     const onHardwareBackPress = () => {
       if (!session) {
         if (isSignUpScreen) {
@@ -819,7 +826,6 @@ export default function App() {
     }
   }, [selectedPostId]);
 
-  // 전체화면 뷰어에 표시 중인 게시글의 좋아요 수가 바뀌면 동기화
   useEffect(() => {
     if (!viewingImage?.postId) return;
     const targetPost = posts.find((p) => p.id === viewingImage.postId);
@@ -1342,7 +1348,6 @@ export default function App() {
   };
 
   const switchAuthMode = (toSignUp) => {
-    setEmail('');
     setPassword('');
     setPasswordConfirm('');
     setIsSignUpScreen(toSignUp);
@@ -1351,18 +1356,50 @@ export default function App() {
   const handleLogin = async () => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
-      showAlert('알림', '이메일과 비밀번호를 모두 입력해 주세요.');
+      showAlert('알림', '이메일 아이디와 비밀번호를 모두 입력해 주세요.');
       return;
     }
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
     setLoading(false);
-    if (error) showAlert('로그인 실패', getKoreanErrorMessage(error));
+    if (error) {
+      showAlert('로그인 실패', getKoreanErrorMessage(error));
+    } else {
+      AsyncStorage.setItem(LAST_EMAIL_STORAGE_KEY, trimmedEmail).catch(() => {});
+    }
+  };
+
+  const handleFindId = async () => {
+    const savedEmail = await AsyncStorage.getItem(LAST_EMAIL_STORAGE_KEY);
+    const currentInput = email.trim();
+    if (savedEmail) {
+      showAlert('아이디 찾기', `최근 로그인에 사용된 이메일 아이디는\n"${savedEmail}" 입니다.`);
+    } else if (currentInput) {
+      showAlert('아이디 찾기', `입력하신 이메일 아이디 "${currentInput}"로 가입 여부를 확인해 보세요.`);
+    } else {
+      showAlert('아이디 찾기', '저장된 로그인 아이디가 없습니다.\n가입하신 이메일 주소를 입력해 로그인해 주세요.');
+    }
+  };
+
+  const handleResetPassword = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      showAlert('비밀번호 재설정', '재설정 링크를 받을 이메일 아이디를 먼저 입력해 주세요.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
+    setLoading(false);
+    if (error) {
+      showAlert('재설정 실패', getKoreanErrorMessage(error));
+    } else {
+      showAlert('비밀번호 재설정', `${trimmedEmail} 주소로 비밀번호 재설정 안내 메일을 보냈습니다.`);
+    }
   };
 
   const handleSignUp = async () => {
     const trimmedEmail = email.trim();
-    if (!trimmedEmail) return showAlert('알림', '이메일을 입력해 주세요.');
+    if (!trimmedEmail) return showAlert('알림', '이메일 아이디를 입력해 주세요.');
     if (password.length < 6) return showAlert('알림', '비밀번호는 6자 이상 입력해 주세요.');
     if (password !== passwordConfirm) return showAlert('알림', '비밀번호가 일치하지 않습니다.');
 
@@ -1371,6 +1408,7 @@ export default function App() {
     setLoading(false);
 
     if (error) return showAlert('회원가입 실패', getKoreanErrorMessage(error));
+    AsyncStorage.setItem(LAST_EMAIL_STORAGE_KEY, trimmedEmail).catch(() => {});
     if (data?.session) {
       showAlert('가입 완료', '환영합니다!');
     } else {
@@ -1473,31 +1511,88 @@ export default function App() {
     if (isSignUpScreen) {
       return (
         <SafeAreaView style={styles.authContainer}>
-          <Text style={styles.logo}>회원가입</Text>
-          <TextInput style={styles.input} placeholder="이메일" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-          <TextInput style={styles.input} placeholder="비밀번호 (6자 이상)" value={password} onChangeText={setPassword} secureTextEntry />
-          <TextInput style={styles.input} placeholder="비밀번호 확인" value={passwordConfirm} onChangeText={setPasswordConfirm} secureTextEntry />
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleSignUp} disabled={loading}>
-            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.btnText}>가입하기</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.btnSecondary} onPress={() => switchAuthMode(false)} disabled={loading}>
-            <Text style={styles.btnSecondaryText}>← 로그인 화면으로 돌아가기</Text>
-          </TouchableOpacity>
+          <View style={styles.authInnerBox}>
+            <Text style={styles.logo}>me</Text>
+            <Text style={styles.authSubTitle}>회원가입</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="이메일 아이디"
+              placeholderTextColor="#78909C"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="비밀번호 (6자 이상)"
+              placeholderTextColor="#78909C"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="비밀번호 확인"
+              placeholderTextColor="#78909C"
+              value={passwordConfirm}
+              onChangeText={setPasswordConfirm}
+              secureTextEntry
+            />
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleSignUp} disabled={loading}>
+              {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.btnText}>회원가입</Text>}
+            </TouchableOpacity>
+            <View style={styles.authLinksRow}>
+              <TouchableOpacity onPress={() => switchAuthMode(false)} disabled={loading}>
+                <Text style={styles.authLinkText}>로그인 화면으로 돌아가기</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </SafeAreaView>
       );
     }
 
     return (
       <SafeAreaView style={styles.authContainer}>
-        <Text style={styles.logo}>me</Text>
-        <TextInput style={styles.input} placeholder="이메일" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-        <TextInput style={styles.input} placeholder="비밀번호 (6자 이상)" value={password} onChangeText={setPassword} secureTextEntry />
-        <TouchableOpacity style={styles.btnPrimary} onPress={handleLogin} disabled={loading}>
-          {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.btnText}>로그인</Text>}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnSecondary} onPress={() => switchAuthMode(true)} disabled={loading}>
-          <Text style={styles.btnSecondaryText}>이메일로 회원가입</Text>
-        </TouchableOpacity>
+        <View style={styles.authInnerBox}>
+          <Text style={styles.logo}>me</Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="이메일 아이디"
+            placeholderTextColor="#78909C"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="비밀번호"
+            placeholderTextColor="#78909C"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleLogin} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.btnText}>로그인</Text>}
+          </TouchableOpacity>
+
+          <View style={styles.authLinksRow}>
+            <TouchableOpacity onPress={handleFindId} disabled={loading}>
+              <Text style={styles.authLinkText}>아이디 찾기</Text>
+            </TouchableOpacity>
+            <Text style={styles.authLinkDot}>·</Text>
+            <TouchableOpacity onPress={handleResetPassword} disabled={loading}>
+              <Text style={styles.authLinkText}>비밀번호 재설정</Text>
+            </TouchableOpacity>
+            <Text style={styles.authLinkDot}>·</Text>
+            <TouchableOpacity onPress={() => switchAuthMode(true)} disabled={loading}>
+              <Text style={styles.authLinkText}>회원가입</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </SafeAreaView>
     );
   }
@@ -2674,7 +2769,16 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  authContainer: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#E3F2FD' },
+  // --- 로그인 / 회원가입 (기존 연하늘색·진하늘색 톤 유지 + 참고 이미지 스타일) ---
+  authContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#E3F2FD',
+  },
+  authInnerBox: {
+    width: '100%',
+  },
   logo: {
     fontSize: 56,
     fontWeight: '900',
@@ -2684,11 +2788,53 @@ const styles = StyleSheet.create({
     letterSpacing: -2.5,
     transform: [{ skewX: '-8deg' }],
   },
-  input: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#BBDEFB', borderRadius: 8, padding: 14, marginBottom: 12 },
-  btnPrimary: { backgroundColor: '#0288D1', padding: 15, borderRadius: 8, alignItems: 'center', marginBottom: 10 },
-  btnText: { fontWeight: 'bold', color: '#FFFFFF', fontSize: 16 },
-  btnSecondary: { padding: 14, alignItems: 'center' },
-  btnSecondaryText: { color: '#0277BD', fontWeight: '600' },
+  authSubTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#01579B',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  input: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#BBDEFB',
+    borderRadius: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: '#18181B',
+    marginBottom: 10,
+  },
+  btnPrimary: {
+    backgroundColor: '#0288D1',
+    paddingVertical: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  btnText: {
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontSize: 16,
+  },
+  authLinksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  authLinkText: {
+    color: '#0277BD',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  authLinkDot: {
+    color: '#64B5F6',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
 
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   mainShellRow: {
@@ -2939,7 +3085,7 @@ const styles = StyleSheet.create({
     color: '#18181B',
   },
 
-  // --- 전체화면 원본 팝업 (참고 이미지 스타일) ---
+  // --- 전체화면 원본 팝업 ---
   fullscreenViewerRoot: {
     position: 'absolute',
     top: 0,
@@ -3347,6 +3493,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  whitePopupCaptionBox: {
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    alignItems: 'center',
+  },
+  whitePopupCaption: { color: '#222222', fontSize: 15, textAlign: 'center', lineHeight: 22 },
+  whitePopupDate: { color: '#888888', fontSize: 12, marginTop: 6 },
   whiteDetailBodyBox: {
     width: '100%',
     padding: 16,
