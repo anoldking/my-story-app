@@ -245,7 +245,7 @@ const CompactFeedImage = ({ uri, onPress }) => {
   );
 };
 
-// 전체화면 원본 사진 팝업 (원본 비율 + 확대/드래그/더블탭 + 작성자 프로필·좋아요·채팅 버튼)
+// 전체화면 원본 사진 팝업
 const FullscreenPhotoPopup = ({
   photoInfo,
   currentUserId,
@@ -368,7 +368,7 @@ const FullscreenPhotoPopup = ({
   );
 };
 
-// 게시물 상세 팝업 (원본 사진 확대·드래그 + 좋아요 + 수정/삭제 + 댓글 작성/목록)
+// 게시물 상세 팝업
 const PostDetailPopup = ({
   post,
   currentUserId,
@@ -661,6 +661,7 @@ export default function App() {
 
   const [mainTab, setMainTab] = useState('home');
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [onlyFavoritesFeed, setOnlyFavoritesFeed] = useState(false);
 
   const [profile, setProfile] = useState({
@@ -701,7 +702,7 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
   const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
-  const chatListRef = useRef(null);
+  const inlineChatScrollRef = useRef(null);
 
   const lastBackPressRef = useRef(0);
 
@@ -730,6 +731,11 @@ export default function App() {
 
       if (selectedPostId) {
         setSelectedPostId(null);
+        return true;
+      }
+
+      if (accountMenuOpen) {
+        setAccountMenuOpen(false);
         return true;
       }
 
@@ -792,6 +798,7 @@ export default function App() {
     isSignUpScreen,
     viewingImage,
     selectedPostId,
+    accountMenuOpen,
     brandMenuOpen,
     editProfileModal,
     writeModalVisible,
@@ -842,7 +849,11 @@ export default function App() {
   }, [posts, viewingImage?.postId, session?.user?.id]);
 
   useEffect(() => {
-    if (!supabase || !session || !chatPartner) return;
+    if (!supabase || !session || !chatPartner) {
+      setChatMessages([]);
+      setChatAttachMenuOpen(false);
+      return;
+    }
 
     setChatAttachMenuOpen(false);
     const myId = session.user.id;
@@ -896,7 +907,7 @@ export default function App() {
       supabase.removeChannel(channel);
       clearInterval(syncTimer);
     };
-  }, [chatPartner, session]);
+  }, [chatPartner?.id, session]);
 
   if (!supabase) {
     return (
@@ -908,6 +919,54 @@ export default function App() {
       </SafeAreaView>
     );
   }
+
+  const handleLogout = async () => {
+    setAccountMenuOpen(false);
+    setLoading(true);
+    await supabase.auth.signOut();
+    setLoading(false);
+  };
+
+  const handleWithdrawAccount = () => {
+    setAccountMenuOpen(false);
+    Alert.alert(
+      '회원 탈퇴',
+      '정말 탈퇴하시겠습니까?\n프로필 및 즐겨찾기 정보가 삭제되고 로그아웃됩니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '탈퇴하기',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              const uid = session?.user?.id;
+              if (uid) {
+                await supabase.from('friend_favorites').delete().eq('user_id', uid);
+                await supabase.from('posts').delete().eq('author_id', uid);
+                await supabase.from('profiles').delete().eq('id', uid);
+              }
+              await supabase.auth.signOut();
+              setLoading(false);
+              showAlert('탈퇴 완료', '계정 정리가 완료되었습니다.');
+            } catch (e) {
+              setLoading(false);
+              showAlert('탈퇴 처리 오류', `탈퇴 처리 중 문제가 발생했습니다.\n(${e?.message || e})`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const toggleInlineChat = (member) => {
+    setChatPartner((prev) => (prev?.id === member.id ? null : member));
+  };
+
+  const openInlineChatInMessagesTab = (member) => {
+    setChatPartner(member);
+    setMainTab('chats');
+  };
 
   const resolveAuthorName = (userId) => {
     if (userId === session?.user?.id) {
@@ -1602,15 +1661,21 @@ export default function App() {
     ? posts.filter((p) => p.author_id === session.user.id || favoriteIds.includes(p.author_id))
     : posts;
 
+  const currentAccountEmail = session.user?.email || '';
+  const currentAccountName = profile.nickname || (currentAccountEmail ? currentAccountEmail.split('@')[0] : '내 계정');
+
   const renderHomeFeedHeader = () => (
     <View style={styles.igHeaderContainer}>
       <View style={styles.igTopBar}>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 28 }} />
 
         <TouchableOpacity
           style={styles.igCenterBrandBtn}
           activeOpacity={0.75}
-          onPress={() => setBrandMenuOpen(!brandMenuOpen)}
+          onPress={() => {
+            setAccountMenuOpen(false);
+            setBrandMenuOpen(!brandMenuOpen);
+          }}
         >
           <Text style={styles.igLogoText}>
             {onlyFavoritesFeed ? 'me ★' : 'me'}
@@ -1625,14 +1690,55 @@ export default function App() {
 
         <TouchableOpacity
           style={styles.igTopRightBtn}
+          activeOpacity={0.75}
           onPress={() => {
             setBrandMenuOpen(false);
-            setMainTab('chats');
+            setAccountMenuOpen(!accountMenuOpen);
           }}
         >
-          <Ionicons name="chatbubble-outline" size={21} color="#111111" />
+          <Ionicons name="menu" size={23} color="#111111" />
         </TouchableOpacity>
       </View>
+
+      {accountMenuOpen && (
+        <View style={styles.accountPopoverMenu}>
+          <View style={styles.accountPopoverHeader}>
+            <Ionicons name="person-circle-outline" size={18} color="#18181B" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.accountPopoverName} numberOfLines={1}>
+                {currentAccountName}
+              </Text>
+              {currentAccountEmail ? (
+                <Text style={styles.accountPopoverEmail} numberOfLines={1}>
+                  {currentAccountEmail}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.igDropdownDivider} />
+
+          <TouchableOpacity
+            style={styles.accountPopoverActionRow}
+            onPress={handleLogout}
+            disabled={loading}
+          >
+            <Ionicons name="log-out-outline" size={16} color="#18181B" />
+            <Text style={styles.accountPopoverActionText}>로그아웃</Text>
+          </TouchableOpacity>
+
+          <View style={styles.igDropdownDivider} />
+
+          <TouchableOpacity
+            style={styles.accountPopoverActionRow}
+            onPress={handleWithdrawAccount}
+            disabled={loading}
+          >
+            <Ionicons name="trash-outline" size={16} color="#DC2626" />
+            <Text style={[styles.accountPopoverActionText, { color: '#DC2626' }]}>탈퇴</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {brandMenuOpen && (
         <View style={styles.igBrandDropdown}>
@@ -1675,6 +1781,7 @@ export default function App() {
           style={styles.igStoryItem}
           onPress={() => {
             setBrandMenuOpen(false);
+            setAccountMenuOpen(false);
             setImageUri(null);
             setContent('');
             setWriteModalVisible(true);
@@ -1701,6 +1808,7 @@ export default function App() {
             style={styles.igStoryItem}
             onPress={() => {
               setBrandMenuOpen(false);
+              setAccountMenuOpen(false);
               setSelectedFriend(member);
             }}
           >
@@ -1916,7 +2024,7 @@ export default function App() {
         <TouchableOpacity
           style={styles.ktSelfBanner}
           onPress={() =>
-            setChatPartner({
+            openInlineChatInMessagesTab({
               id: session.user.id,
               nickname: profile.nickname || '나',
               avatar_url: profile.avatar_url,
@@ -1980,8 +2088,193 @@ export default function App() {
     </View>
   );
 
+  const renderInlineChatDrawer = (partner) => {
+    const isSelfChat = partner.id === session.user.id;
+
+    return (
+      <View style={styles.inlineChatDrawer}>
+        <View style={styles.inlineChatDrawerTop}>
+          <Text style={styles.inlineChatDrawerLabel} numberOfLines={1}>
+            {isSelfChat ? `${partner.nickname || '나'} (나와의 채팅)` : `${partner.nickname || '대화방'} 대화`}
+          </Text>
+          <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.inlineChatCollapseBtn}>
+            <Text style={styles.inlineChatCollapseText}>접기</Text>
+            <Ionicons name="chevron-up" size={14} color="#52525B" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          ref={inlineChatScrollRef}
+          style={styles.inlineChatHistoryScroll}
+          contentContainerStyle={{ padding: 12, paddingBottom: 14 }}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() => inlineChatScrollRef.current?.scrollToEnd({ animated: true })}
+        >
+          {chatMessages.length === 0 ? (
+            <View style={styles.inlineChatEmpty}>
+              <Text style={styles.inlineChatEmptyText}>
+                아직 메시지가 없습니다. 아래 입력창에서 바로 대화를 시작해 보세요.
+              </Text>
+            </View>
+          ) : (
+            chatMessages.map((item) => {
+              const isMine = item.sender_id === session.user.id;
+              const timeStr = new Date(item.created_at).toLocaleTimeString('ko-KR', {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+
+              return (
+                <View key={String(item.id)} style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
+                  {isMine && (
+                    <View style={styles.mineMetaCol}>
+                      {!item.is_read && <Text style={styles.unreadBadgeText}>1</Text>}
+                      <Text style={styles.bubbleTime}>{timeStr}</Text>
+                    </View>
+                  )}
+
+                  {!isMine && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        if (partner.avatar_url) {
+                          setViewingImage({
+                            uri: partner.avatar_url,
+                            authorId: partner.id,
+                            authorName: partner.nickname || '상대방',
+                            avatarUrl: partner.avatar_url,
+                            dateText: '프로필 사진',
+                            likeCount: 0,
+                            isLikedByMe: false,
+                          });
+                        }
+                      }}
+                    >
+                      {partner.avatar_url ? (
+                        <Image source={{ uri: partner.avatar_url }} style={styles.inlineChatAvatar} />
+                      ) : (
+                        <View style={[styles.inlineChatAvatar, styles.defaultSmallAvatar]}>
+                          <Ionicons name="person" size={13} color="#64748B" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  <View style={{ maxWidth: '74%' }}>
+                    {!isMine && (
+                      <Text style={styles.chatSenderName}>{partner.nickname || '상대방'}</Text>
+                    )}
+
+                    {item.image_url ? (
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() =>
+                          setViewingImage({
+                            uri: item.image_url,
+                            authorId: item.sender_id,
+                            authorName: isMine ? (profile.nickname || '나') : (partner.nickname || '상대방'),
+                            avatarUrl: isMine ? profile.avatar_url : partner.avatar_url,
+                            dateText: new Date(item.created_at).toLocaleString('ko-KR'),
+                            likeCount: 0,
+                            isLikedByMe: false,
+                          })
+                        }
+                        style={styles.chatPhotoBubble}
+                      >
+                        <Image
+                          source={{ uri: item.image_url }}
+                          style={styles.chatBubbleImage}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
+                    ) : item.file_url ? (
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => Linking.openURL(item.file_url)}
+                        style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, styles.fileBubbleBox]}
+                      >
+                        <View style={styles.fileIconCircle}>
+                          <Ionicons name="attach" size={18} color="#333333" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.fileBubbleName} numberOfLines={2}>
+                            {item.file_name || '첨부파일'}
+                          </Text>
+                          <Text style={styles.fileBubbleHint}>터치하여 파일 열기 / 저장</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                        <Text style={styles.bubbleText}>{item.content}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {!isMine && <Text style={styles.bubbleTime}>{timeStr}</Text>}
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+
+        <View style={styles.inlineChatInputBar}>
+          <TouchableOpacity
+            style={[styles.chatPlusBtn, chatAttachMenuOpen && styles.chatPlusBtnActive]}
+            onPress={() => setChatAttachMenuOpen(!chatAttachMenuOpen)}
+            disabled={sendingMsg}
+          >
+            <Ionicons name={chatAttachMenuOpen ? 'close' : 'add'} size={20} color="#444444" />
+          </TouchableOpacity>
+
+          <TextInput
+            style={styles.inlineChatTextInput}
+            placeholder="메시지를 입력하세요..."
+            value={chatInput}
+            onChangeText={setChatInput}
+            onFocus={() => setChatAttachMenuOpen(false)}
+            multiline
+          />
+
+          <TouchableOpacity
+            style={[styles.inlineChatSendBtn, (!chatInput.trim() || sendingMsg) && { opacity: 0.5 }]}
+            onPress={sendChatMessage}
+            disabled={!chatInput.trim() || sendingMsg}
+          >
+            {sendingMsg ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.inlineChatSendText}>전송</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {chatAttachMenuOpen && (
+          <View style={styles.inlineAttachDrawer}>
+            <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatPhoto}>
+              <View style={[styles.attachDrawerIconBox, { backgroundColor: '#48BB78' }]}>
+                <Ionicons name="image-outline" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.attachDrawerLabel}>사진 올리기</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatFile}>
+              <View style={[styles.attachDrawerIconBox, { backgroundColor: '#4299E1' }]}>
+                <Ionicons name="document-attach-outline" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.attachDrawerLabel}>파일 첨부</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const renderChatsTabScreen = () => (
-    <View style={styles.ktContainer}>
+    <KeyboardAvoidingView
+      style={styles.ktContainer}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.ktHeader}>
         <Text style={styles.ktPageTitle}>메시지</Text>
         <TouchableOpacity style={styles.ktIconBtn} onPress={fetchFriendsAndFavorites}>
@@ -1992,40 +2285,53 @@ export default function App() {
       <FlatList
         data={members}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 14 }}
+        extraData={{ activeChatId: chatPartner?.id, chatMessages, chatInput, sendingMsg, chatAttachMenuOpen }}
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 32 }}
+        keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => {
           const isMe = item.id === session.user.id;
+          const isExpanded = chatPartner?.id === item.id;
+
           return (
-            <TouchableOpacity
-              style={styles.memberRow}
-              onPress={() => setChatPartner(item)}
-            >
-              {item.avatar_url ? (
-                <Image source={{ uri: item.avatar_url }} style={styles.memberAvatar} />
-              ) : (
-                <View style={[styles.memberAvatar, styles.ktDefaultAvatar]}>
-                  <Ionicons name="person" size={20} color="#64748B" />
+            <View style={[styles.memberCardGroup, isExpanded && styles.memberCardGroupExpanded]}>
+              <TouchableOpacity
+                style={[styles.memberRow, isExpanded && styles.memberRowActive]}
+                activeOpacity={0.75}
+                onPress={() => toggleInlineChat(item)}
+              >
+                {item.avatar_url ? (
+                  <Image source={{ uri: item.avatar_url }} style={styles.memberAvatar} />
+                ) : (
+                  <View style={[styles.memberAvatar, styles.ktDefaultAvatar]}>
+                    <Ionicons name="person" size={20} color="#64748B" />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.memberName}>{item.nickname || '이름 없음'}</Text>
+                    {isMe && (
+                      <View style={styles.meBadge}>
+                        <Text style={styles.meBadgeText}>나와의 채팅</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.memberBio} numberOfLines={1}>
+                    {item.bio || '터치하여 아래에서 대화하기'}
+                  </Text>
                 </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={styles.memberName}>{item.nickname || '이름 없음'}</Text>
-                  {isMe && (
-                    <View style={styles.meBadge}>
-                      <Text style={styles.meBadgeText}>나와의 채팅</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.memberBio} numberOfLines={1}>
-                  {item.bio || '터치하여 1:1 대화 시작하기'}
-                </Text>
-              </View>
-              <Ionicons name="chatbubble-outline" size={18} color="#2B6CB0" />
-            </TouchableOpacity>
+                <Ionicons
+                  name={isExpanded ? 'chevron-up' : 'chatbubble-outline'}
+                  size={18}
+                  color={isExpanded ? '#18181B' : '#2B6CB0'}
+                />
+              </TouchableOpacity>
+
+              {isExpanded && renderInlineChatDrawer(item)}
+            </View>
           );
         }}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 
   const renderProfileHeader = () => (
@@ -2067,7 +2373,7 @@ export default function App() {
             <TouchableOpacity style={styles.topPillBtn} onPress={openProfileEditor}>
               <Text style={styles.topPillBtnText}>프로필 편집</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.topCircleBtn} onPress={() => supabase.auth.signOut()}>
+            <TouchableOpacity style={styles.topCircleBtn} onPress={handleLogout}>
               <Text style={[styles.topCircleBtnText, { fontSize: 11 }]}>로그아웃</Text>
             </TouchableOpacity>
           </View>
@@ -2114,7 +2420,7 @@ export default function App() {
               <TouchableOpacity
                 style={styles.glassHalfBtn}
                 onPress={() =>
-                  setChatPartner({
+                  openInlineChatInMessagesTab({
                     id: session.user.id,
                     nickname: profile.nickname || '나',
                     avatar_url: profile.avatar_url,
@@ -2203,6 +2509,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setAccountMenuOpen(false);
               setOnlyFavoritesFeed(false);
               fetchPosts();
               setMainTab('home');
@@ -2220,6 +2527,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setAccountMenuOpen(false);
               fetchFriendsAndFavorites();
               setMainTab('friends');
             }}
@@ -2236,6 +2544,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setAccountMenuOpen(false);
               fetchFriendsAndFavorites();
               setMainTab('chats');
             }}
@@ -2252,6 +2561,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setAccountMenuOpen(false);
               setOnlyFavoritesFeed(!onlyFavoritesFeed);
               setMainTab('home');
             }}
@@ -2268,6 +2578,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setAccountMenuOpen(false);
               setImageUri(null);
               setContent('');
               setWriteModalVisible(true);
@@ -2280,6 +2591,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setAccountMenuOpen(false);
               setMainTab('story');
             }}
           >
@@ -2423,7 +2735,7 @@ export default function App() {
                   onPress={() => {
                     const target = selectedFriend;
                     setSelectedFriend(null);
-                    setChatPartner(target);
+                    openInlineChatInMessagesTab(target);
                   }}
                 >
                   <Ionicons name="chatbubble-outline" size={19} color="#3C1E1E" />
@@ -2435,187 +2747,6 @@ export default function App() {
             </View>
           </View>
         </View>
-      )}
-
-      {chatPartner && (
-        <KeyboardAvoidingView
-          style={styles.messengerFullScreen}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={{ flex: 1, backgroundColor: '#BACEE0' }}>
-            <View style={styles.msgHeader}>
-              <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.msgBackBtn}>
-                <Ionicons name="arrow-back" size={16} color="#3C1E1E" />
-                <Text style={styles.msgBackText}>닫기</Text>
-              </TouchableOpacity>
-              <Text style={styles.msgHeaderTitle} numberOfLines={1}>
-                {chatPartner.id === session.user.id
-                  ? `${chatPartner.nickname || '나'} (나와의 채팅)`
-                  : chatPartner.nickname || '대화방'}
-              </Text>
-              <View style={{ width: 52 }}>
-                {sendingMsg && <ActivityIndicator size="small" color="#3C1E1E" />}
-              </View>
-            </View>
-
-            <FlatList
-              ref={chatListRef}
-              data={chatMessages}
-              keyExtractor={(item) => String(item.id)}
-              contentContainerStyle={{ padding: 14, paddingBottom: 20 }}
-              onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
-              renderItem={({ item }) => {
-                const isMine = item.sender_id === session.user.id;
-                const timeStr = new Date(item.created_at).toLocaleTimeString('ko-KR', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
-
-                return (
-                  <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
-                    {isMine && (
-                      <View style={styles.mineMetaCol}>
-                        {!item.is_read && <Text style={styles.unreadBadgeText}>1</Text>}
-                        <Text style={styles.bubbleTime}>{timeStr}</Text>
-                      </View>
-                    )}
-
-                    {!isMine && (
-                      <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={() => {
-                          if (chatPartner.avatar_url) {
-                            setViewingImage({
-                              uri: chatPartner.avatar_url,
-                              authorId: chatPartner.id,
-                              authorName: chatPartner.nickname || '상대방',
-                              avatarUrl: chatPartner.avatar_url,
-                              dateText: '프로필 사진',
-                              likeCount: 0,
-                              isLikedByMe: false,
-                            });
-                          }
-                        }}
-                      >
-                        {chatPartner.avatar_url ? (
-                          <Image source={{ uri: chatPartner.avatar_url }} style={styles.chatAvatar} />
-                        ) : (
-                          <View style={[styles.chatAvatar, styles.defaultSmallAvatar]}>
-                            <Ionicons name="person" size={15} color="#64748B" />
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    )}
-
-                    <View style={{ maxWidth: '72%' }}>
-                      {!isMine && (
-                        <Text style={styles.chatSenderName}>{chatPartner.nickname || '상대방'}</Text>
-                      )}
-
-                      {item.image_url ? (
-                        <TouchableOpacity
-                          activeOpacity={0.9}
-                          onPress={() =>
-                            setViewingImage({
-                              uri: item.image_url,
-                              authorId: item.sender_id,
-                              authorName: isMine ? (profile.nickname || '나') : (chatPartner.nickname || '상대방'),
-                              avatarUrl: isMine ? profile.avatar_url : chatPartner.avatar_url,
-                              dateText: new Date(item.created_at).toLocaleString('ko-KR'),
-                              likeCount: 0,
-                              isLikedByMe: false,
-                            })
-                          }
-                          style={styles.chatPhotoBubble}
-                        >
-                          <Image
-                            source={{ uri: item.image_url }}
-                            style={styles.chatBubbleImage}
-                            resizeMode="cover"
-                          />
-                        </TouchableOpacity>
-                      ) : item.file_url ? (
-                        <TouchableOpacity
-                          activeOpacity={0.85}
-                          onPress={() => Linking.openURL(item.file_url)}
-                          style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, styles.fileBubbleBox]}
-                        >
-                          <View style={styles.fileIconCircle}>
-                            <Ionicons name="attach" size={18} color="#333333" />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.fileBubbleName} numberOfLines={2}>
-                              {item.file_name || '첨부파일'}
-                            </Text>
-                            <Text style={styles.fileBubbleHint}>터치하여 파일 열기 / 저장</Text>
-                          </View>
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-                          <Text style={styles.bubbleText}>{item.content}</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {!isMine && <Text style={styles.bubbleTime}>{timeStr}</Text>}
-                  </View>
-                );
-              }}
-              ListEmptyComponent={
-                <View style={{ padding: 40, alignItems: 'center' }}>
-                  <Text style={{ color: '#4A5568', fontSize: 13 }}>
-                    첫 메시지, 사진 또는 파일을 보내 대화를 시작해 보세요!
-                  </Text>
-                </View>
-              }
-            />
-
-            <View style={styles.chatInputBar}>
-              <TouchableOpacity
-                style={[styles.chatPlusBtn, chatAttachMenuOpen && styles.chatPlusBtnActive]}
-                onPress={() => setChatAttachMenuOpen(!chatAttachMenuOpen)}
-                disabled={sendingMsg}
-              >
-                <Ionicons name={chatAttachMenuOpen ? 'close' : 'add'} size={21} color="#444444" />
-              </TouchableOpacity>
-
-              <TextInput
-                style={styles.chatTextInput}
-                placeholder="메시지를 입력하세요..."
-                value={chatInput}
-                onChangeText={setChatInput}
-                onFocus={() => setChatAttachMenuOpen(false)}
-                multiline
-              />
-
-              <TouchableOpacity
-                style={[styles.chatSendBtn, !chatInput.trim() && { opacity: 0.5 }]}
-                onPress={sendChatMessage}
-                disabled={!chatInput.trim() || sendingMsg}
-              >
-                <Text style={styles.chatSendText}>전송</Text>
-              </TouchableOpacity>
-            </View>
-
-            {chatAttachMenuOpen && (
-              <View style={styles.attachDrawer}>
-                <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatPhoto}>
-                  <View style={[styles.attachDrawerIconBox, { backgroundColor: '#48BB78' }]}>
-                    <Ionicons name="image-outline" size={24} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.attachDrawerLabel}>사진 올리기</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatFile}>
-                  <View style={[styles.attachDrawerIconBox, { backgroundColor: '#4299E1' }]}>
-                    <Ionicons name="document-attach-outline" size={24} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.attachDrawerLabel}>파일 첨부</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </KeyboardAvoidingView>
       )}
 
       {editProfileModal && (
@@ -2761,7 +2892,7 @@ export default function App() {
         }}
         onOpenAuthorChat={(partner) => {
           setViewingImage(null);
-          setChatPartner(partner);
+          openInlineChatInMessagesTab(partner);
         }}
       />
     </SafeAreaView>
@@ -2769,7 +2900,6 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  // --- 로그인 / 회원가입 (기존 연하늘색·진하늘색 톤 유지 + 참고 이미지 스타일) ---
   authContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -2843,7 +2973,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
 
-  // --- 화면 왼쪽 세로 메뉴바: 한 손 터치용 중앙 정렬 ---
   leftVerticalMenuBar: {
     width: LEFT_RAIL_WIDTH,
     backgroundColor: '#FFFFFF',
@@ -2874,7 +3003,6 @@ const styles = StyleSheet.create({
     borderRadius: 13,
   },
 
-  // --- 우측 메인 콘텐츠 영역 (좌우 여백 균형) ---
   rightContentArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
@@ -2911,9 +3039,56 @@ const styles = StyleSheet.create({
     transform: [{ skewX: '-8deg' }],
   },
   igTopRightBtn: {
-    width: 24,
-    alignItems: 'flex-end',
+    width: 32,
+    height: 32,
+    alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  accountPopoverMenu: {
+    alignSelf: 'flex-end',
+    marginRight: 14,
+    marginBottom: 8,
+    width: 196,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  accountPopoverHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  accountPopoverName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#18181B',
+  },
+  accountPopoverEmail: {
+    fontSize: 11,
+    color: '#71717A',
+    marginTop: 1,
+  },
+  accountPopoverActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  accountPopoverActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#18181B',
   },
 
   igBrandDropdown: {
@@ -2939,7 +3114,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   igDropdownLabel: { fontSize: 14, fontWeight: '600', color: '#191919' },
-  igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 12 },
+  igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 10 },
 
   igStoryBarContent: {
     paddingHorizontal: 14,
@@ -2986,7 +3161,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // --- 미니멀 & 간결 피드 카드 ---
   minimalPostCard: {
     backgroundColor: '#FFFFFF',
     paddingTop: 16,
@@ -3085,7 +3259,6 @@ const styles = StyleSheet.create({
     color: '#18181B',
   },
 
-  // --- 전체화면 원본 팝업 ---
   fullscreenViewerRoot: {
     position: 'absolute',
     top: 0,
@@ -3615,16 +3788,28 @@ const styles = StyleSheet.create({
   emptyBox: { padding: 40, alignItems: 'center' },
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 13 },
 
+  memberCardGroup: {
+    marginBottom: 10,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    overflow: 'hidden',
+  },
+  memberCardGroupExpanded: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#CBD5E1',
+  },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: '#FAFAFA',
-    borderRadius: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#EEEEEE',
     gap: 10,
+  },
+  memberRowActive: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
   },
   memberAvatar: { width: 44, height: 44, borderRadius: 16 },
   memberName: { fontSize: 14, fontWeight: 'bold', color: '#222' },
@@ -3632,38 +3817,65 @@ const styles = StyleSheet.create({
   meBadge: { backgroundColor: '#3C1E1E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   meBadgeText: { color: '#FEE500', fontSize: 10, fontWeight: 'bold' },
 
-  messengerFullScreen: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#FFFFFF',
-    zIndex: 950,
+  inlineChatDrawer: {
+    backgroundColor: '#EAF2F8',
   },
-  msgHeader: {
+  inlineChatDrawerTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FEE500',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: '#E1ECF4',
     borderBottomWidth: 1,
-    borderBottomColor: '#E6CF00',
+    borderBottomColor: '#D4E2ED',
   },
-  msgHeaderTitle: { fontSize: 16, fontWeight: 'bold', color: '#3C1E1E', flex: 1, textAlign: 'center' },
-  msgBackBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 4 },
-  msgBackText: { fontSize: 14, fontWeight: 'bold', color: '#3C1E1E' },
+  inlineChatDrawerLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    flex: 1,
+  },
+  inlineChatCollapseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  inlineChatCollapseText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#52525B',
+  },
+  inlineChatHistoryScroll: {
+    maxHeight: 240,
+  },
+  inlineChatEmpty: {
+    paddingVertical: 24,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  inlineChatEmptyText: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  inlineChatAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 12,
+    marginBottom: 2,
+  },
 
-  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12, gap: 6 },
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 10, gap: 6 },
   bubbleRowMine: { justifyContent: 'flex-end' },
   bubbleRowOther: { justifyContent: 'flex-start' },
-  chatAvatar: { width: 34, height: 34, borderRadius: 14, marginBottom: 2 },
   chatSenderName: { fontSize: 11, color: '#333', marginBottom: 3, marginLeft: 2 },
-  bubbleBox: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14 },
+  bubbleBox: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 },
   bubbleMine: { backgroundColor: '#FEE500', borderBottomRightRadius: 2 },
   bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 2 },
-  bubbleText: { fontSize: 14, color: '#222', lineHeight: 20 },
+  bubbleText: { fontSize: 13.5, color: '#222', lineHeight: 19 },
 
   chatPhotoBubble: {
     borderRadius: 12,
@@ -3673,25 +3885,25 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.08)',
   },
   chatBubbleImage: {
-    width: 210,
-    height: 210,
+    width: 190,
+    height: 190,
   },
   fileBubbleBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    minWidth: 190,
+    minWidth: 175,
   },
   fileIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(0,0,0,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   fileBubbleName: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: 'bold',
     color: '#222',
   },
@@ -3703,77 +3915,79 @@ const styles = StyleSheet.create({
 
   mineMetaCol: { alignItems: 'flex-end', justifyContent: 'flex-end', marginBottom: 2 },
   unreadBadgeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: 'bold',
-    color: '#FFE600',
-    textShadowColor: 'rgba(0,0,0,0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    color: '#B45309',
     marginBottom: 1,
   },
   bubbleTime: { fontSize: 10, color: '#4A5568', marginBottom: 1 },
 
-  chatInputBar: {
+  inlineChatInputBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
     borderTopWidth: 1,
-    borderTopColor: '#DDD',
-    gap: 8,
+    borderTopColor: '#CBD5E1',
+    gap: 6,
   },
   chatPlusBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F0F0F0',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
   chatPlusBtnActive: {
     backgroundColor: '#E2E8F0',
   },
-  chatPlusText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#444',
-    lineHeight: 22,
-  },
-  chatTextInput: {
+  inlineChatTextInput: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    fontSize: 14,
-    maxHeight: 90,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    fontSize: 13.5,
+    maxHeight: 80,
   },
-  chatSendBtn: { backgroundColor: '#FEE500', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18 },
-  chatSendText: { color: '#3C1E1E', fontWeight: 'bold', fontSize: 14 },
+  inlineChatSendBtn: {
+    backgroundColor: '#0288D1',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 18,
+  },
+  inlineChatSendText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
 
-  attachDrawer: {
+  inlineAttachDrawer: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingVertical: 20,
-    paddingHorizontal: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
     borderTopWidth: 1,
-    borderTopColor: '#EEEEEE',
-    gap: 28,
+    borderTopColor: '#E2E8F0',
+    gap: 24,
   },
   attachDrawerItem: {
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   attachDrawerIconBox: {
-    width: 54,
-    height: 54,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
   attachDrawerLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
     color: '#333',
   },
