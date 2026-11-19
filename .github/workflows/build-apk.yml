@@ -26,27 +26,21 @@ jobs:
       - name: Install dependencies
         run: |
           npm install
-          npx expo install @expo/vector-icons expo-asset
+          npx expo install @expo/vector-icons expo-font expo-asset
           npx expo install --fix
 
       - name: Prebuild Android
         run: |
           npx expo prebuild --platform android --clean
           sed -i "/dependencyResolutionManagement/,/}/ s|repositories {|repositories {\n        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }|g" android/settings.gradle || true
-        env:
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-
-      - name: Bundle JS and Build APK
-        env:
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-        run: |
-          mkdir -p android/app/src/main/assets
-          npx expo export:embed --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
           node -e '
             const fs = require("fs");
             const path = require("path");
+            let fontVer = "13.3.0";
+            try {
+              const pkg = JSON.parse(fs.readFileSync("node_modules/expo-font/package.json", "utf8"));
+              if (pkg.version) fontVer = pkg.version;
+            } catch (_) {}
             function patchObj(obj) {
               let changed = false;
               if (!obj || typeof obj !== "object") return false;
@@ -57,7 +51,8 @@ jobs:
                 return changed;
               }
               if (obj.publication && typeof obj.publication === "object" && !obj.publication.version) {
-                obj.publication.version = "0.0.0";
+                const modStr = JSON.stringify(obj);
+                obj.publication.version = modStr.includes("font") ? fontVer : "1.0.0";
                 changed = true;
               }
               for (const k of Object.keys(obj)) {
@@ -78,7 +73,67 @@ jobs:
                       const parsed = JSON.parse(raw);
                       if (patchObj(parsed)) {
                         fs.writeFileSync(full, JSON.stringify(parsed, null, 2));
-                        console.log("PATCHED:", full);
+                        console.log("PATCHED:", full, "fontVer:", fontVer);
+                      }
+                    }
+                  } catch (_) {}
+                }
+              }
+            }
+            walk(".");
+          '
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Bundle JS and Build APK
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx expo export:embed --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            let fontVer = "13.3.0";
+            try {
+              const pkg = JSON.parse(fs.readFileSync("node_modules/expo-font/package.json", "utf8"));
+              if (pkg.version) fontVer = pkg.version;
+            } catch (_) {}
+            function patchObj(obj) {
+              let changed = false;
+              if (!obj || typeof obj !== "object") return false;
+              if (Array.isArray(obj)) {
+                for (const item of obj) {
+                  if (patchObj(item)) changed = true;
+                }
+                return changed;
+              }
+              if (obj.publication && typeof obj.publication === "object" && (!obj.publication.version || obj.publication.version === "0.0.0")) {
+                const modStr = JSON.stringify(obj);
+                obj.publication.version = modStr.includes("font") ? fontVer : "1.0.0";
+                changed = true;
+              }
+              for (const k of Object.keys(obj)) {
+                if (patchObj(obj[k])) changed = true;
+              }
+              return changed;
+            }
+            function walk(dir) {
+              if (!fs.existsSync(dir)) return;
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (entry.name === ".git") continue;
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) walk(full);
+                else if (entry.name.endsWith(".json")) {
+                  try {
+                    const raw = fs.readFileSync(full, "utf8");
+                    if (raw.includes("\"publication\"")) {
+                      const parsed = JSON.parse(raw);
+                      if (patchObj(parsed)) {
+                        fs.writeFileSync(full, JSON.stringify(parsed, null, 2));
+                        console.log("PATCHED:", full, "fontVer:", fontVer);
                       }
                     }
                   } catch (_) {}
