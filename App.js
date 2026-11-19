@@ -114,6 +114,9 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
+  // 하단 메인 내비게이션 탭 ('friends': 친구탭, 'chats': 채팅탭, 'story': 내 스토리)
+  const [mainTab, setMainTab] = useState('friends');
+
   // 프로필 및 방문자 상태
   const [profile, setProfile] = useState({
     nickname: '',
@@ -131,7 +134,16 @@ export default function App() {
   const [tempAvatarUri, setTempAvatarUri] = useState(null);
   const [tempCoverUri, setTempCoverUri] = useState(null);
 
-  // 탭 전환 ('album' | 'posts')
+  // 친구탭 상태 (전체 회원, 즐겨찾기 ID 목록, 검색창, 접기/펼치기, 친구 미니프로필)
+  const [members, setMembers] = useState([]);
+  const [favoriteIds, setFavoriteIds] = useState([]);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [favSectionOpen, setFavSectionOpen] = useState(true);
+  const [friendsSectionOpen, setFriendsSectionOpen] = useState(true);
+  const [selectedFriend, setSelectedFriend] = useState(null);
+
+  // 내 스토리 내부 탭 ('album' | 'posts')
   const [activeTab, setActiveTab] = useState('album');
 
   // 게시글 상태
@@ -148,9 +160,7 @@ export default function App() {
   // 사진 크게 보기 상태
   const [selectedAlbumPost, setSelectedAlbumPost] = useState(null);
 
-  // --- 메신저(1:1 실시간 채팅 & 읽음 확인) 관련 상태 ---
-  const [messengerVisible, setMessengerVisible] = useState(false);
-  const [members, setMembers] = useState([]);
+  // 메신저(1:1 실시간 채팅방) 상태
   const [chatPartner, setChatPartner] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -169,25 +179,24 @@ export default function App() {
   useEffect(() => {
     if (session && supabase) {
       loadAndCountProfile(session.user);
+      fetchFriendsAndFavorites();
       fetchPosts();
     }
   }, [session]);
 
-  // 1:1 채팅방이 열려 있을 때: ① 이전 대화 불러오기 + 읽음 처리, ② 실시간(INSERT/UPDATE) 수신 구독
+  // 1:1 채팅방 실시간 구독 및 읽음('1' 소멸) 처리
   useEffect(() => {
     if (!supabase || !session || !chatPartner) return;
 
     const myId = session.user.id;
     const partnerId = chatPartner.id;
 
-    // 1) 처음 방에 들어왔을 때 메시지 조회 및 상대방 메시지 읽음(is_read = true) 처리
     const initChatRoom = async () => {
       await markMessagesAsRead(partnerId);
       await fetchChatMessages(partnerId);
     };
     initChatRoom();
 
-    // 2) Supabase Realtime 실시간 구독 (새 메시지 수신 + 상대방 읽음 '1' 소멸 동시 감지)
     const channel = supabase
       .channel(`realtime_chat_${myId}_${partnerId}_${Date.now()}`)
       .on(
@@ -201,7 +210,6 @@ export default function App() {
               (newMsg.sender_id === partnerId && newMsg.receiver_id === myId);
 
             if (isRelevant) {
-              // 상대방이 보낸 메시지가 실시간으로 도착했고 내가 현재 채팅방을 보고 있다면 즉시 읽음 처리
               if (newMsg.sender_id === partnerId && newMsg.receiver_id === myId && !newMsg.is_read) {
                 newMsg.is_read = true;
                 markMessagesAsRead(partnerId);
@@ -222,7 +230,6 @@ export default function App() {
       )
       .subscribe();
 
-    // 3) 모바일 네트워크 전환 시에도 누락이 없도록 4초마다 안전 동기화
     const syncTimer = setInterval(async () => {
       await markMessagesAsRead(partnerId);
       await fetchChatMessages(partnerId);
@@ -245,7 +252,44 @@ export default function App() {
     );
   }
 
-  // 상대방이 나에게 보낸 안 읽은 메시지를 모두 '읽음(is_read: true)'으로 변경
+  // 친구 목록 & 즐겨찾기 목록 불러오기
+  const fetchFriendsAndFavorites = async () => {
+    const { data: memberData } = await supabase
+      .from('profiles')
+      .select('id, nickname, bio, avatar_url, cover_url')
+      .order('nickname', { ascending: true });
+
+    if (memberData) setMembers(memberData);
+
+    const { data: favData } = await supabase
+      .from('friend_favorites')
+      .select('friend_id')
+      .eq('user_id', session.user.id);
+
+    if (favData) {
+      setFavoriteIds(favData.map((row) => row.friend_id));
+    }
+  };
+
+  // 즐겨찾는 친구 등록 / 해제 토글
+  const toggleFavoriteFriend = async (friendId) => {
+    const isAlreadyFav = favoriteIds.includes(friendId);
+    if (isAlreadyFav) {
+      setFavoriteIds((prev) => prev.filter((id) => id !== friendId));
+      await supabase
+        .from('friend_favorites')
+        .delete()
+        .eq('user_id', session.user.id)
+        .eq('friend_id', friendId);
+    } else {
+      setFavoriteIds((prev) => [...prev, friendId]);
+      await supabase
+        .from('friend_favorites')
+        .insert({ user_id: session.user.id, friend_id: friendId });
+    }
+  };
+
+  // 상대방이 보낸 메시지 읽음 처리
   const markMessagesAsRead = async (partnerId) => {
     const myId = session.user.id;
     await supabase
@@ -256,21 +300,6 @@ export default function App() {
       .eq('is_read', false);
   };
 
-  // 메신저 열기 및 전체 회원 목록 조회
-  const openMessenger = async () => {
-    setChatPartner(null);
-    setMessengerVisible(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, nickname, bio, avatar_url')
-      .order('nickname', { ascending: true });
-
-    if (!error && data) {
-      setMembers(data);
-    }
-  };
-
-  // 선택한 상대방과의 대화 내역 불러오기
   const fetchChatMessages = async (partnerId) => {
     const myId = session.user.id;
     const { data, error } = await supabase
@@ -284,7 +313,6 @@ export default function App() {
     }
   };
 
-  // 메시지 전송하기 (상대방이 읽기 전까지 is_read: false -> '1' 표시)
   const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text || !chatPartner || sendingMsg) return;
@@ -300,7 +328,7 @@ export default function App() {
         sender_id: session.user.id,
         receiver_id: chatPartner.id,
         content: text,
-        is_read: isSelfChat, // 나와의 채팅은 즉시 읽음 처리, 타인은 안 읽음(false -> 1 표시)
+        is_read: isSelfChat,
       })
       .select()
       .single();
@@ -447,6 +475,7 @@ export default function App() {
 
       setProfile((prev) => ({ ...prev, ...updates }));
       setEditProfileModal(false);
+      fetchFriendsAndFavorites();
       fetchPosts();
       showAlert('완료', '프로필이 저장되었습니다!');
     } catch (e) {
@@ -615,6 +644,240 @@ export default function App() {
     );
   }
 
+  // 친구 목록 데이터 가공 (나를 제외한 친구들 + 검색어 필터)
+  const otherMembers = members.filter((m) => m.id !== session.user.id);
+  const filteredMembers = otherMembers.filter((m) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (m.nickname || '').toLowerCase().includes(q) ||
+      (m.bio || '').toLowerCase().includes(q)
+    );
+  });
+  const favoriteFriends = filteredMembers.filter((m) => favoriteIds.includes(m.id));
+
+  // 친구 한 줄 렌더링 (카카오톡 친구탭 스타일)
+  const renderFriendRow = (friend) => {
+    const isFav = favoriteIds.includes(friend.id);
+    return (
+      <TouchableOpacity
+        key={friend.id}
+        style={styles.ktFriendRow}
+        activeOpacity={0.75}
+        onPress={() => setSelectedFriend(friend)}
+      >
+        {friend.avatar_url ? (
+          <Image source={{ uri: friend.avatar_url }} style={styles.ktFriendAvatar} />
+        ) : (
+          <View style={[styles.ktFriendAvatar, styles.ktDefaultAvatar]}>
+            <Text style={{ fontSize: 20 }}>👤</Text>
+          </View>
+        )}
+        <View style={{ flex: 1 }}>
+          <Text style={styles.ktFriendName}>{friend.nickname || '친구'}</Text>
+          {friend.bio ? (
+            <Text style={styles.ktFriendBio} numberOfLines={1}>
+              {friend.bio}
+            </Text>
+          ) : null}
+        </View>
+        <TouchableOpacity
+          style={styles.ktFavStarBtn}
+          onPress={() => toggleFavoriteFriend(friend.id)}
+        >
+          <Text style={{ fontSize: 18, color: isFav ? '#F6AD55' : '#CBD5E0' }}>
+            {isFav ? '★' : '☆'}
+          </Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  };
+
+  // --- 화면 1: 카카오톡 스타일 친구탭 ('friends') ---
+  const renderFriendsTabScreen = () => (
+    <View style={styles.ktContainer}>
+      {/* 상단 내 미니 프로필 & 검색/설정 아이콘 */}
+      <View style={styles.ktHeader}>
+        <TouchableOpacity
+          style={styles.ktMyMiniProfile}
+          onPress={() => setMainTab('story')}
+        >
+          {profile.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.ktMyMiniAvatar} />
+          ) : (
+            <View style={[styles.ktMyMiniAvatar, styles.ktDefaultAvatar]}>
+              <Text style={{ fontSize: 18 }}>👤</Text>
+            </View>
+          )}
+          <Text style={styles.ktMyMiniName}>-{profile.nickname || '내 스토리'}-</Text>
+        </TouchableOpacity>
+
+        <View style={styles.ktHeaderIcons}>
+          <TouchableOpacity
+            style={styles.ktIconBtn}
+            onPress={() => {
+              setSearchVisible(!searchVisible);
+              setSearchQuery('');
+            }}
+          >
+            <Text style={{ fontSize: 19 }}>🔍</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.ktIconBtn} onPress={openProfileEditor}>
+            <Text style={{ fontSize: 19 }}>⚙️</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* 친구 / 소식 알약 버튼 바 */}
+      <View style={styles.ktPillBar}>
+        <TouchableOpacity style={styles.ktPillActive}>
+          <Text style={styles.ktPillActiveText}>친구</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.ktPillInactive}
+          onPress={() => {
+            setActiveTab('posts');
+            setMainTab('story');
+          }}
+        >
+          <Text style={styles.ktPillInactiveText}>소식</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 돋보기 클릭 시 나타나는 친구 검색창 */}
+      {searchVisible && (
+        <View style={styles.ktSearchBox}>
+          <TextInput
+            style={styles.ktSearchInput}
+            placeholder="이름 또는 상태메시지 검색..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoFocus
+          />
+        </View>
+      )}
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
+        {/* 나와의 채팅 / 내 프로필 바로가기 카드 */}
+        <TouchableOpacity
+          style={styles.ktSelfBanner}
+          onPress={() =>
+            setChatPartner({
+              id: session.user.id,
+              nickname: profile.nickname || '나',
+              avatar_url: profile.avatar_url,
+            })
+          }
+        >
+          <View style={styles.ktSelfBadge}>
+            <Text style={{ fontSize: 16 }}>💬</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.ktSelfTitle}>나와의 채팅 (개인 메모장)</Text>
+            <Text style={styles.ktSelfSub} numberOfLines={1}>
+              {profile.bio || '나에게 보내는 메시지를 기록해 보세요'}
+            </Text>
+          </View>
+          <Text style={{ color: '#888', fontSize: 13 }}>열기 ›</Text>
+        </TouchableOpacity>
+
+        {/* 섹션 1: 즐겨찾는 친구 (접기/펼치기 지원) */}
+        <View style={styles.ktSection}>
+          <TouchableOpacity
+            style={styles.ktSectionHeader}
+            onPress={() => setFavSectionOpen(!favSectionOpen)}
+          >
+            <Text style={styles.ktSectionTitle}>즐겨찾는 친구 {favoriteFriends.length}</Text>
+            <Text style={styles.ktSectionArrow}>{favSectionOpen ? '⌃' : '⌄'}</Text>
+          </TouchableOpacity>
+
+          {favSectionOpen && (
+            favoriteFriends.length > 0 ? (
+              favoriteFriends.map(renderFriendRow)
+            ) : (
+              <Text style={styles.ktEmptySectionText}>
+                친구 오른쪽의 ☆ 별표를 누르면 즐겨찾기에 등록됩니다.
+              </Text>
+            )
+          )}
+        </View>
+
+        <View style={styles.ktDivider} />
+
+        {/* 섹션 2: 전체 친구 N (접기/펼치기 지원) */}
+        <View style={styles.ktSection}>
+          <TouchableOpacity
+            style={styles.ktSectionHeader}
+            onPress={() => setFriendsSectionOpen(!friendsSectionOpen)}
+          >
+            <Text style={styles.ktSectionTitle}>친구 {filteredMembers.length}</Text>
+            <Text style={styles.ktSectionArrow}>{friendsSectionOpen ? '⌃' : '⌄'}</Text>
+          </TouchableOpacity>
+
+          {friendsSectionOpen && (
+            filteredMembers.length > 0 ? (
+              filteredMembers.map(renderFriendRow)
+            ) : (
+              <Text style={styles.ktEmptySectionText}>
+                {searchQuery ? '검색된 친구가 없습니다.' : '아직 가입된 다른 회원이 없습니다.'}
+              </Text>
+            )
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+
+  // --- 화면 2: 채팅 목록 탭 ('chats') ---
+  const renderChatsTabScreen = () => (
+    <View style={styles.ktContainer}>
+      <View style={styles.ktHeader}>
+        <Text style={styles.ktPageTitle}>채팅</Text>
+        <TouchableOpacity style={styles.ktIconBtn} onPress={fetchFriendsAndFavorites}>
+          <Text style={{ fontSize: 16, color: '#333' }}>🔄 새로고침</Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={members}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ padding: 14 }}
+        renderItem={({ item }) => {
+          const isMe = item.id === session.user.id;
+          return (
+            <TouchableOpacity
+              style={styles.memberRow}
+              onPress={() => setChatPartner(item)}
+            >
+              {item.avatar_url ? (
+                <Image source={{ uri: item.avatar_url }} style={styles.memberAvatar} />
+              ) : (
+                <View style={[styles.memberAvatar, styles.ktDefaultAvatar]}>
+                  <Text style={{ fontSize: 18 }}>👤</Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.memberName}>{item.nickname || '이름 없음'}</Text>
+                  {isMe && (
+                    <View style={styles.meBadge}>
+                      <Text style={styles.meBadgeText}>나와의 채팅</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.memberBio} numberOfLines={1}>
+                  {item.bio || '터치하여 1:1 대화 시작하기'}
+                </Text>
+              </View>
+              <Text style={styles.chatStartArrow}>대화 ›</Text>
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </View>
+  );
+
+  // --- 화면 3: 내 스토리 탭 ('story') 헤더 & 피드 ---
   const albumPosts = posts.filter((p) => p.image_urls && p.image_urls.length > 0);
 
   const renderProfileHeader = () => (
@@ -657,7 +920,7 @@ export default function App() {
               </TouchableOpacity>
               <View style={styles.glassDividerHorizontal} />
               <View style={styles.glassBottomRow}>
-                <TouchableOpacity style={styles.glassHalfBtn} onPress={openMessenger}>
+                <TouchableOpacity style={styles.glassHalfBtn} onPress={() => setMainTab('chats')}>
                   <Text style={styles.glassBtnText}>💬 메신저 (채팅)</Text>
                 </TouchableOpacity>
                 <View style={styles.glassDividerVertical} />
@@ -799,173 +1062,220 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <FlatList
-        key={activeTab}
-        data={activeTab === 'album' ? albumPosts : posts}
-        numColumns={activeTab === 'album' ? 3 : 1}
-        keyExtractor={(item) => String(item.id)}
-        ListHeaderComponent={renderProfileHeader}
-        renderItem={activeTab === 'album' ? renderAlbumGridItem : renderPostCardItem}
-        ListEmptyComponent={
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>
-              {activeTab === 'album'
-                ? '아직 앨범에 올린 사진이 없습니다.\n상단의 [새 게시물 쓰기]를 눌러 첫 사진을 등록해 보세요!'
-                : '아직 작성된 게시글이 없습니다.\n상단의 [새 게시물 쓰기]를 눌러 첫 글을 남겨 보세요!'}
-            </Text>
-          </View>
-        }
-      />
+      {/* 메인 콘텐츠 영역 (친구탭 / 채팅탭 / 내 스토리) */}
+      <View style={{ flex: 1 }}>
+        {mainTab === 'friends' && renderFriendsTabScreen()}
+        {mainTab === 'chats' && renderChatsTabScreen()}
+        {mainTab === 'story' && (
+          <FlatList
+            key={activeTab}
+            data={activeTab === 'album' ? albumPosts : posts}
+            numColumns={activeTab === 'album' ? 3 : 1}
+            keyExtractor={(item) => String(item.id)}
+            ListHeaderComponent={renderProfileHeader}
+            renderItem={activeTab === 'album' ? renderAlbumGridItem : renderPostCardItem}
+            ListEmptyComponent={
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyText}>
+                  {activeTab === 'album'
+                    ? '아직 앨범에 올린 사진이 없습니다.\n상단의 [새 게시물 쓰기]를 눌러 첫 사진을 등록해 보세요!'
+                    : '아직 작성된 게시글이 없습니다.\n상단의 [새 게시물 쓰기]를 눌러 첫 글을 남겨 보세요!'}
+                </Text>
+              </View>
+            }
+          />
+        )}
+      </View>
 
-      {/* 오버레이 1: 회원 간 메신저 (회원 목록 & 실시간 1:1 채팅방 + 안 읽음 '1' 표시) */}
-      {messengerVisible && (
+      {/* 하단 탭 바 (친구 / 채팅 / 내 스토리) */}
+      <View style={styles.bottomNav}>
+        <TouchableOpacity
+          style={styles.bottomNavItem}
+          onPress={() => {
+            fetchFriendsAndFavorites();
+            setMainTab('friends');
+          }}
+        >
+          <Text style={[styles.bottomNavIcon, mainTab === 'friends' && styles.bottomNavActive]}>👤</Text>
+          <Text style={[styles.bottomNavLabel, mainTab === 'friends' && styles.bottomNavActive]}>친구</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bottomNavItem}
+          onPress={() => {
+            fetchFriendsAndFavorites();
+            setMainTab('chats');
+          }}
+        >
+          <Text style={[styles.bottomNavIcon, mainTab === 'chats' && styles.bottomNavActive]}>💬</Text>
+          <Text style={[styles.bottomNavLabel, mainTab === 'chats' && styles.bottomNavActive]}>채팅</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bottomNavItem}
+          onPress={() => setMainTab('story')}
+        >
+          <Text style={[styles.bottomNavIcon, mainTab === 'story' && styles.bottomNavActive]}>🏡</Text>
+          <Text style={[styles.bottomNavLabel, mainTab === 'story' && styles.bottomNavActive]}>내 스토리</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 오버레이 1: 친구 미니 프로필 팝업 (프로필 확인 + 즐겨찾기 + 1:1 대화 시작) */}
+      {selectedFriend && (
+        <View style={styles.overlayBackdrop}>
+          <View style={styles.friendCardModal}>
+            <ImageBackground
+              source={selectedFriend.cover_url ? { uri: selectedFriend.cover_url } : undefined}
+              style={styles.friendCardCover}
+              resizeMode="cover"
+            >
+              <View style={styles.friendCardCoverOverlay}>
+                <TouchableOpacity
+                  style={styles.friendCardCloseBtn}
+                  onPress={() => setSelectedFriend(null)}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: 'bold' }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            </ImageBackground>
+
+            <View style={styles.friendCardBody}>
+              {selectedFriend.avatar_url ? (
+                <Image source={{ uri: selectedFriend.avatar_url }} style={styles.friendCardAvatar} />
+              ) : (
+                <View style={[styles.friendCardAvatar, styles.defaultAvatar]}>
+                  <Text style={{ fontSize: 30 }}>👤</Text>
+                </View>
+              )}
+              <Text style={styles.friendCardName}>-{selectedFriend.nickname || '친구'}-</Text>
+              <Text style={styles.friendCardBio}>{selectedFriend.bio || '상태 메시지가 없습니다.'}</Text>
+
+              <View style={styles.friendCardActions}>
+                <TouchableOpacity
+                  style={styles.friendCardActionBtn}
+                  onPress={() => toggleFavoriteFriend(selectedFriend.id)}
+                >
+                  <Text style={{ fontSize: 20 }}>
+                    {favoriteIds.includes(selectedFriend.id) ? '⭐' : '☆'}
+                  </Text>
+                  <Text style={styles.friendCardActionLabel}>
+                    {favoriteIds.includes(selectedFriend.id) ? '즐겨찾기 됨' : '즐겨찾기'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.friendCardActionBtn, styles.friendCardChatBtn]}
+                  onPress={() => {
+                    const target = selectedFriend;
+                    setSelectedFriend(null);
+                    setChatPartner(target);
+                  }}
+                >
+                  <Text style={{ fontSize: 20 }}>💬</Text>
+                  <Text style={[styles.friendCardActionLabel, { fontWeight: 'bold', color: '#3C1E1E' }]}>
+                    1:1 채팅하기
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 오버레이 2: 1:1 실시간 채팅방 (안 읽음 '1' 표시 지원) */}
+      {chatPartner && (
         <KeyboardAvoidingView
           style={styles.messengerFullScreen}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {!chatPartner ? (
-            <View style={{ flex: 1 }}>
-              <View style={styles.msgHeader}>
-                <Text style={styles.msgHeaderTitle}>💬 메신저 - 대화 상대 선택</Text>
-                <TouchableOpacity onPress={() => setMessengerVisible(false)} style={styles.msgCloseBtn}>
-                  <Text style={styles.msgCloseText}>닫기</Text>
-                </TouchableOpacity>
-              </View>
+          <View style={{ flex: 1, backgroundColor: '#BACEE0' }}>
+            <View style={styles.msgHeader}>
+              <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.msgBackBtn}>
+                <Text style={styles.msgBackText}>← 닫기</Text>
+              </TouchableOpacity>
+              <Text style={styles.msgHeaderTitle} numberOfLines={1}>
+                {chatPartner.id === session.user.id
+                  ? `${chatPartner.nickname || '나'} (나와의 채팅)`
+                  : chatPartner.nickname || '대화방'}
+              </Text>
+              <View style={{ width: 52 }} />
+            </View>
 
-              <FlatList
-                data={members}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={{ padding: 12 }}
-                renderItem={({ item }) => {
-                  const isMe = item.id === session.user.id;
-                  return (
-                    <TouchableOpacity
-                      style={styles.memberRow}
-                      onPress={() => setChatPartner(item)}
-                    >
-                      {item.avatar_url ? (
-                        <Image source={{ uri: item.avatar_url }} style={styles.memberAvatar} />
+            <FlatList
+              ref={chatListRef}
+              data={chatMessages}
+              keyExtractor={(item) => String(item.id)}
+              contentContainerStyle={{ padding: 14, paddingBottom: 20 }}
+              onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
+              renderItem={({ item }) => {
+                const isMine = item.sender_id === session.user.id;
+                const timeStr = new Date(item.created_at).toLocaleTimeString('ko-KR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+
+                return (
+                  <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
+                    {isMine && (
+                      <View style={styles.mineMetaCol}>
+                        {!item.is_read && <Text style={styles.unreadBadgeText}>1</Text>}
+                        <Text style={styles.bubbleTime}>{timeStr}</Text>
+                      </View>
+                    )}
+
+                    {!isMine && (
+                      chatPartner.avatar_url ? (
+                        <Image source={{ uri: chatPartner.avatar_url }} style={styles.chatAvatar} />
                       ) : (
-                        <View style={[styles.memberAvatar, styles.defaultSmallAvatar]}>
-                          <Text style={{ fontSize: 18 }}>👤</Text>
+                        <View style={[styles.chatAvatar, styles.defaultSmallAvatar]}>
+                          <Text style={{ fontSize: 13 }}>👤</Text>
                         </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={styles.memberName}>{item.nickname || '이름 없음'}</Text>
-                          {isMe && (
-                            <View style={styles.meBadge}>
-                              <Text style={styles.meBadgeText}>나와의 채팅</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={styles.memberBio} numberOfLines={1}>
-                          {item.bio || '상태 메시지가 없습니다.'}
-                        </Text>
-                      </View>
-                      <Text style={styles.chatStartArrow}>채팅 ›</Text>
-                    </TouchableOpacity>
-                  );
-                }}
-                ListEmptyComponent={
-                  <Text style={styles.emptyMemberText}>등록된 회원이 없습니다.</Text>
-                }
-              />
-            </View>
-          ) : (
-            <View style={{ flex: 1, backgroundColor: '#BACEE0' }}>
-              <View style={styles.msgHeader}>
-                <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.msgBackBtn}>
-                  <Text style={styles.msgBackText}>← 목록</Text>
-                </TouchableOpacity>
-                <Text style={styles.msgHeaderTitle} numberOfLines={1}>
-                  {chatPartner.id === session.user.id
-                    ? `${chatPartner.nickname || '나'} (나와의 채팅)`
-                    : chatPartner.nickname || '대화방'}
-                </Text>
-                <TouchableOpacity onPress={() => setMessengerVisible(false)} style={styles.msgCloseBtn}>
-                  <Text style={styles.msgCloseText}>닫기</Text>
-                </TouchableOpacity>
-              </View>
+                      )
+                    )}
 
-              <FlatList
-                ref={chatListRef}
-                data={chatMessages}
-                keyExtractor={(item) => String(item.id)}
-                contentContainerStyle={{ padding: 14, paddingBottom: 20 }}
-                onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
-                renderItem={({ item }) => {
-                  const isMine = item.sender_id === session.user.id;
-                  const timeStr = new Date(item.created_at).toLocaleTimeString('ko-KR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  });
-
-                  return (
-                    <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
-                      {/* 내가 보낸 메시지일 때: 왼쪽에 [안 읽음 '1' + 보낸 시간] 표시 */}
-                      {isMine && (
-                        <View style={styles.mineMetaCol}>
-                          {!item.is_read && <Text style={styles.unreadBadgeText}>1</Text>}
-                          <Text style={styles.bubbleTime}>{timeStr}</Text>
-                        </View>
-                      )}
-
+                    <View style={{ maxWidth: '72%' }}>
                       {!isMine && (
-                        chatPartner.avatar_url ? (
-                          <Image source={{ uri: chatPartner.avatar_url }} style={styles.chatAvatar} />
-                        ) : (
-                          <View style={[styles.chatAvatar, styles.defaultSmallAvatar]}>
-                            <Text style={{ fontSize: 13 }}>👤</Text>
-                          </View>
-                        )
+                        <Text style={styles.chatSenderName}>{chatPartner.nickname || '상대방'}</Text>
                       )}
-
-                      <View style={{ maxWidth: '72%' }}>
-                        {!isMine && (
-                          <Text style={styles.chatSenderName}>{chatPartner.nickname || '상대방'}</Text>
-                        )}
-                        <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-                          <Text style={styles.bubbleText}>{item.content}</Text>
-                        </View>
+                      <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                        <Text style={styles.bubbleText}>{item.content}</Text>
                       </View>
-
-                      {/* 상대방이 보낸 메시지일 때: 오른쪽에 보낸 시간 표시 */}
-                      {!isMine && <Text style={styles.bubbleTime}>{timeStr}</Text>}
                     </View>
-                  );
-                }}
-                ListEmptyComponent={
-                  <View style={{ padding: 40, alignItems: 'center' }}>
-                    <Text style={{ color: '#4A5568', fontSize: 13 }}>
-                      첫 메시지를 보내 대화를 시작해 보세요!
-                    </Text>
-                  </View>
-                }
-              />
 
-              <View style={styles.chatInputBar}>
-                <TextInput
-                  style={styles.chatTextInput}
-                  placeholder="메시지를 입력하세요..."
-                  value={chatInput}
-                  onChangeText={setChatInput}
-                  multiline
-                />
-                <TouchableOpacity
-                  style={[styles.chatSendBtn, !chatInput.trim() && { opacity: 0.5 }]}
-                  onPress={sendChatMessage}
-                  disabled={!chatInput.trim() || sendingMsg}
-                >
-                  <Text style={styles.chatSendText}>전송</Text>
-                </TouchableOpacity>
-              </View>
+                    {!isMine && <Text style={styles.bubbleTime}>{timeStr}</Text>}
+                  </View>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={{ padding: 40, alignItems: 'center' }}>
+                  <Text style={{ color: '#4A5568', fontSize: 13 }}>
+                    첫 메시지를 보내 대화를 시작해 보세요!
+                  </Text>
+                </View>
+              }
+            />
+
+            <View style={styles.chatInputBar}>
+              <TextInput
+                style={styles.chatTextInput}
+                placeholder="메시지를 입력하세요..."
+                value={chatInput}
+                onChangeText={setChatInput}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.chatSendBtn, !chatInput.trim() && { opacity: 0.5 }]}
+                onPress={sendChatMessage}
+                disabled={!chatInput.trim() || sendingMsg}
+              >
+                <Text style={styles.chatSendText}>전송</Text>
+              </TouchableOpacity>
             </View>
-          )}
+          </View>
         </KeyboardAvoidingView>
       )}
 
-      {/* 오버레이 2: 내 프로필 꾸미기 */}
+      {/* 오버레이 3: 내 프로필 꾸미기 */}
       {editProfileModal && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
@@ -1034,7 +1344,7 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 3: 새 게시물(스토리 + 사진) 작성 화면 */}
+      {/* 오버레이 4: 새 게시물(스토리 + 사진) 작성 화면 */}
       {writeModalVisible && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
@@ -1078,7 +1388,7 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 4: 사진 크게 보기 */}
+      {/* 오버레이 5: 사진 크게 보기 */}
       {Boolean(selectedAlbumPost) && selectedAlbumPost && (
         <View style={styles.fullImageBackdrop}>
           <View style={styles.fullImageContainer}>
@@ -1114,6 +1424,159 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
+  // --- 카카오톡 스타일 친구탭 & 채팅탭 스타일 ---
+  ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
+  ktHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  ktPageTitle: { fontSize: 22, fontWeight: 'bold', color: '#191919' },
+  ktMyMiniProfile: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  ktMyMiniAvatar: { width: 42, height: 42, borderRadius: 16 },
+  ktMyMiniName: { fontSize: 19, fontWeight: 'bold', color: '#191919' },
+  ktDefaultAvatar: { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
+  ktHeaderIcons: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  ktIconBtn: { padding: 6 },
+
+  ktPillBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  ktPillActive: {
+    backgroundColor: '#191919',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 18,
+  },
+  ktPillActiveText: { color: '#FFFFFF', fontSize: 13, fontWeight: 'bold' },
+  ktPillInactive: {
+    backgroundColor: '#F2F2F2',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 18,
+  },
+  ktPillInactiveText: { color: '#666666', fontSize: 13, fontWeight: '600' },
+
+  ktSearchBox: { paddingHorizontal: 16, paddingBottom: 10 },
+  ktSearchInput: {
+    backgroundColor: '#F4F4F4',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    fontSize: 14,
+  },
+
+  ktSelfBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: '#F7F8FA',
+    borderRadius: 12,
+    gap: 12,
+  },
+  ktSelfBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: '#FEE500',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ktSelfTitle: { fontSize: 14, fontWeight: 'bold', color: '#222' },
+  ktSelfSub: { fontSize: 12, color: '#777', marginTop: 2 },
+
+  ktSection: { paddingHorizontal: 16, paddingVertical: 6 },
+  ktSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  ktSectionTitle: { fontSize: 12, fontWeight: '600', color: '#777777' },
+  ktSectionArrow: { fontSize: 14, color: '#999999' },
+  ktEmptySectionText: { fontSize: 12, color: '#AAA', paddingVertical: 10 },
+  ktDivider: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 16, marginVertical: 6 },
+
+  ktFriendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    gap: 12,
+  },
+  ktFriendAvatar: { width: 46, height: 46, borderRadius: 18 },
+  ktFriendName: { fontSize: 15, fontWeight: '600', color: '#191919' },
+  ktFriendBio: { fontSize: 12, color: '#888888', marginTop: 2 },
+  ktFavStarBtn: { padding: 6 },
+
+  // 하단 메인 탭 바
+  bottomNav: {
+    flexDirection: 'row',
+    backgroundColor: '#F9F9F9',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+    paddingVertical: 8,
+  },
+  bottomNavItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  bottomNavIcon: { fontSize: 20, color: '#999999', marginBottom: 2 },
+  bottomNavLabel: { fontSize: 11, color: '#888888', fontWeight: '600' },
+  bottomNavActive: { color: '#191919', fontWeight: 'bold' },
+
+  // 친구 미니 프로필 팝업
+  friendCardModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  friendCardCover: { width: '100%', height: 180, backgroundColor: '#4A5568' },
+  friendCardCoverOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    alignItems: 'flex-end',
+    padding: 12,
+  },
+  friendCardCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  friendCardBody: { alignItems: 'center', padding: 20, paddingTop: 0 },
+  friendCardAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 28,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    marginTop: -38,
+    marginBottom: 10,
+  },
+  friendCardName: { fontSize: 18, fontWeight: 'bold', color: '#222' },
+  friendCardBio: { fontSize: 13, color: '#666', marginTop: 4, marginBottom: 18, textAlign: 'center' },
+  friendCardActions: { flexDirection: 'row', gap: 10, width: '100%' },
+  friendCardActionBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#F2F2F2',
+    alignItems: 'center',
+    gap: 4,
+  },
+  friendCardChatBtn: { backgroundColor: '#FEE500' },
+  friendCardActionLabel: { fontSize: 13, color: '#333' },
+
+  // --- 내 스토리 탭 스타일 ---
   coverBackground: { width: '100%', height: COVER_HEIGHT, backgroundColor: '#4A5568' },
   coverOverlay: {
     flex: 1,
@@ -1186,30 +1649,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.32)',
     overflow: 'hidden',
   },
-  glassTopBtn: {
-    paddingVertical: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  glassDividerHorizontal: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
-  },
-  glassBottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  glassHalfBtn: {
-    flex: 1,
-    paddingVertical: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  glassDividerVertical: {
-    width: 1,
-    height: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.35)',
-  },
+  glassTopBtn: { paddingVertical: 11, alignItems: 'center', justifyContent: 'center' },
+  glassDividerHorizontal: { height: 1, backgroundColor: 'rgba(255, 255, 255, 0.35)' },
+  glassBottomRow: { flexDirection: 'row', alignItems: 'center' },
+  glassHalfBtn: { flex: 1, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' },
+  glassDividerVertical: { width: 1, height: '100%', backgroundColor: 'rgba(255, 255, 255, 0.35)' },
   glassBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
 
   tabBar: {
@@ -1229,12 +1673,7 @@ const styles = StyleSheet.create({
   tabText: { color: '#999', fontSize: 14, fontWeight: '600' },
   tabTextActive: { color: '#FEE500', fontWeight: 'bold' },
 
-  gridItem: {
-    width: GRID_ITEM_SIZE,
-    height: GRID_ITEM_SIZE,
-    margin: 0.6,
-    backgroundColor: '#2D2D2D',
-  },
+  gridItem: { width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, margin: 0.6, backgroundColor: '#2D2D2D' },
   gridImage: { width: '100%', height: '100%' },
   gridCaptionOverlay: {
     position: 'absolute',
@@ -1275,7 +1714,25 @@ const styles = StyleSheet.create({
   emptyBox: { padding: 48, alignItems: 'center' },
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
 
-  // --- 메신저(회원 목록 & 1:1 채팅방) 스타일 ---
+  // --- 채팅 목록 및 1:1 채팅방 스타일 ---
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    gap: 12,
+  },
+  memberAvatar: { width: 48, height: 48, borderRadius: 18 },
+  memberName: { fontSize: 15, fontWeight: 'bold', color: '#222' },
+  memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
+  meBadge: { backgroundColor: '#3C1E1E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  meBadgeText: { color: '#FEE500', fontSize: 10, fontWeight: 'bold' },
+  chatStartArrow: { fontSize: 13, color: '#2B6CB0', fontWeight: 'bold' },
+
   messengerFullScreen: {
     position: 'absolute',
     top: 0,
@@ -1298,32 +1755,11 @@ const styles = StyleSheet.create({
   msgHeaderTitle: { fontSize: 16, fontWeight: 'bold', color: '#3C1E1E', flex: 1, textAlign: 'center' },
   msgBackBtn: { paddingHorizontal: 8, paddingVertical: 4 },
   msgBackText: { fontSize: 14, fontWeight: 'bold', color: '#3C1E1E' },
-  msgCloseBtn: { backgroundColor: 'rgba(0,0,0,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
-  msgCloseText: { fontSize: 12, fontWeight: 'bold', color: '#3C1E1E' },
-
-  memberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#FAFAFA',
-    borderRadius: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#EEEEEE',
-    gap: 12,
-  },
-  memberAvatar: { width: 48, height: 48, borderRadius: 24 },
-  memberName: { fontSize: 15, fontWeight: 'bold', color: '#222' },
-  memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
-  meBadge: { backgroundColor: '#3C1E1E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  meBadgeText: { color: '#FEE500', fontSize: 10, fontWeight: 'bold' },
-  chatStartArrow: { fontSize: 13, color: '#2B6CB0', fontWeight: 'bold' },
-  emptyMemberText: { textAlign: 'center', color: '#888', marginTop: 40 },
 
   bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12, gap: 6 },
   bubbleRowMine: { justifyContent: 'flex-end' },
   bubbleRowOther: { justifyContent: 'flex-start' },
-  chatAvatar: { width: 34, height: 34, borderRadius: 17, marginBottom: 2 },
+  chatAvatar: { width: 34, height: 34, borderRadius: 14, marginBottom: 2 },
   chatSenderName: { fontSize: 11, color: '#333', marginBottom: 3, marginLeft: 2 },
   bubbleBox: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14 },
   bubbleMine: { backgroundColor: '#FEE500', borderBottomRightRadius: 2 },
@@ -1360,12 +1796,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     maxHeight: 90,
   },
-  chatSendBtn: {
-    backgroundColor: '#FEE500',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 18,
-  },
+  chatSendBtn: { backgroundColor: '#FEE500', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18 },
   chatSendText: { color: '#3C1E1E', fontWeight: 'bold', fontSize: 14 },
 
   overlayBackdrop: {
