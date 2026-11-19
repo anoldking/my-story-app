@@ -10,6 +10,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
+// 상단 프로필 배경 높이: 가로 너비 기준 세로 4:3 비율 (더 길게 3:2로 하려면 4 / 3 대신 3 / 2 입력)
+const COVER_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3;
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
@@ -96,7 +98,7 @@ export default function App() {
     total_visits: 1,
   });
 
-  // 프로필 꾸미기 화면 표시 상태 (Modal 대신 메인 화면 내 오버레이 사용)
+  // 프로필 꾸미기 화면 표시 상태
   const [editProfileModal, setEditProfileModal] = useState(false);
   const [tempNickname, setTempNickname] = useState('');
   const [tempBio, setTempBio] = useState('');
@@ -194,7 +196,7 @@ export default function App() {
     }
   };
 
-  // 갤러리 사진 선택 함수 (allowsEditing 제거로 Android Activity 충돌 방지)
+  // 갤러리 사진 선택 함수 (원본 비율 유지)
   const selectFromGallery = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -206,14 +208,15 @@ export default function App() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : ['images'],
         allowsEditing: false,
-        quality: 0.8,
+        quality: 0.85,
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
+        // 가로 1080px 기준으로 세로 비율은 원본 그대로 유지하여 압축
         const manipulated = await ImageManipulator.manipulateAsync(
           result.assets[0].uri,
           [{ resize: { width: 1080 } }],
-          { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
         );
         return manipulated.uri;
       }
@@ -459,11 +462,12 @@ export default function App() {
         resizeMode="cover"
       >
         <View style={styles.coverOverlay}>
+          {/* 맨 위 방문자 카운터 & 우측 상단 프로필 편집/로그아웃 버튼 */}
           <View style={styles.topBar}>
-            <View style={{ width: 60 }} />
+            <View style={{ width: 65 }} />
             <View style={styles.visitorBadge}>
               <Text style={styles.visitorText}>
-                오늘 {profile.today_visits}  |  전체 {profile.total_visits}
+                TODAY {profile.today_visits}  |  TOTAL {profile.total_visits}
               </Text>
             </View>
             <TouchableOpacity style={styles.topLogoutBtn} onPress={() => supabase.auth.signOut()}>
@@ -471,6 +475,7 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
+          {/* 하단 프로필 배치: 좌측 원형 프로필 사진 + 이름 + 소개글 + 반투명 버튼 박스 */}
           <View style={styles.profileBottomSection}>
             <TouchableOpacity onPress={openProfileEditor} activeOpacity={0.85}>
               {profile.avatar_url ? (
@@ -487,7 +492,7 @@ export default function App() {
 
             <View style={styles.glassActionBox}>
               <TouchableOpacity style={styles.glassTopBtn} onPress={openProfileEditor}>
-                <Text style={styles.glassBtnText}>✏️ 내 프로필 꾸미기</Text>
+                <Text style={styles.glassBtnText}>✧ 내 프로필 꾸미기</Text>
               </TouchableOpacity>
               <View style={styles.glassDividerHorizontal} />
               <View style={styles.glassBottomRow}>
@@ -499,7 +504,7 @@ export default function App() {
                     setWriteModalVisible(true);
                   }}
                 >
-                  <Text style={styles.glassBtnText}>📝 스토리 쓰기</Text>
+                  <Text style={styles.glassBtnText}>💬 스토리 쓰기</Text>
                 </TouchableOpacity>
                 <View style={styles.glassDividerVertical} />
                 <TouchableOpacity
@@ -513,7 +518,7 @@ export default function App() {
                     }
                   }}
                 >
-                  <Text style={styles.glassBtnText}>📷 사진 올리기</Text>
+                  <Text style={styles.glassBtnText}>⊞ 새 게시물(사진)</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -649,20 +654,20 @@ export default function App() {
           <View style={styles.emptyBox}>
             <Text style={styles.emptyText}>
               {activeTab === 'album'
-                ? '아직 앨범에 올린 사진이 없습니다.\n상단의 [사진 올리기]를 눌러 첫 사진을 등록해 보세요!'
+                ? '아직 앨범에 올린 사진이 없습니다.\n상단의 [새 게시물(사진)]을 눌러 첫 사진을 등록해 보세요!'
                 : '아직 작성된 게시글이 없습니다.\n상단의 [스토리 쓰기]를 눌러 첫 글을 남겨 보세요!'}
             </Text>
           </View>
         }
       />
 
-      {/* 오버레이 1: 내 프로필 꾸미기 (Modal 대신 메인 화면 내 View 사용) */}
+      {/* 오버레이 1: 내 프로필 꾸미기 (세로 4:3 비율 미리보기 지원) */}
       {editProfileModal && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>내 프로필 꾸미기</Text>
-            <ScrollView>
-              <Text style={styles.fieldLabel}>상단 프로필 배경사진</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.fieldLabel}>상단 프로필 배경사진 (세로 4:3 비율)</Text>
               <TouchableOpacity
                 style={styles.coverPickerBox}
                 onPress={async () => {
@@ -673,7 +678,7 @@ export default function App() {
                 {tempCoverUri ? (
                   <Image source={{ uri: tempCoverUri }} style={styles.coverPreview} resizeMode="cover" />
                 ) : (
-                  <Text style={styles.pickerPlaceholder}>🖼️ 터치하여 배경사진 선택</Text>
+                  <Text style={styles.pickerPlaceholder}>🖼️ 터치하여 세로 배경사진 선택</Text>
                 )}
               </TouchableOpacity>
 
@@ -692,7 +697,7 @@ export default function App() {
                     <Text style={{ fontSize: 22 }}>👤</Text>
                   </View>
                 )}
-                <Text style={styles.pickerLinkText}>사진 변경하기</Text>
+                <Text style={styles.pickerLinkText}>원형 프로필 사진 변경하기</Text>
               </TouchableOpacity>
 
               <Text style={styles.fieldLabel}>이름 (닉네임)</Text>
@@ -740,7 +745,7 @@ export default function App() {
 
             {imageUri ? (
               <View style={{ marginBottom: 12 }}>
-                <Image source={{ uri: imageUri }} style={styles.writePreviewImg} />
+                <Image source={{ uri: imageUri }} style={styles.writePreviewImg} resizeMode="cover" />
                 <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setImageUri(null)}>
                   <Text style={{ fontSize: 12, color: '#555' }}>✕ 사진 지우기</Text>
                 </TouchableOpacity>
@@ -805,10 +810,11 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
-  coverBackground: { width: '100%', height: 430, backgroundColor: '#4A5568' },
+  // 세로 4:3 비율로 길게 확장된 상단 프로필 배경 영역
+  coverBackground: { width: '100%', height: COVER_HEIGHT, backgroundColor: '#4A5568' },
   coverOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.32)',
+    backgroundColor: 'rgba(0, 0, 0, 0.22)',
     justifyContent: 'space-between',
     paddingTop: 14,
     paddingBottom: 18,
@@ -820,28 +826,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   visitorBadge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255,255,255,0.28)',
   },
-  visitorText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+  visitorText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600', letterSpacing: 0.4 },
   topLogoutBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.38)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
   },
-  topLogoutText: { color: '#EEE', fontSize: 11 },
+  topLogoutText: { color: '#F5F5F5', fontSize: 11, fontWeight: '600' },
 
   profileBottomSection: { alignItems: 'flex-start' },
   circularAvatar: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    borderWidth: 2.5,
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    borderWidth: 2,
     borderColor: '#FFFFFF',
     marginBottom: 8,
   },
@@ -855,16 +861,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   profileBio: {
-    color: '#F0F0F0',
+    color: '#F5F5F5',
     fontSize: 13,
     marginTop: 3,
     marginBottom: 14,
-    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
@@ -874,7 +880,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.45)',
     borderRadius: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    backgroundColor: 'rgba(0, 0, 0, 0.32)',
     overflow: 'hidden',
   },
   glassTopBtn: {
@@ -930,90 +936,3 @@ const styles = StyleSheet.create({
   gridCaptionOverlay: {
     position: 'absolute',
     bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 5,
-    paddingVertical: 3,
-  },
-  gridCaptionText: { color: '#FFF', fontSize: 10 },
-
-  card: { backgroundColor: '#FFFFFF', padding: 16, marginBottom: 8 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  cardAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  smallAvatar: { width: 36, height: 36, borderRadius: 18 },
-  defaultSmallAvatar: { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
-  author: { fontWeight: 'bold', fontSize: 15, color: '#222' },
-  date: { fontSize: 11, color: '#999', marginTop: 1 },
-  ownerActions: { flexDirection: 'row', gap: 6 },
-  editBtn: { backgroundColor: '#F0F0F0', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4 },
-  editBtnText: { fontSize: 12, color: '#333' },
-  deleteBtn: { backgroundColor: '#FFEBEE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4 },
-  deleteBtnText: { fontSize: 12, color: '#D32F2F' },
-  editBox: { marginBottom: 10 },
-  editInput: { borderWidth: 1, borderColor: '#CCC', borderRadius: 6, padding: 10, fontSize: 15, minHeight: 60, textAlignVertical: 'top' },
-  editActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
-  cancelEditBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#EEE', borderRadius: 4 },
-  cancelEditText: { fontSize: 13, color: '#555' },
-  saveEditBtn: { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#3C1E1E', borderRadius: 4 },
-  saveEditText: { fontSize: 13, color: '#fff', fontWeight: 'bold' },
-  postText: { fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 10 },
-  postImage: { width: '100%', height: 280, borderRadius: 8, marginBottom: 10 },
-  reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 10 },
-  reactionBtn: { backgroundColor: '#F8F8F8', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 14 },
-  reactionText: { fontSize: 12, color: '#444' },
-
-  emptyBox: { padding: 48, alignItems: 'center' },
-  emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
-
-  // 메인 화면 위 전체 덮어쓰기 오버레이 스타일 (Android ActivityResultLauncher 유지)
-  overlayBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    padding: 20,
-    zIndex: 999,
-  },
-  modalCard: { backgroundColor: '#FFF', borderRadius: 12, padding: 20, maxHeight: '88%' },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#222', marginBottom: 14, textAlign: 'center' },
-  fieldLabel: { fontSize: 13, fontWeight: 'bold', color: '#555', marginBottom: 6, marginTop: 8 },
-  coverPickerBox: { height: 130, borderRadius: 8, backgroundColor: '#F2F2F2', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth: 1, borderColor: '#DDD' },
-  coverPreview: { width: '100%', height: '100%' },
-  pickerPlaceholder: { color: '#777', fontSize: 13 },
-  avatarPickerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginVertical: 4 },
-  avatarPreview: { width: 64, height: 64, borderRadius: 32 },
-  pickerLinkText: { color: '#2B6CB0', fontWeight: 'bold', fontSize: 14 },
-  modalInput: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 12, fontSize: 14, backgroundColor: '#FAFAFA' },
-  modalBtnRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  modalCancelBtn: { flex: 1, padding: 13, borderRadius: 8, backgroundColor: '#EEE', alignItems: 'center' },
-  modalCancelText: { color: '#555', fontWeight: 'bold' },
-  modalSaveBtn: { flex: 1, padding: 13, borderRadius: 8, backgroundColor: '#FEE500', alignItems: 'center' },
-  modalSaveText: { color: '#3C1E1E', fontWeight: 'bold' },
-
-  writePreviewImg: { width: '100%', height: 180, borderRadius: 8 },
-  removePhotoBtn: { alignSelf: 'flex-end', marginTop: 6, padding: 6, backgroundColor: '#EEE', borderRadius: 4 },
-  attachPhotoBtn: { padding: 14, borderRadius: 8, backgroundColor: '#F5F5F5', alignItems: 'center', borderWidth: 1, borderColor: '#DDD' },
-
-  fullImageBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-    zIndex: 1000,
-  },
-  fullImageContainer: { width: '100%', alignItems: 'center' },
-  fullImage: { width: '100%', height: 420, borderRadius: 8 },
-  fullImageCaption: { color: '#FFF', fontSize: 15, marginTop: 14, textAlign: 'center' },
-  fullImageDate: { color: '#AAA', fontSize: 12, marginTop: 6 },
-  closeFullBtn: { marginTop: 20, paddingHorizontal: 28, paddingVertical: 10, backgroundColor: '#FEE500', borderRadius: 20 },
-  closeFullText: { color: '#3C1E1E', fontWeight: 'bold' },
-});
