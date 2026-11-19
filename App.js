@@ -14,7 +14,6 @@ const getWindowWidth = () => Dimensions.get('window').width;
 const SCREEN_WIDTH = getWindowWidth();
 const COVER_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3;
-// 오른쪽 세로 버튼 레일 공간을 확보한 카드 사진 너비 계산
 const FEED_MEDIA_WIDTH = Math.max(240, SCREEN_WIDTH - 80);
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
@@ -40,7 +39,6 @@ try {
   initError = e?.message || String(e);
 }
 
-// 핀치 줌(두 손가락) + 더블 탭 확대/축소 + 드래그 이동이 가능한 확대 이미지 뷰어
 const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -193,7 +191,6 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
   );
 };
 
-// 피드(홈)에서 사진의 원본 가로·세로 비율을 유지해 잘림 없이 보여주는 컴포넌트
 const AutoHeightImage = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
 
@@ -221,7 +218,6 @@ const AutoHeightImage = ({ uri, onPress }) => {
   );
 };
 
-// 터치 시 사진의 원본 비율 크기 + 확대/축소 지원 흰색 바탕 팝업 컴포넌트
 const OriginalImagePopup = ({ imageInfo, onClose }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
   const [loadingSize, setLoadingSize] = useState(true);
@@ -290,7 +286,6 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
   );
 };
 
-// 3열 그리드 게시물 터치 시 가운데 정렬 + 흰색 바탕 + 사진 확대 + 글/반응/수정/삭제 팝업
 const PostDetailPopup = ({
   post,
   currentUserId,
@@ -1204,7 +1199,7 @@ export default function App() {
 
     return (
       <SafeAreaView style={styles.authContainer}>
-        <Text style={styles.logo}>Mestory</Text>
+        <Text style={styles.logo}>me</Text>
         <TextInput style={styles.input} placeholder="이메일" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
         <TextInput style={styles.input} placeholder="비밀번호 (6자 이상)" value={password} onChangeText={setPassword} secureTextEntry />
         <TouchableOpacity style={styles.btnPrimary} onPress={handleLogin} disabled={loading}>
@@ -1222,7 +1217,6 @@ export default function App() {
     ? posts.filter((p) => p.author_id === session.user.id || favoriteIds.includes(p.author_id))
     : posts;
 
-  // --- 화면 1: 인스타그램 스타일 좌우 여백 + 오른쪽 세로 버튼 레일 홈 피드 ('home') ---
   const renderHomeFeedHeader = () => (
     <View style={styles.igHeaderContainer}>
       <View style={styles.igTopBar}>
@@ -1234,7 +1228,7 @@ export default function App() {
           onPress={() => setBrandMenuOpen(!brandMenuOpen)}
         >
           <Text style={styles.igLogoText}>
-            {onlyFavoritesFeed ? 'Mestory ★' : 'Mestory'}
+            {onlyFavoritesFeed ? 'me ★' : 'me'}
           </Text>
           <Text style={styles.igBrandChevron}>{brandMenuOpen ? ' ∧' : ' ∨'}</Text>
         </TouchableOpacity>
@@ -1790,14 +1784,13 @@ export default function App() {
                 <View style={styles.emptyBox}>
                   <Text style={[styles.emptyText, { color: '#777' }]}>
                     {onlyFavoritesFeed
-                      ? '즐겨찾기한 친구의 새 게시물이 없습니다.\n상단 [Mestory ∨]에서 전체 보기로 전환해 보세요!'
+                      ? '즐겨찾기한 친구의 새 게시물이 없습니다.\n상단 [me ∨]에서 전체 보기로 전환해 보세요!'
                       : '아직 올라온 스토리가 없습니다.\n오른쪽 [+] 버튼을 눌러 첫 사진을 올려 보세요!'}
                   </Text>
                 </View>
               }
             />
 
-            {/* 오른쪽 여백 세로 버튼 레일 */}
             <View style={styles.rightVerticalRail}>
               <TouchableOpacity
                 style={styles.verticalRailBtn}
@@ -1887,7 +1880,6 @@ export default function App() {
         )}
       </View>
 
-      {/* 하단 탭 바 (친구/채팅/내스토리 화면 전환용) */}
       {mainTab !== 'home' && (
         <View style={styles.igBottomNav}>
           <TouchableOpacity
@@ -2015,7 +2007,7 @@ export default function App() {
                     {favoriteIds.includes(selectedFriend.id) ? '⭐' : '☆'}
                   </Text>
                   <Text style={styles.friendCardActionLabel}>
-                    {favoriteIds.includes(selectedFriend.id) ? '친구됨' : '친구하기'}
+                    {favoriteIds.includes(selectedFriend.id) ? '즐겨찾기 됨' : '즐겨찾기'}
                   </Text>
                 </TouchableOpacity>
 
@@ -2350,7 +2342,6 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
-  // --- 인스타그램 스타일 좌우 여백 & 오른쪽 세로 레일 배치 ---
   igFeedOuter: {
     flex: 1,
     backgroundColor: '#FAFAFA',
@@ -2571,7 +2562,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // --- 화면 오른쪽 여백 세로 버튼 레일 ---
   rightVerticalRail: {
     position: 'absolute',
     right: 6,
@@ -2632,7 +2622,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
 
-  // --- 하단 탭 바 (비-홈 화면용) ---
   igBottomNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2684,7 +2673,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
 
-  // --- 친구하기 & 채팅 목록 스타일 ---
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
   ktHeader: {
     flexDirection: 'row',
