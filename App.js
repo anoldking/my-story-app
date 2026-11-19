@@ -931,7 +931,7 @@ export default function App() {
     setAccountMenuOpen(false);
     Alert.alert(
       '회원 탈퇴',
-      '정말 탈퇴하시겠습니까?\n프로필 및 즐겨찾기 정보가 삭제되고 로그아웃됩니다.',
+      '정말 탈퇴하시겠습니까?\n계정과 모든 데이터가 서버에서 영구 삭제됩니다.',
       [
         { text: '취소', style: 'cancel' },
         {
@@ -940,18 +940,16 @@ export default function App() {
           onPress: async () => {
             setLoading(true);
             try {
-              const uid = session?.user?.id;
-              if (uid) {
-                await supabase.from('friend_favorites').delete().eq('user_id', uid);
-                await supabase.from('posts').delete().eq('author_id', uid);
-                await supabase.from('profiles').delete().eq('id', uid);
+              const { error: rpcError } = await supabase.rpc('delete_own_account');
+              if (rpcError) {
+                throw rpcError;
               }
               await supabase.auth.signOut();
               setLoading(false);
-              showAlert('탈퇴 완료', '계정 정리가 완료되었습니다.');
+              showAlert('탈퇴 완료', '계정이 서버에서 완전히 삭제되었습니다.');
             } catch (e) {
               setLoading(false);
-              showAlert('탈퇴 처리 오류', `탈퇴 처리 중 문제가 발생했습니다.\n(${e?.message || e})`);
+              showAlert('탈퇴 처리 오류', `계정 삭제 중 문제가 발생했습니다.\n(${e?.message || e})`);
             }
           },
         },
