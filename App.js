@@ -10,12 +10,14 @@ import { createClient } from '@supabase/supabase-js';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 
+const LEFT_RAIL_WIDTH = 52;
 const getWindowWidth = () => Dimensions.get('window').width;
 const getWindowHeight = () => Dimensions.get('window').height;
 const SCREEN_WIDTH = getWindowWidth();
-const COVER_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3));
-const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3;
-const FEED_MEDIA_WIDTH = Math.max(240, SCREEN_WIDTH - 72);
+const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
+const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
+const GRID_ITEM_SIZE = (CONTENT_WIDTH - 4) / 3;
+const FEED_MEDIA_WIDTH = Math.max(220, CONTENT_WIDTH - 24);
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
@@ -234,7 +236,6 @@ const AutoHeightImage = ({ uri, onPress }) => {
   );
 };
 
-// 전체화면 원본 사진 팝업 (흰색 바탕 + 핀치/더블탭 확대 + 드래그 + 스크롤)
 const OriginalImagePopup = ({ imageInfo, onClose }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
   const [loadingSize, setLoadingSize] = useState(true);
@@ -309,7 +310,6 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
   );
 };
 
-// 게시물 상세 팝업 (원본 사진 확대·드래그 + 좋아요 + 수정/삭제 + 댓글 작성/목록)
 const PostDetailPopup = ({
   post,
   currentUserId,
@@ -375,7 +375,7 @@ const PostDetailPopup = ({
             <Image source={{ uri: post.profiles.avatar_url }} style={styles.popupSmallAvatar} />
           ) : (
             <View style={[styles.popupSmallAvatar, styles.defaultSmallAvatar]}>
-              <Text style={{ fontSize: 12 }}>👤</Text>
+              <Text style={{ fontSize: 12 }}>◦</Text>
             </View>
           )}
           <View style={{ flex: 1 }}>
@@ -1426,7 +1426,7 @@ export default function App() {
   const renderHomeFeedHeader = () => (
     <View style={styles.igHeaderContainer}>
       <View style={styles.igTopBar}>
-        <View style={{ width: 28 }} />
+        <View style={{ width: 24 }} />
 
         <TouchableOpacity
           style={styles.igCenterBrandBtn}
@@ -1446,7 +1446,7 @@ export default function App() {
             setMainTab('chats');
           }}
         >
-          <Text style={{ fontSize: 19, color: '#111111' }}>💬</Text>
+          <Text style={{ fontSize: 18, color: '#111111' }}>💬</Text>
         </TouchableOpacity>
       </View>
 
@@ -1501,7 +1501,7 @@ export default function App() {
               <Image source={{ uri: profile.avatar_url }} style={styles.igStoryAvatar} />
             ) : (
               <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
-                <Text style={{ fontSize: 22 }}>◦</Text>
+                <Text style={{ fontSize: 20 }}>◦</Text>
               </View>
             )}
             <View style={styles.igStoryPlusBadge}>
@@ -1525,7 +1525,7 @@ export default function App() {
                 <Image source={{ uri: member.avatar_url }} style={styles.igStoryAvatar} />
               ) : (
                 <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
-                  <Text style={{ fontSize: 22 }}>◦</Text>
+                  <Text style={{ fontSize: 20 }}>◦</Text>
                 </View>
               )}
             </View>
@@ -1562,7 +1562,7 @@ export default function App() {
               <Image source={{ uri: item.profiles.avatar_url }} style={styles.igPostAvatar} />
             ) : (
               <View style={[styles.igPostAvatar, styles.ktDefaultAvatar]}>
-                <Text style={{ fontSize: 14 }}>◦</Text>
+                <Text style={{ fontSize: 13 }}>◦</Text>
               </View>
             )}
             <View>
@@ -1617,10 +1617,10 @@ export default function App() {
         <View style={styles.igPostFooter}>
           <View style={styles.igActionIconRow}>
             <TouchableOpacity onPress={() => toggleReaction(item.id, 'like')} style={styles.igQuickIconBtn}>
-              <Text style={{ fontSize: 19, color: '#111111' }}>♡</Text>
+              <Text style={{ fontSize: 18, color: '#111111' }}>♡</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={styles.igQuickIconBtn}>
-              <Text style={{ fontSize: 18, color: '#111111' }}>💬</Text>
+              <Text style={{ fontSize: 17, color: '#111111' }}>💬</Text>
             </TouchableOpacity>
           </View>
 
@@ -1882,7 +1882,7 @@ export default function App() {
               <Text style={styles.topPillBtnText}>프로필 편집</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.topCircleBtn} onPress={() => supabase.auth.signOut()}>
-              <Text style={[styles.topCircleBtnText, { fontSize: 12 }]}>로그아웃</Text>
+              <Text style={[styles.topCircleBtnText, { fontSize: 11 }]}>로그아웃</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1996,11 +1996,90 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={{ flex: 1 }}>
-        {mainTab === 'home' && (
-          <View style={styles.igFeedOuter}>
+      <View style={styles.mainShellRow}>
+        {/* 화면 왼쪽 세로 메뉴바 */}
+        <View style={styles.leftVerticalMenuBar}>
+          <TouchableOpacity
+            style={styles.leftMenuBtn}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              setOnlyFavoritesFeed(false);
+              fetchPosts();
+              setMainTab('home');
+            }}
+          >
+            <Text style={[styles.leftMenuIcon, mainTab === 'home' && !onlyFavoritesFeed && styles.leftMenuIconActive]}>⌂</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.leftMenuBtn}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              fetchFriendsAndFavorites();
+              setMainTab('friends');
+            }}
+          >
+            <Text style={[styles.leftMenuIcon, mainTab === 'friends' && styles.leftMenuIconActive]}>⌕</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.leftMenuBtn}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              fetchFriendsAndFavorites();
+              setMainTab('chats');
+            }}
+          >
+            <Text style={[styles.leftMenuIcon, mainTab === 'chats' && styles.leftMenuIconActive]}>💬</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.leftMenuBtn}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              setOnlyFavoritesFeed(!onlyFavoritesFeed);
+              setMainTab('home');
+            }}
+          >
+            <Text style={[styles.leftMenuIcon, onlyFavoritesFeed && styles.leftMenuIconActive]}>♡</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.leftMenuBtn}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              setImageUri(null);
+              setContent('');
+              setWriteModalVisible(true);
+            }}
+          >
+            <Text style={styles.leftMenuPlusIcon}>+</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.leftMenuBtn}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              setMainTab('story');
+            }}
+          >
+            <View style={[styles.leftMenuAvatarRing, mainTab === 'story' && styles.leftMenuAvatarRingActive]}>
+              {profile.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={styles.leftMenuAvatarImg} />
+              ) : (
+                <View style={[styles.leftMenuAvatarImg, styles.ktDefaultAvatar]}>
+                  <Text style={{ fontSize: 12 }}>◦</Text>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* 왼쪽 세로 메뉴바 옆 메인 콘텐츠 영역 */}
+        <View style={styles.rightContentArea}>
+          {mainTab === 'home' && (
             <FlatList
-              style={styles.igFeedList}
+              style={{ flex: 1, backgroundColor: '#FFFFFF' }}
               contentContainerStyle={{ paddingBottom: 24 }}
               data={feedPosts}
               keyExtractor={(item) => String(item.id)}
@@ -2010,161 +2089,34 @@ export default function App() {
                 <View style={styles.emptyBox}>
                   <Text style={[styles.emptyText, { color: '#777' }]}>
                     {onlyFavoritesFeed
-                      ? '즐겨찾기한 친구의 새 게시물이 없습니다.\n상단 [me ∨]에서 전체 보기로 전환해 보세요!'
-                      : '아직 올라온 스토리가 없습니다.\n오른쪽 [+] 버튼을 눌러 첫 사진을 올려 보세요!'}
+                      ? '즐겨찾기한 친구의 새 게시물이 없습니다.\n왼쪽 [♡] 또는 상단 [me ∨]에서 전체 보기로 전환해 보세요!'
+                      : '아직 올라온 스토리가 없습니다.\n왼쪽 [+] 버튼을 눌러 첫 사진을 올려 보세요!'}
                   </Text>
                 </View>
               }
             />
+          )}
 
-            {/* 오른쪽 여백 심플 세로 아이콘 레일 */}
-            <View style={styles.rightVerticalRail}>
-              <TouchableOpacity
-                style={styles.verticalRailBtn}
-                onPress={() => {
-                  setBrandMenuOpen(false);
-                  fetchPosts();
-                  setMainTab('home');
-                }}
-              >
-                <Text style={[styles.verticalRailIcon, mainTab === 'home' && styles.verticalRailIconActive]}>⌂</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.verticalRailBtn}
-                onPress={() => {
-                  setBrandMenuOpen(false);
-                  fetchFriendsAndFavorites();
-                  setMainTab('friends');
-                }}
-              >
-                <Text style={[styles.verticalRailIcon, mainTab === 'friends' && styles.verticalRailIconActive]}>⌕</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.verticalRailBtn}
-                onPress={() => {
-                  setBrandMenuOpen(false);
-                  fetchFriendsAndFavorites();
-                  setMainTab('chats');
-                }}
-              >
-                <Text style={[styles.verticalRailIcon, mainTab === 'chats' && styles.verticalRailIconActive]}>💬</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.verticalRailBtn}
-                onPress={() => {
-                  setBrandMenuOpen(false);
-                  setImageUri(null);
-                  setContent('');
-                  setWriteModalVisible(true);
-                }}
-              >
-                <Text style={styles.verticalPlusText}>+</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.verticalRailBtn}
-                onPress={() => {
-                  setBrandMenuOpen(false);
-                  setMainTab('story');
-                }}
-              >
-                <View style={[styles.verticalAvatarRing, mainTab === 'story' && styles.verticalAvatarRingActive]}>
-                  {profile.avatar_url ? (
-                    <Image source={{ uri: profile.avatar_url }} style={styles.verticalAvatarImg} />
-                  ) : (
-                    <View style={[styles.verticalAvatarImg, styles.ktDefaultAvatar]}>
-                      <Text style={{ fontSize: 11 }}>◦</Text>
-                    </View>
-                  )}
+          {mainTab === 'friends' && renderFriendsTabScreen()}
+          {mainTab === 'chats' && renderChatsTabScreen()}
+          {mainTab === 'story' && (
+            <FlatList
+              data={posts}
+              numColumns={3}
+              keyExtractor={(item) => String(item.id)}
+              ListHeaderComponent={renderProfileHeader}
+              renderItem={renderGridItem}
+              ListEmptyComponent={
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyText}>
+                    아직 등록된 게시물이 없습니다.{'\n'}상단의 [+ 새 게시물]을 눌러 첫 스토리를 올려 보세요!
+                  </Text>
                 </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {mainTab === 'friends' && renderFriendsTabScreen()}
-        {mainTab === 'chats' && renderChatsTabScreen()}
-        {mainTab === 'story' && (
-          <FlatList
-            data={posts}
-            numColumns={3}
-            keyExtractor={(item) => String(item.id)}
-            ListHeaderComponent={renderProfileHeader}
-            renderItem={renderGridItem}
-            ListEmptyComponent={
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyText}>
-                  아직 등록된 게시물이 없습니다.{'\n'}상단의 [+ 새 게시물]을 눌러 첫 스토리를 올려 보세요!
-                </Text>
-              </View>
-            }
-          />
-        )}
-      </View>
-
-      {mainTab !== 'home' && (
-        <View style={styles.igBottomNav}>
-          <TouchableOpacity
-            style={styles.igNavItem}
-            onPress={() => {
-              fetchPosts();
-              fetchFriendsAndFavorites();
-              setMainTab('home');
-            }}
-          >
-            <Text style={styles.igNavIcon}>⌂</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.igNavItem}
-            onPress={() => {
-              fetchFriendsAndFavorites();
-              setMainTab('friends');
-            }}
-          >
-            <Text style={[styles.igNavIcon, mainTab === 'friends' && styles.igNavIconActive]}>⌕</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.igNavItem}
-            onPress={() => {
-              fetchFriendsAndFavorites();
-              setMainTab('chats');
-            }}
-          >
-            <Text style={[styles.igNavIcon, mainTab === 'chats' && styles.igNavIconActive]}>💬</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.igNavItem}
-            onPress={() => {
-              setImageUri(null);
-              setContent('');
-              setWriteModalVisible(true);
-            }}
-          >
-            <Text style={styles.igNavPlusText}>+</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.igNavItem}
-            onPress={() => setMainTab('story')}
-          >
-            <View style={[styles.igNavAvatarRing, mainTab === 'story' && styles.igNavAvatarRingActive]}>
-              {profile.avatar_url ? (
-                <Image source={{ uri: profile.avatar_url }} style={styles.igNavAvatar} />
-              ) : (
-                <View style={[styles.igNavAvatar, styles.ktDefaultAvatar]}>
-                  <Text style={{ fontSize: 12 }}>◦</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
+              }
+            />
+          )}
         </View>
-      )}
+      </View>
 
       {selectedFriend && (
         <View style={styles.overlayBackdrop}>
@@ -2565,18 +2517,65 @@ const styles = StyleSheet.create({
   btnSecondary: { padding: 14, alignItems: 'center' },
   btnSecondaryText: { color: '#0277BD', fontWeight: '600' },
 
-  container: { flex: 1, backgroundColor: '#1E1E1E' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  mainShellRow: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+  },
 
-  igFeedOuter: {
+  // --- 화면 왼쪽 세로 메뉴바 ---
+  leftVerticalMenuBar: {
+    width: LEFT_RAIL_WIDTH,
+    backgroundColor: '#FFFFFF',
+    borderRightWidth: 1,
+    borderRightColor: '#EFEFEF',
+    alignItems: 'center',
+    paddingTop: 22,
+    paddingBottom: 22,
+    justifyContent: 'space-between',
+  },
+  leftMenuBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  leftMenuIcon: {
+    fontSize: 22,
+    color: '#111111',
+    opacity: 0.42,
+  },
+  leftMenuIconActive: {
+    opacity: 1,
+    fontWeight: 'bold',
+  },
+  leftMenuPlusIcon: {
+    fontSize: 25,
+    fontWeight: '300',
+    color: '#111111',
+    lineHeight: 27,
+  },
+  leftMenuAvatarRing: {
+    padding: 1.5,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  leftMenuAvatarRingActive: {
+    borderColor: '#111111',
+  },
+  leftMenuAvatarImg: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+  },
+
+  rightContentArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  igFeedList: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    marginLeft: 14,
-    marginRight: 42,
-  },
+
   igHeaderContainer: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -2610,7 +2609,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   igTopRightBtn: {
-    width: 28,
+    width: 24,
     alignItems: 'flex-end',
     justifyContent: 'center',
   },
@@ -2642,14 +2641,14 @@ const styles = StyleSheet.create({
   igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 12 },
 
   igStoryBarContent: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingTop: 4,
     paddingBottom: 12,
-    gap: 12,
+    gap: 10,
   },
   igStoryItem: {
     alignItems: 'center',
-    width: 64,
+    width: 58,
   },
   igStoryAvatarWrap: {
     position: 'relative',
@@ -2657,23 +2656,23 @@ const styles = StyleSheet.create({
   },
   igStoryRing: {
     padding: 2,
-    borderRadius: 34,
+    borderRadius: 32,
     borderWidth: 2,
     borderColor: '#E1306C',
     marginBottom: 5,
   },
   igStoryAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
   },
   igStoryPlusBadge: {
     position: 'absolute',
     right: 0,
     bottom: 0,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#111111',
     borderWidth: 2,
     borderColor: '#FFFFFF',
@@ -2682,9 +2681,9 @@ const styles = StyleSheet.create({
   },
   igStoryPlusText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
-    lineHeight: 15,
+    lineHeight: 14,
   },
   igStoryName: {
     fontSize: 11,
@@ -2704,7 +2703,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingBottom: 10,
   },
   igPostAuthorRow: {
@@ -2753,11 +2752,11 @@ const styles = StyleSheet.create({
 
   feedImage: {
     width: FEED_MEDIA_WIDTH,
-    borderRadius: 10,
+    borderRadius: 8,
     backgroundColor: '#FFFFFF',
   },
   igPostFooter: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingTop: 10,
   },
   igActionIconRow: {
@@ -2807,109 +2806,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // --- 화면 오른쪽 여백 심플 세로 아이콘 레일 (테두리·박스 없이 아이콘만 정렬) ---
-  rightVerticalRail: {
-    position: 'absolute',
-    right: 6,
-    top: '20%',
-    width: 32,
-    alignItems: 'center',
-    gap: 20,
-    paddingVertical: 6,
-  },
-  verticalRailBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 3,
-  },
-  verticalRailIcon: {
-    fontSize: 21,
-    color: '#111111',
-    opacity: 0.45,
-  },
-  verticalRailIconActive: {
-    opacity: 1,
-    fontWeight: 'bold',
-  },
-  verticalPlusText: {
-    fontSize: 23,
-    fontWeight: '300',
-    color: '#111111',
-    lineHeight: 25,
-  },
-  verticalAvatarRing: {
-    padding: 1,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-  },
-  verticalAvatarRingActive: {
-    borderColor: '#111111',
-  },
-  verticalAvatarImg: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-  },
-
-  igBottomNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-  },
-  igNavItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  igNavIcon: {
-    fontSize: 21,
-    color: '#111111',
-    opacity: 0.45,
-  },
-  igNavIconActive: {
-    opacity: 1,
-  },
-  igNavPlusText: {
-    fontSize: 23,
-    fontWeight: '300',
-    color: '#111111',
-    lineHeight: 25,
-  },
-  igNavAvatarRing: {
-    padding: 1.5,
-    borderRadius: 15,
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-  },
-  igNavAvatarRingActive: {
-    borderColor: '#111111',
-  },
-  igNavAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
   ktHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingTop: 14,
     paddingBottom: 10,
     backgroundColor: '#FFFFFF',
   },
-  ktPageTitle: { fontSize: 21, fontWeight: 'bold', color: '#191919' },
+  ktPageTitle: { fontSize: 20, fontWeight: 'bold', color: '#191919' },
   ktDefaultAvatar: { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
   ktIconBtn: { padding: 6 },
 
-  ktSearchBox: { paddingHorizontal: 16, paddingBottom: 10 },
+  ktSearchBox: { paddingHorizontal: 14, paddingBottom: 10 },
   ktSearchInput: {
     backgroundColor: '#F4F4F4',
     borderRadius: 10,
@@ -2921,25 +2832,25 @@ const styles = StyleSheet.create({
   ktSelfBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
+    marginHorizontal: 14,
     marginBottom: 12,
     padding: 12,
     backgroundColor: '#F7F8FA',
     borderRadius: 12,
-    gap: 12,
+    gap: 10,
   },
   ktSelfBadge: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: 14,
     backgroundColor: '#FEE500',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  ktSelfTitle: { fontSize: 14, fontWeight: 'bold', color: '#222' },
+  ktSelfTitle: { fontSize: 13, fontWeight: 'bold', color: '#222' },
   ktSelfSub: { fontSize: 12, color: '#777', marginTop: 2 },
 
-  ktSection: { paddingHorizontal: 16, paddingVertical: 6 },
+  ktSection: { paddingHorizontal: 14, paddingVertical: 6 },
   ktSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2949,16 +2860,16 @@ const styles = StyleSheet.create({
   ktSectionTitle: { fontSize: 12, fontWeight: '600', color: '#777777' },
   ktSectionArrow: { fontSize: 14, color: '#999999' },
   ktEmptySectionText: { fontSize: 12, color: '#AAA', paddingVertical: 10 },
-  ktDivider: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 16, marginVertical: 6 },
+  ktDivider: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 14, marginVertical: 6 },
 
   ktFriendRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 9,
-    gap: 12,
+    gap: 10,
   },
-  ktFriendAvatar: { width: 46, height: 46, borderRadius: 18 },
-  ktFriendName: { fontSize: 15, fontWeight: '600', color: '#191919' },
+  ktFriendAvatar: { width: 44, height: 44, borderRadius: 16 },
+  ktFriendName: { fontSize: 14, fontWeight: '600', color: '#191919' },
   ktFriendBio: { fontSize: 12, color: '#888888', marginTop: 2 },
   ktFavStarBtn: { padding: 6 },
 
@@ -3011,42 +2922,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.22)',
     justifyContent: 'space-between',
-    paddingTop: 14,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    paddingHorizontal: 12,
   },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 4,
   },
   topCircleBtn: {
     backgroundColor: 'rgba(0, 0, 0, 0.36)',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    borderRadius: 18,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  topCircleBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold' },
+  topCircleBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: 'bold' },
   topPillBtn: {
     backgroundColor: 'rgba(0, 0, 0, 0.36)',
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-    borderRadius: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  topPillBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+  topPillBtnText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
   visitorBadge: {
     backgroundColor: 'rgba(0, 0, 0, 0.32)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
   },
-  visitorText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600', letterSpacing: 0.4 },
+  visitorText: { color: '#FFFFFF', fontSize: 10, fontWeight: '600' },
 
   profileBottomSection: { alignItems: 'flex-start' },
   circularAvatar: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     borderWidth: 2.5,
     borderColor: '#FFFFFF',
     marginBottom: 8,
@@ -3056,10 +2968,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  defaultAvatarText: { fontSize: 26, color: '#FFFFFF' },
+  defaultAvatarText: { fontSize: 24, color: '#FFFFFF' },
   profileName: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 'bold',
     textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 0, height: 1 },
@@ -3067,9 +2979,9 @@ const styles = StyleSheet.create({
   },
   profileBio: {
     color: '#F5F5F5',
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 3,
-    marginBottom: 14,
+    marginBottom: 12,
     textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -3083,12 +2995,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.32)',
     overflow: 'hidden',
   },
-  glassTopBtn: { paddingVertical: 11, alignItems: 'center', justifyContent: 'center' },
+  glassTopBtn: { paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   glassDividerHorizontal: { height: 1, backgroundColor: 'rgba(255, 255, 255, 0.35)' },
   glassBottomRow: { flexDirection: 'row', alignItems: 'center' },
-  glassHalfBtn: { flex: 1, paddingVertical: 11, alignItems: 'center', justifyContent: 'center' },
+  glassHalfBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   glassDividerVertical: { width: 1, height: '100%', backgroundColor: 'rgba(255, 255, 255, 0.35)' },
-  glassBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+  glassBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
 
   gridItem: { width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, margin: 0.6, backgroundColor: '#2D2D2D' },
   gridImage: { width: '100%', height: '100%' },
@@ -3104,22 +3016,22 @@ const styles = StyleSheet.create({
   gridCaptionText: { color: '#FFF', fontSize: 11 },
   gridTextOnlyBox: {
     flex: 1,
-    padding: 10,
+    padding: 8,
     backgroundColor: '#2B2D31',
     justifyContent: 'space-between',
   },
-  gridTextOnlyContent: { color: '#F2F3F5', fontSize: 12, lineHeight: 17 },
+  gridTextOnlyContent: { color: '#F2F3F5', fontSize: 11, lineHeight: 15 },
   gridTextOnlyAuthor: { color: '#949BA4', fontSize: 10 },
   gridHeartBadge: {
     position: 'absolute',
-    top: 5,
-    right: 5,
+    top: 4,
+    right: 4,
     backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 10,
   },
-  gridHeartText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+  gridHeartText: { color: '#FFF', fontSize: 9, fontWeight: 'bold' },
 
   whitePopupBackdrop: {
     position: 'absolute',
@@ -3316,8 +3228,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  emptyBox: { padding: 48, alignItems: 'center' },
-  emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
+  emptyBox: { padding: 40, alignItems: 'center' },
+  emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 13 },
 
   memberRow: {
     flexDirection: 'row',
@@ -3328,10 +3240,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#EEEEEE',
-    gap: 12,
+    gap: 10,
   },
-  memberAvatar: { width: 48, height: 48, borderRadius: 18 },
-  memberName: { fontSize: 15, fontWeight: 'bold', color: '#222' },
+  memberAvatar: { width: 44, height: 44, borderRadius: 16 },
+  memberName: { fontSize: 14, fontWeight: 'bold', color: '#222' },
   memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
   meBadge: { backgroundColor: '#3C1E1E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   meBadgeText: { color: '#FEE500', fontSize: 10, fontWeight: 'bold' },
