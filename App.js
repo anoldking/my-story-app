@@ -936,3 +936,16 @@ const styles = StyleSheet.create({
   gridCaptionOverlay: {
     position: 'absolute',
     bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+    zIndex: 1000,
+  },
+  fullImageContainer: { width: '100%', alignItems: 'center' },
+  fullImage: { width: '100%', height: 420, borderRadius: 8 },
+  fullImageCaption: { color: '#FFF', fontSize: 15, marginTop: 14, textAlign: 'center' },
+  fullImageDate: { color: '#AAA', fontSize: 12, marginTop: 6 },
+  closeFullBtn: { marginTop: 20, paddingHorizontal: 28, paddingVertical: 10, backgroundColor: '#FEE500', borderRadius: 20 },
+  closeFullText: { color: '#3C1E1E', fontWeight: 'bold' },
+});
