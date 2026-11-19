@@ -262,7 +262,7 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
         showsVerticalScrollIndicator={false}
       >
         {loadingSize && (
-          <ActivityIndicator size="large" color="#3C1E1E" style={{ marginVertical: 40 }} />
+          <ActivityIndicator size="large" color="#0288D1" style={{ marginVertical: 40 }} />
         )}
 
         <ZoomableImage
@@ -418,13 +418,13 @@ const PostDetailPopup = ({
                   <Text style={styles.whitePopupMiniBtnText}>취소</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.whitePopupMiniBtn, { backgroundColor: '#FEE500' }]}
+                  style={[styles.whitePopupMiniBtn, { backgroundColor: '#0288D1' }]}
                   onPress={async () => {
                     await onSaveEdit(post.id, editValue);
                     setIsEditing(false);
                   }}
                 >
-                  <Text style={[styles.whitePopupMiniBtnText, { color: '#3C1E1E' }]}>저장</Text>
+                  <Text style={[styles.whitePopupMiniBtnText, { color: '#FFFFFF' }]}>저장</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1183,7 +1183,7 @@ export default function App() {
           <TextInput style={styles.input} placeholder="비밀번호 (6자 이상)" value={password} onChangeText={setPassword} secureTextEntry />
           <TextInput style={styles.input} placeholder="비밀번호 확인" value={passwordConfirm} onChangeText={setPasswordConfirm} secureTextEntry />
           <TouchableOpacity style={styles.btnPrimary} onPress={handleSignUp} disabled={loading}>
-            {loading ? <ActivityIndicator color="#3C1E1E" /> : <Text style={styles.btnText}>가입하기</Text>}
+            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.btnText}>가입하기</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnSecondary} onPress={() => switchAuthMode(false)} disabled={loading}>
             <Text style={styles.btnSecondaryText}>← 로그인 화면으로 돌아가기</Text>
@@ -1198,7 +1198,7 @@ export default function App() {
         <TextInput style={styles.input} placeholder="이메일" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
         <TextInput style={styles.input} placeholder="비밀번호 (6자 이상)" value={password} onChangeText={setPassword} secureTextEntry />
         <TouchableOpacity style={styles.btnPrimary} onPress={handleLogin} disabled={loading}>
-          {loading ? <ActivityIndicator color="#3C1E1E" /> : <Text style={styles.btnText}>로그인</Text>}
+          {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.btnText}>로그인</Text>}
         </TouchableOpacity>
         <TouchableOpacity style={styles.btnSecondary} onPress={() => switchAuthMode(true)} disabled={loading}>
           <Text style={styles.btnSecondaryText}>이메일로 회원가입</Text>
@@ -2115,7 +2115,7 @@ export default function App() {
                 <Text style={styles.modalCancelText}>취소</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalSaveBtn} onPress={saveProfileSettings} disabled={loading}>
-                {loading ? <ActivityIndicator color="#3C1E1E" /> : <Text style={styles.modalSaveText}>저장하기</Text>}
+                {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.modalSaveText}>저장하기</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -2158,7 +2158,7 @@ export default function App() {
                 <Text style={styles.modalCancelText}>취소</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalSaveBtn} onPress={createPost} disabled={loading}>
-                {loading ? <ActivityIndicator color="#3C1E1E" /> : <Text style={styles.modalSaveText}>올리기</Text>}
+                {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.modalSaveText}>올리기</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -2185,13 +2185,13 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  authContainer: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#FFFDF5' },
-  logo: { fontSize: 32, fontWeight: 'bold', color: '#3C1E1E', textAlign: 'center', marginBottom: 32 },
-  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 14, marginBottom: 12 },
-  btnPrimary: { backgroundColor: '#FEE500', padding: 15, borderRadius: 8, alignItems: 'center', marginBottom: 10 },
-  btnText: { fontWeight: 'bold', color: '#3C1E1E', fontSize: 16 },
+  authContainer: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#E3F2FD' },
+  logo: { fontSize: 32, fontWeight: 'bold', color: '#01579B', textAlign: 'center', marginBottom: 32 },
+  input: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#BBDEFB', borderRadius: 8, padding: 14, marginBottom: 12 },
+  btnPrimary: { backgroundColor: '#0288D1', padding: 15, borderRadius: 8, alignItems: 'center', marginBottom: 10 },
+  btnText: { fontWeight: 'bold', color: '#FFFFFF', fontSize: 16 },
   btnSecondary: { padding: 14, alignItems: 'center' },
-  btnSecondaryText: { color: '#666' },
+  btnSecondaryText: { color: '#0277BD', fontWeight: '600' },
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
@@ -2607,7 +2607,6 @@ const styles = StyleSheet.create({
   },
   gridHeartText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
 
-  // --- 흰색 바탕 상세 보기 & 원본 사진 확대 팝업 스타일 ---
   whitePopupBackdrop: {
     position: 'absolute',
     top: 0,
@@ -2930,13 +2929,13 @@ const styles = StyleSheet.create({
   pickerPlaceholder: { color: '#777', fontSize: 13, textAlign: 'center', paddingHorizontal: 10 },
   avatarPickerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginVertical: 4 },
   avatarPreview: { width: 64, height: 64, borderRadius: 32 },
-  pickerLinkText: { color: '#2B6CB0', fontWeight: 'bold', fontSize: 14 },
+  pickerLinkText: { color: '#0288D1', fontWeight: 'bold', fontSize: 14 },
   modalInput: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 12, fontSize: 14, backgroundColor: '#FAFAFA' },
   modalBtnRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
   modalCancelBtn: { flex: 1, padding: 13, borderRadius: 8, backgroundColor: '#EEE', alignItems: 'center' },
   modalCancelText: { color: '#555', fontWeight: 'bold' },
-  modalSaveBtn: { flex: 1, padding: 13, borderRadius: 8, backgroundColor: '#FEE500', alignItems: 'center' },
-  modalSaveText: { color: '#3C1E1E', fontWeight: 'bold' },
+  modalSaveBtn: { flex: 1, padding: 13, borderRadius: 8, backgroundColor: '#0288D1', alignItems: 'center' },
+  modalSaveText: { color: '#FFFFFF', fontWeight: 'bold' },
 
   writePreviewImg: { width: '100%', height: 220, borderRadius: 8, backgroundColor: '#F5F5F5' },
   removePhotoBtn: { alignSelf: 'flex-end', marginTop: 6, padding: 6, backgroundColor: '#EEE', borderRadius: 4 },
