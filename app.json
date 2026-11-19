@@ -4,10 +4,15 @@
     "slug": "my-story-app",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "android": {
       "package": "com.anoldking.mystoryapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./icon.png",
+        "backgroundColor": "#FEE500"
+      },
       "permissions": [
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_EXTERNAL_STORAGE"
