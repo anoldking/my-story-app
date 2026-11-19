@@ -35,6 +35,197 @@ const getVisibilityLabel = (visibility) => {
   return '전체공개';
 };
 
+// --- 링크 추출 및 미리보기 유틸리티 ---
+const URL_REGEX = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/i;
+const linkPreviewCache = {};
+
+const extractFirstUrl = (text) => {
+  if (!text || typeof text !== 'string') return null;
+  const match = text.match(URL_REGEX);
+  if (!match?.[1]) return null;
+  return match[1].replace(/[.,!?;:)'"]+$/, '');
+};
+
+const getDomainFromUrl = (rawUrl) => {
+  try {
+    const clean = rawUrl.replace(/^https?:\/\//i, '');
+    return clean.split('/')[0] || rawUrl;
+  } catch {
+    return rawUrl;
+  }
+};
+
+const decodeHtmlEntities = (str) => {
+  if (!str) return '';
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .trim();
+};
+
+const resolveRelativeUrl = (maybeRelative, baseUrl) => {
+  if (!maybeRelative) return null;
+  const trimmed = maybeRelative.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith('//')) {
+    const scheme = /^https:/i.test(baseUrl) ? 'https:' : 'http:';
+    return `${scheme}${trimmed}`;
+  }
+  try {
+    const baseMatch = baseUrl.match(/^(https?:\/\/[^/]+)/i);
+    if (!baseMatch) return null;
+    const origin = baseMatch[1];
+    if (trimmed.startsWith('/')) return `${origin}${trimmed}`;
+    return `${origin}/${trimmed}`;
+  } catch {
+    return null;
+  }
+};
+
+const parseMetaFromHtml = (html, pageUrl) => {
+  const getMeta = (attrName, attrValue) => {
+    const re1 = new RegExp(
+      `<meta[^>]+${attrName}=["']${attrValue}["'][^>]+content=["']([^"']*)["'][^>]*>`,
+      'i'
+    );
+    const re2 = new RegExp(
+      `<meta[^>]+content=["']([^"']*)["'][^>]+${attrName}=["']${attrValue}["'][^>]*>`,
+      'i'
+    );
+    const m = html.match(re1) || html.match(re2);
+    return m?.[1] ? decodeHtmlEntities(m[1]) : '';
+  };
+
+  const ogTitle = getMeta('property', 'og:title') || getMeta('name', 'twitter:title');
+  const ogDesc =
+    getMeta('property', 'og:description') ||
+    getMeta('name', 'description') ||
+    getMeta('name', 'twitter:description');
+  const ogImageRaw = getMeta('property', 'og:image') || getMeta('name', 'twitter:image');
+
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const htmlTitle = titleMatch?.[1] ? decodeHtmlEntities(titleMatch[1].replace(/\s+/g, ' ')) : '';
+
+  return {
+    title: ogTitle || htmlTitle || getDomainFromUrl(pageUrl),
+    description: ogDesc || '',
+    image: resolveRelativeUrl(ogImageRaw, pageUrl),
+    domain: getDomainFromUrl(pageUrl),
+    url: pageUrl,
+  };
+};
+
+const fetchLinkPreviewData = async (url) => {
+  if (linkPreviewCache[url]) return linkPreviewCache[url];
+
+  const fallback = {
+    title: getDomainFromUrl(url),
+    description: '',
+    image: null,
+    domain: getDomainFromUrl(url),
+    url,
+  };
+
+  try {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 4500) : null;
+
+    const response = await fetch(url, {
+      signal: controller?.signal,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+      },
+    });
+
+    if (timeoutId) clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      linkPreviewCache[url] = fallback;
+      return fallback;
+    }
+
+    const rawText = await response.text();
+    const parsed = parseMetaFromHtml(rawText.slice(0, 120000), url);
+    linkPreviewCache[url] = parsed;
+    return parsed;
+  } catch {
+    linkPreviewCache[url] = fallback;
+    return fallback;
+  }
+};
+
+const LinkPreviewCard = ({ url, onPress }) => {
+  const [preview, setPreview] = useState(() => linkPreviewCache[url] || {
+    title: getDomainFromUrl(url),
+    description: '',
+    image: null,
+    domain: getDomainFromUrl(url),
+    url,
+  });
+  const [loadingPreview, setLoadingPreview] = useState(() => !linkPreviewCache[url]);
+
+  useEffect(() => {
+    let active = true;
+    if (linkPreviewCache[url]) {
+      setPreview(linkPreviewCache[url]);
+      setLoadingPreview(false);
+      return;
+    }
+    setLoadingPreview(true);
+    fetchLinkPreviewData(url).then((data) => {
+      if (active) {
+        setPreview(data);
+        setLoadingPreview(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [url]);
+
+  return (
+    <TouchableOpacity
+      style={styles.linkPreviewCard}
+      activeOpacity={0.85}
+      onPress={() => onPress(url)}
+    >
+      {preview.image ? (
+        <Image
+          source={{ uri: preview.image }}
+          style={styles.linkPreviewThumb}
+          resizeMode="cover"
+        />
+      ) : null}
+      <View style={styles.linkPreviewBody}>
+        <View style={styles.linkPreviewDomainRow}>
+          <Ionicons name="link-outline" size={12} color="#0288D1" />
+          <Text style={styles.linkPreviewDomain} numberOfLines={1}>
+            {preview.domain}
+          </Text>
+          {loadingPreview && <ActivityIndicator size="small" color="#0288D1" style={{ marginLeft: 'auto' }} />}
+        </View>
+        <Text style={styles.linkPreviewTitle} numberOfLines={2}>
+          {preview.title || preview.domain}
+        </Text>
+        {preview.description ? (
+          <Text style={styles.linkPreviewDesc} numberOfLines={2}>
+            {preview.description}
+          </Text>
+        ) : (
+          <Text style={styles.linkPreviewTapHint} numberOfLines={1}>
+            탭하여 사이트로 이동
+          </Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+};
+
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
 
@@ -1146,6 +1337,20 @@ export default function App() {
       </SafeAreaView>
     );
   }
+
+  const handleOpenExternalLink = async (rawUrl) => {
+    if (!rawUrl) return;
+    try {
+      const supported = await Linking.canOpenURL(rawUrl);
+      if (supported) {
+        await Linking.openURL(rawUrl);
+      } else {
+        await Linking.openURL(rawUrl);
+      }
+    } catch {
+      showAlert('링크 열기 오류', `해당 링크를 열 수 없습니다.\n${rawUrl}`);
+    }
+  };
 
   const fetchUnreadCountsBySender = async (myId) => {
     if (!myId) return;
@@ -2758,6 +2963,7 @@ export default function App() {
                 hour: '2-digit',
                 minute: '2-digit',
               });
+              const detectedUrl = !item.image_url && !item.file_url ? extractFirstUrl(item.content) : null;
 
               return (
                 <View key={String(item.id)} style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
@@ -2795,7 +3001,7 @@ export default function App() {
                     </TouchableOpacity>
                   )}
 
-                  <View style={{ maxWidth: '74%' }}>
+                  <View style={{ maxWidth: '76%' }}>
                     {!isMine && (
                       <Text style={styles.chatSenderName}>{partner.nickname || '상대방'}</Text>
                     )}
@@ -2825,7 +3031,7 @@ export default function App() {
                     ) : item.file_url ? (
                       <TouchableOpacity
                         activeOpacity={0.85}
-                        onPress={() => Linking.openURL(item.file_url)}
+                        onPress={() => handleOpenExternalLink(item.file_url)}
                         style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, styles.fileBubbleBox]}
                       >
                         <View style={styles.fileIconCircle}>
@@ -2840,7 +3046,15 @@ export default function App() {
                       </TouchableOpacity>
                     ) : (
                       <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
-                        <Text style={styles.bubbleText}>{item.content}</Text>
+                        <Text
+                          style={[styles.bubbleText, detectedUrl && styles.linkBubbleText]}
+                          onPress={detectedUrl ? () => handleOpenExternalLink(detectedUrl) : undefined}
+                        >
+                          {item.content}
+                        </Text>
+                        {detectedUrl && (
+                          <LinkPreviewCard url={detectedUrl} onPress={handleOpenExternalLink} />
+                        )}
                       </View>
                     )}
                   </View>
@@ -2863,7 +3077,7 @@ export default function App() {
 
           <TextInput
             style={styles.inlineChatTextInput}
-            placeholder="메시지를 입력하세요..."
+            placeholder="메시지나 링크 주소를 입력하세요..."
             value={chatInput}
             onChangeText={setChatInput}
             onFocus={() => setChatAttachMenuOpen(false)}
@@ -4842,6 +5056,56 @@ const styles = StyleSheet.create({
   bubbleMine: { backgroundColor: '#FEE500', borderBottomRightRadius: 2 },
   bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 2 },
   bubbleText: { fontSize: 13.5, color: '#222', lineHeight: 19 },
+  linkBubbleText: {
+    color: '#0277BD',
+    textDecorationLine: 'underline',
+  },
+
+  linkPreviewCard: {
+    marginTop: 8,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  linkPreviewThumb: {
+    width: '100%',
+    height: 110,
+    backgroundColor: '#E2E8F0',
+  },
+  linkPreviewBody: {
+    padding: 9,
+  },
+  linkPreviewDomainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 3,
+  },
+  linkPreviewDomain: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#0288D1',
+    flex: 1,
+  },
+  linkPreviewTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 17,
+  },
+  linkPreviewDesc: {
+    fontSize: 11,
+    color: '#475569',
+    marginTop: 3,
+    lineHeight: 15,
+  },
+  linkPreviewTapHint: {
+    fontSize: 10.5,
+    color: '#64748B',
+    marginTop: 3,
+  },
 
   chatPhotoBubble: {
     borderRadius: 12,
