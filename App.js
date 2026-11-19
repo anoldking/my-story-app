@@ -11,6 +11,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 
 const getWindowWidth = () => Dimensions.get('window').width;
+const getWindowHeight = () => Dimensions.get('window').height;
 const SCREEN_WIDTH = getWindowWidth();
 const COVER_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3;
@@ -39,7 +40,8 @@ try {
   initError = e?.message || String(e);
 }
 
-const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
+// 핀치 줌 + 한 손가락 드래그 + 더블 탭 확대가 가능한 이미지 뷰어
+const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, onZoomStateChange }) => {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
 
@@ -47,13 +49,19 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
   const baseScaleRef = useRef(1);
   const pinchStartDistRef = useRef(null);
   const translateRef = useRef({ x: 0, y: 0 });
-  const panStartRef = useRef({ x: 0, y: 0 });
+  const panOriginRef = useRef({ x: 0, y: 0 });
   const lastTapRef = useRef(0);
-  const onSingleTapRef = useRef(onSingleTap);
+  const onZoomChangeRef = useRef(onZoomStateChange);
 
   useEffect(() => {
-    onSingleTapRef.current = onSingleTap;
-  }, [onSingleTap]);
+    onZoomChangeRef.current = onZoomStateChange;
+  }, [onZoomStateChange]);
+
+  const notifyZoom = (nextScale) => {
+    if (onZoomChangeRef.current) {
+      onZoomChangeRef.current(nextScale > 1.03);
+    }
+  };
 
   useEffect(() => {
     scaleRef.current = 1;
@@ -62,6 +70,7 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
     translateRef.current = { x: 0, y: 0 };
     setScale(1);
     setTranslate({ x: 0, y: 0 });
+    notifyZoom(1);
   }, [uri]);
 
   const resetZoom = () => {
@@ -71,6 +80,7 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
     translateRef.current = { x: 0, y: 0 };
     setScale(1);
     setTranslate({ x: 0, y: 0 });
+    notifyZoom(1);
   };
 
   const toggleDoubleTapZoom = () => {
@@ -80,6 +90,7 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
       scaleRef.current = 2.2;
       baseScaleRef.current = 2.2;
       setScale(2.2);
+      notifyZoom(2.2);
     }
   };
 
@@ -96,18 +107,19 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
       onMoveShouldSetPanResponder: (evt, gestureState) => {
         const touches = evt.nativeEvent.touches;
         if (touches && touches.length >= 2) return true;
-        return scaleRef.current > 1.05 || Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4;
+        return scaleRef.current > 1.03 || Math.abs(gestureState.dx) > 5 || Math.abs(gestureState.dy) > 5;
       },
-      onPanResponderGrant: (evt, gestureState) => {
+      onPanResponderTerminationRequest: () => scaleRef.current <= 1.03,
+      onPanResponderGrant: (evt) => {
         const touches = evt.nativeEvent.touches;
         if (touches && touches.length >= 2) {
           pinchStartDistRef.current = getTouchDistance(touches);
           baseScaleRef.current = scaleRef.current;
         } else {
           pinchStartDistRef.current = null;
-          panStartRef.current = {
-            x: gestureState.x0 - translateRef.current.x,
-            y: gestureState.y0 - translateRef.current.y,
+          panOriginRef.current = {
+            x: translateRef.current.x,
+            y: translateRef.current.y,
           };
         }
       },
@@ -120,22 +132,26 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
             baseScaleRef.current = scaleRef.current;
           }
           if (pinchStartDistRef.current && dist) {
-            const nextScale = Math.min(3.5, Math.max(1, baseScaleRef.current * (dist / pinchStartDistRef.current)));
+            const nextScale = Math.min(4, Math.max(1, baseScaleRef.current * (dist / pinchStartDistRef.current)));
             scaleRef.current = nextScale;
             setScale(nextScale);
+            notifyZoom(nextScale);
             if (nextScale <= 1.02) {
               translateRef.current = { x: 0, y: 0 };
               setTranslate({ x: 0, y: 0 });
             }
           }
-        } else if (scaleRef.current > 1.05) {
-          const nextX = gestureState.moveX - panStartRef.current.x;
-          const nextY = gestureState.moveY - panStartRef.current.y;
+        } else if (scaleRef.current > 1.03) {
+          const maxOffset = Math.max(80, (containerWidth || 360) * 0.75 * (scaleRef.current - 1));
+          const rawX = panOriginRef.current.x + gestureState.dx;
+          const rawY = panOriginRef.current.y + gestureState.dy;
+          const nextX = Math.min(maxOffset, Math.max(-maxOffset, rawX));
+          const nextY = Math.min(maxOffset * 1.4, Math.max(-maxOffset * 1.4, rawY));
           translateRef.current = { x: nextX, y: nextY };
           setTranslate({ x: nextX, y: nextY });
         }
       },
-      onPanResponderRelease: (evt, gestureState) => {
+      onPanResponderRelease: (_evt, gestureState) => {
         pinchStartDistRef.current = null;
         if (scaleRef.current < 1.05) {
           resetZoom();
@@ -148,12 +164,6 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
             toggleDoubleTapZoom();
           } else {
             lastTapRef.current = now;
-            setTimeout(() => {
-              if (lastTapRef.current !== 0 && Date.now() - lastTapRef.current >= 270) {
-                lastTapRef.current = 0;
-                if (onSingleTapRef.current) onSingleTapRef.current();
-              }
-            }, 280);
           }
         }
       },
@@ -161,11 +171,17 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
   ).current;
 
   const width = containerWidth || getWindowWidth();
+  const ratio = aspectRatio || 1;
+  const computedHeight = Math.min(
+    maxHeight || getWindowHeight() * 0.72,
+    Math.round(width / ratio)
+  );
 
   return (
     <View
       style={{
         width,
+        height: computedHeight,
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
@@ -177,7 +193,7 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
         source={{ uri }}
         style={{
           width,
-          aspectRatio: aspectRatio || 1,
+          height: computedHeight,
           backgroundColor: '#FFFFFF',
           transform: [
             { translateX: translate.x },
@@ -218,14 +234,18 @@ const AutoHeightImage = ({ uri, onPress }) => {
   );
 };
 
+// 전체화면 원본 사진 팝업 (흰색 바탕 + 핀치/더블탭 확대 + 드래그 + 스크롤)
 const OriginalImagePopup = ({ imageInfo, onClose }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
   const [loadingSize, setLoadingSize] = useState(true);
+  const [isZoomed, setIsZoomed] = useState(false);
   const winWidth = getWindowWidth();
+  const winHeight = getWindowHeight();
 
   useEffect(() => {
     if (!imageInfo?.uri) return;
     setLoadingSize(true);
+    setIsZoomed(false);
     Image.getSize(
       imageInfo.uri,
       (width, height) => {
@@ -255,21 +275,24 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
       </View>
 
       <ScrollView
-        style={{ width: '100%' }}
+        style={{ width: '100%', flex: 1 }}
+        scrollEnabled={!isZoomed}
         contentContainerStyle={styles.whitePopupScrollContent}
         showsVerticalScrollIndicator={false}
       >
         {loadingSize && (
-          <ActivityIndicator size="large" color="#0288D1" style={{ marginVertical: 40 }} />
+          <ActivityIndicator size="large" color="#0288D1" style={{ marginVertical: 30 }} />
         )}
 
         <ZoomableImage
           uri={imageInfo.uri}
           aspectRatio={aspectRatio}
           containerWidth={winWidth}
+          maxHeight={Math.round(winHeight * 0.72)}
+          onZoomStateChange={setIsZoomed}
         />
 
-        <Text style={styles.zoomHintText}>두 손가락으로 확대·축소하거나 사진을 두 번 탭하세요</Text>
+        <Text style={styles.zoomHintText}>두 손가락으로 확대·축소, 한 손가락으로 이동, 두 번 탭으로 확대</Text>
 
         {(imageInfo.caption || imageInfo.date) && (
           <View style={styles.whitePopupCaptionBox}>
@@ -286,10 +309,13 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
   );
 };
 
+// 게시물 상세 팝업 (원본 사진 확대·드래그 + 좋아요 + 수정/삭제 + 댓글 작성/목록)
 const PostDetailPopup = ({
   post,
   currentUserId,
   defaultNickname,
+  comments,
+  onAddComment,
   onClose,
   onToggleReaction,
   onSaveEdit,
@@ -299,11 +325,17 @@ const PostDetailPopup = ({
   const [aspectRatio, setAspectRatio] = useState(1);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [commentText, setCommentText] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
   const winWidth = getWindowWidth();
+  const winHeight = getWindowHeight();
 
   useEffect(() => {
     setIsEditing(false);
     setEditValue(post?.content || '');
+    setCommentText('');
+    setIsZoomed(false);
     const imgUri = post?.image_urls?.[0];
     if (!imgUri) return;
     Image.getSize(
@@ -320,8 +352,23 @@ const PostDetailPopup = ({
   const isMyPost = post.author_id === currentUserId;
   const imgUri = post.image_urls?.[0];
 
+  const handleSubmitComment = async () => {
+    const trimmed = commentText.trim();
+    if (!trimmed || submittingComment) return;
+    setSubmittingComment(true);
+    setCommentText('');
+    const ok = await onAddComment(post.id, trimmed);
+    setSubmittingComment(false);
+    if (!ok) {
+      setCommentText(trimmed);
+    }
+  };
+
   return (
-    <View style={styles.whitePopupBackdrop}>
+    <KeyboardAvoidingView
+      style={styles.whitePopupBackdrop}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.whitePopupTopBar}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
           {post.profiles?.avatar_url ? (
@@ -367,8 +414,9 @@ const PostDetailPopup = ({
       </View>
 
       <ScrollView
-        style={{ width: '100%' }}
-        contentContainerStyle={{ alignItems: 'center', paddingBottom: 36 }}
+        style={{ width: '100%', flex: 1 }}
+        scrollEnabled={!isZoomed}
+        contentContainerStyle={{ alignItems: 'center', paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
         {imgUri && (
@@ -377,9 +425,11 @@ const PostDetailPopup = ({
               uri={imgUri}
               aspectRatio={aspectRatio}
               containerWidth={winWidth}
+              maxHeight={Math.round(winHeight * 0.56)}
+              onZoomStateChange={setIsZoomed}
             />
             <View style={styles.imageToolbarRow}>
-              <Text style={styles.zoomHintText}>핀치 줌 / 더블 탭 확대 가능</Text>
+              <Text style={styles.zoomHintText}>핀치 줌 / 드래그 / 더블 탭 확대</Text>
               <TouchableOpacity
                 style={styles.fullViewChipBtn}
                 onPress={() =>
@@ -445,9 +495,49 @@ const PostDetailPopup = ({
               );
             })}
           </View>
+
+          <View style={styles.commentSectionBox}>
+            <Text style={styles.commentSectionTitle}>댓글 {comments.length}</Text>
+
+            {comments.length === 0 ? (
+              <Text style={styles.commentEmptyText}>아직 댓글이 없습니다. 첫 댓글을 남겨 보세요!</Text>
+            ) : (
+              comments.map((c) => (
+                <View key={String(c.id)} style={styles.commentItemRow}>
+                  <Text style={styles.commentAuthorText}>{c.authorName || '회원'}</Text>
+                  <Text style={styles.commentContentText}>{c.content}</Text>
+                  <Text style={styles.commentTimeText}>
+                    {new Date(c.created_at).toLocaleString('ko-KR', {
+                      month: 'numeric',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
         </View>
       </ScrollView>
-    </View>
+
+      <View style={styles.commentInputBar}>
+        <TextInput
+          style={styles.commentTextInput}
+          placeholder="댓글을 입력하세요..."
+          value={commentText}
+          onChangeText={setCommentText}
+          multiline
+        />
+        <TouchableOpacity
+          style={[styles.commentSubmitBtn, (!commentText.trim() || submittingComment) && { opacity: 0.5 }]}
+          onPress={handleSubmitComment}
+          disabled={!commentText.trim() || submittingComment}
+        >
+          <Text style={styles.commentSubmitText}>등록</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -533,6 +623,8 @@ export default function App() {
   const [content, setContent] = useState('');
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const [commentsByPost, setCommentsByPost] = useState({});
 
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [viewingImage, setViewingImage] = useState(null);
@@ -649,8 +741,15 @@ export default function App() {
       loadAndCountProfile(session.user);
       fetchFriendsAndFavorites();
       fetchPosts();
+      fetchAllComments();
     }
   }, [session]);
+
+  useEffect(() => {
+    if (selectedPostId && supabase && session) {
+      fetchCommentsForPost(selectedPostId);
+    }
+  }, [selectedPostId]);
 
   useEffect(() => {
     if (!supabase || !session || !chatPartner) return;
@@ -719,6 +818,113 @@ export default function App() {
       </SafeAreaView>
     );
   }
+
+  const resolveAuthorName = (userId) => {
+    if (userId === session?.user?.id) {
+      return profile.nickname || '나';
+    }
+    const found = members.find((m) => m.id === userId);
+    return found?.nickname || '회원';
+  };
+
+  const fetchAllComments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (!error && Array.isArray(data)) {
+        const grouped = {};
+        data.forEach((row) => {
+          const key = String(row.post_id);
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push({
+            ...row,
+            authorName: resolveAuthorName(row.user_id),
+          });
+        });
+        setCommentsByPost(grouped);
+      }
+    } catch {
+      // comments 테이블 미생성 환경에서도 앱 동작 유지
+    }
+  };
+
+  const fetchCommentsForPost = async (postId) => {
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+
+      if (!error && Array.isArray(data)) {
+        const mapped = data.map((row) => ({
+          ...row,
+          authorName: resolveAuthorName(row.user_id),
+        }));
+        setCommentsByPost((prev) => ({
+          ...prev,
+          [String(postId)]: mapped,
+        }));
+      }
+    } catch {
+      // 무시
+    }
+  };
+
+  const handleAddComment = async (postId, text) => {
+    const myName = profile.nickname || (session.user.email ? session.user.email.split('@')[0] : '나');
+    const localComment = {
+      id: `local_${Date.now()}`,
+      post_id: postId,
+      user_id: session.user.id,
+      authorName: myName,
+      content: text,
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .insert({
+          post_id: postId,
+          user_id: session.user.id,
+          content: text,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        setCommentsByPost((prev) => ({
+          ...prev,
+          [String(postId)]: [...(prev[String(postId)] || []), localComment],
+        }));
+        return true;
+      }
+
+      const savedRow = {
+        ...data,
+        authorName: myName,
+      };
+      setCommentsByPost((prev) => {
+        const current = prev[String(postId)] || [];
+        if (current.some((item) => item.id === savedRow.id)) return prev;
+        return {
+          ...prev,
+          [String(postId)]: [...current, savedRow],
+        };
+      });
+      return true;
+    } catch {
+      setCommentsByPost((prev) => ({
+        ...prev,
+        [String(postId)]: [...(prev[String(postId)] || []), localComment],
+      }));
+      return true;
+    }
+  };
 
   const fetchFriendsAndFavorites = async () => {
     const { data: memberData } = await supabase
@@ -1336,6 +1542,7 @@ export default function App() {
     const isMyPost = item.author_id === session.user.id;
     const isFriendFav = favoriteIds.includes(item.author_id);
     const totalReactions = item.reactions?.length || 0;
+    const postComments = commentsByPost[String(item.id)] || [];
 
     return (
       <View style={styles.igPostCard}>
@@ -1437,6 +1644,15 @@ export default function App() {
               {item.content}
             </Text>
           ) : null}
+
+          <TouchableOpacity
+            style={styles.feedCommentTriggerBtn}
+            onPress={() => setSelectedPostId(item.id)}
+          >
+            <Text style={styles.feedCommentTriggerText}>
+              💬 댓글 {postComments.length}개 보기 / 작성하기
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -1767,6 +1983,7 @@ export default function App() {
   };
 
   const selectedPostObj = posts.find((p) => p.id === selectedPostId) || null;
+  const selectedPostComments = selectedPostId ? (commentsByPost[String(selectedPostId)] || []) : [];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -2316,6 +2533,8 @@ export default function App() {
         post={selectedPostObj}
         currentUserId={session.user.id}
         defaultNickname={profile.nickname}
+        comments={selectedPostComments}
+        onAddComment={handleAddComment}
         onClose={() => setSelectedPostId(null)}
         onToggleReaction={toggleReaction}
         onSaveEdit={saveEditPost}
@@ -2560,6 +2779,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#222222',
     lineHeight: 20,
+  },
+  feedCommentTriggerBtn: {
+    marginTop: 8,
+    paddingVertical: 6,
+  },
+  feedCommentTriggerText: {
+    fontSize: 12,
+    color: '#0277BD',
+    fontWeight: '600',
   },
 
   rightVerticalRail: {
@@ -3023,6 +3251,76 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   whiteDetailReactionText: { color: '#333333', fontSize: 12 },
+
+  commentSectionBox: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#EAEAEA',
+  },
+  commentSectionTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#222222',
+    marginBottom: 10,
+  },
+  commentEmptyText: {
+    fontSize: 12,
+    color: '#888888',
+    paddingVertical: 8,
+  },
+  commentItemRow: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
+  commentAuthorText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#01579B',
+  },
+  commentContentText: {
+    fontSize: 14,
+    color: '#222222',
+    marginTop: 3,
+    lineHeight: 20,
+  },
+  commentTimeText: {
+    fontSize: 10,
+    color: '#999999',
+    marginTop: 4,
+  },
+  commentInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+    gap: 8,
+  },
+  commentTextInput: {
+    flex: 1,
+    backgroundColor: '#F4F4F4',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 14,
+    maxHeight: 80,
+  },
+  commentSubmitBtn: {
+    backgroundColor: '#0288D1',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 18,
+  },
+  commentSubmitText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
 
   emptyBox: { padding: 48, alignItems: 'center' },
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
