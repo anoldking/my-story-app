@@ -33,6 +33,42 @@ jobs:
         run: |
           npx expo prebuild --platform android --clean
           sed -i "/dependencyResolutionManagement/,/}/ s|repositories {|repositories {\n        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }|g" android/settings.gradle || true
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            function fixJson(filePath) {
+              try {
+                let raw = fs.readFileSync(filePath, "utf8");
+                let data = JSON.parse(raw);
+                let changed = false;
+                if (Array.isArray(data.modules)) {
+                  for (const mod of data.modules) {
+                    if (Array.isArray(mod.projects)) {
+                      for (const proj of mod.projects) {
+                        if (proj.publication && !proj.publication.version) {
+                          proj.publication.version = "0.0.0";
+                          changed = true;
+                        }
+                      }
+                    }
+                  }
+                }
+                if (changed) {
+                  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+                  console.log("Patched missing publication.version in:", filePath);
+                }
+              } catch (_) {}
+            }
+            function walk(dir) {
+              if (!fs.existsSync(dir)) return;
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) walk(full);
+                else if (entry.name.endsWith(".json")) fixJson(full);
+              }
+            }
+            walk("android");
+          '
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
