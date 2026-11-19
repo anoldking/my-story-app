@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   FlatList, Image, ImageBackground, Alert, SafeAreaView,
-  ActivityIndicator, Modal, ScrollView, Dimensions
+  ActivityIndicator, ScrollView, Dimensions
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
@@ -10,7 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3; // 3열 앨범 격자 정사각형 크기
+const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3;
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
@@ -96,7 +96,7 @@ export default function App() {
     total_visits: 1,
   });
 
-  // 프로필 꾸미기 모달 상태
+  // 프로필 꾸미기 화면 표시 상태 (Modal 대신 메인 화면 내 오버레이 사용)
   const [editProfileModal, setEditProfileModal] = useState(false);
   const [tempNickname, setTempNickname] = useState('');
   const [tempBio, setTempBio] = useState('');
@@ -106,7 +106,7 @@ export default function App() {
   // 탭 전환 ('album': 3열 앨범 격자, 'posts': 게시글 목록)
   const [activeTab, setActiveTab] = useState('album');
 
-  // 게시글 및 글쓰기 모달 상태
+  // 게시글 및 글쓰기 화면 표시 상태
   const [posts, setPosts] = useState([]);
   const [writeModalVisible, setWriteModalVisible] = useState(false);
   const [content, setContent] = useState('');
@@ -117,7 +117,7 @@ export default function App() {
   const [editingPostId, setEditingPostId] = useState(null);
   const [editingContent, setEditingContent] = useState('');
 
-  // 앨범 사진 크게 보기 모달
+  // 앨범 사진 크게 보기 상태
   const [selectedAlbumPost, setSelectedAlbumPost] = useState(null);
 
   useEffect(() => {
@@ -149,7 +149,7 @@ export default function App() {
 
   // 프로필 불러오기 + 방문자 수 자동 증가
   const loadAndCountProfile = async (user) => {
-    const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const todayStr = new Date().toISOString().split('T')[0];
     const defaultNick = user.email ? user.email.split('@')[0] : '내 스토리';
 
     const { data, error } = await supabase
@@ -194,8 +194,8 @@ export default function App() {
     }
   };
 
-  // 공통 갤러리 선택 함수
-  const selectFromGallery = async (aspectRatio) => {
+  // 갤러리 사진 선택 함수 (allowsEditing 제거로 Android Activity 충돌 방지)
+  const selectFromGallery = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -205,8 +205,7 @@ export default function App() {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : ['images'],
-        allowsEditing: Boolean(aspectRatio),
-        aspect: aspectRatio || undefined,
+        allowsEditing: false,
         quality: 0.8,
       });
 
@@ -228,7 +227,7 @@ export default function App() {
   // Supabase 스토리지 업로드 공통 함수
   const uploadImageFile = async (uri, prefix) => {
     if (!uri) return null;
-    if (uri.startsWith('http')) return uri; // 이미 업로드된 URL이면 그대로 반환
+    if (uri.startsWith('http')) return uri;
 
     const fileName = `${session.user.id}/${prefix}_${Date.now()}.jpg`;
     const response = await fetch(uri);
@@ -243,7 +242,7 @@ export default function App() {
     return data.publicUrl;
   };
 
-  // 프로필 꾸미기 모달 열기
+  // 프로필 꾸미기 열기
   const openProfileEditor = () => {
     setTempNickname(profile.nickname || '');
     setTempBio(profile.bio || '');
@@ -283,7 +282,7 @@ export default function App() {
       setProfile((prev) => ({ ...prev, ...updates }));
       setEditProfileModal(false);
       fetchPosts();
-      showAlert('완료', '프로필이 멋지게 꾸며졌습니다!');
+      showAlert('완료', '프로필이 저장되었습니다!');
     } catch (e) {
       setLoading(false);
       showAlert('오류', `프로필 저장 중 문제가 발생했습니다.\n(${e?.message || e})`);
@@ -417,7 +416,6 @@ export default function App() {
     fetchPosts();
   };
 
-  // 로그인 / 회원가입 화면
   if (!session) {
     if (isSignUpScreen) {
       return (
@@ -451,10 +449,8 @@ export default function App() {
     );
   }
 
-  // 사진이 있는 게시글만 추려서 앨범(3열 격자) 데이터 생성
   const albumPosts = posts.filter((p) => p.image_urls && p.image_urls.length > 0);
 
-  // 상단 프로필 헤더 영역 (배경사진 + 방문자 카운터 + 좌측 원형 프로필 + 소개글 + 액션 박스 + 탭)
   const renderProfileHeader = () => (
     <View>
       <ImageBackground
@@ -462,9 +458,7 @@ export default function App() {
         style={styles.coverBackground}
         resizeMode="cover"
       >
-        {/* 배경사진 위 글씨 가독성을 높이는 어두운 오버레이 */}
         <View style={styles.coverOverlay}>
-          {/* 1. 맨 위 방문자 카운터 & 로그아웃 바 */}
           <View style={styles.topBar}>
             <View style={{ width: 60 }} />
             <View style={styles.visitorBadge}>
@@ -477,7 +471,6 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          {/* 2. 하단 프로필 정보 영역 (좌측 원형 프로필 사진 + 닉네임 + 소개글) */}
           <View style={styles.profileBottomSection}>
             <TouchableOpacity onPress={openProfileEditor} activeOpacity={0.85}>
               {profile.avatar_url ? (
@@ -492,7 +485,6 @@ export default function App() {
             <Text style={styles.profileName}>-{profile.nickname || '내 스토리'}-</Text>
             <Text style={styles.profileBio}>{profile.bio}</Text>
 
-            {/* 3. 사진 속 반투명 사각형 액션 박스 */}
             <View style={styles.glassActionBox}>
               <TouchableOpacity style={styles.glassTopBtn} onPress={openProfileEditor}>
                 <Text style={styles.glassBtnText}>✏️ 내 프로필 꾸미기</Text>
@@ -513,7 +505,7 @@ export default function App() {
                 <TouchableOpacity
                   style={styles.glassHalfBtn}
                   onPress={async () => {
-                    const uri = await selectFromGallery(null);
+                    const uri = await selectFromGallery();
                     if (uri) {
                       setImageUri(uri);
                       setContent('');
@@ -529,7 +521,6 @@ export default function App() {
         </View>
       </ImageBackground>
 
-      {/* 4. 하단 전환 탭 (앨범 3열 격자 vs 전체 게시글) */}
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={[styles.tabItem, activeTab === 'album' && styles.tabItemActive]}
@@ -551,7 +542,6 @@ export default function App() {
     </View>
   );
 
-  // 앨범(3열 정사각형 사진 격자) 아이템 렌더링
   const renderAlbumGridItem = ({ item }) => (
     <TouchableOpacity
       style={styles.gridItem}
@@ -569,7 +559,6 @@ export default function App() {
     </TouchableOpacity>
   );
 
-  // 게시글 피드 아이템 렌더링
   const renderPostCardItem = ({ item }) => {
     const isMyPost = item.author_id === session.user.id;
     const isEditing = editingPostId === item.id;
@@ -650,7 +639,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
-        key={activeTab} // 탭 변경 시 열 개수(3열 <-> 1열) 안전 전환
+        key={activeTab}
         data={activeTab === 'album' ? albumPosts : posts}
         numColumns={activeTab === 'album' ? 3 : 1}
         keyExtractor={(item) => String(item.id)}
@@ -667,9 +656,9 @@ export default function App() {
         }
       />
 
-      {/* 모달 1: 내 프로필 꾸미기 (배경사진, 원형 프로필 사진, 닉네임, 소개글) */}
-      <Modal visible={editProfileModal} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
+      {/* 오버레이 1: 내 프로필 꾸미기 (Modal 대신 메인 화면 내 View 사용) */}
+      {editProfileModal && (
+        <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>내 프로필 꾸미기</Text>
             <ScrollView>
@@ -677,12 +666,12 @@ export default function App() {
               <TouchableOpacity
                 style={styles.coverPickerBox}
                 onPress={async () => {
-                  const uri = await selectFromGallery([3, 4]);
+                  const uri = await selectFromGallery();
                   if (uri) setTempCoverUri(uri);
                 }}
               >
                 {tempCoverUri ? (
-                  <Image source={{ uri: tempCoverUri }} style={styles.coverPreview} />
+                  <Image source={{ uri: tempCoverUri }} style={styles.coverPreview} resizeMode="cover" />
                 ) : (
                   <Text style={styles.pickerPlaceholder}>🖼️ 터치하여 배경사진 선택</Text>
                 )}
@@ -692,12 +681,12 @@ export default function App() {
               <TouchableOpacity
                 style={styles.avatarPickerRow}
                 onPress={async () => {
-                  const uri = await selectFromGallery([1, 1]);
+                  const uri = await selectFromGallery();
                   if (uri) setTempAvatarUri(uri);
                 }}
               >
                 {tempAvatarUri ? (
-                  <Image source={{ uri: tempAvatarUri }} style={styles.avatarPreview} />
+                  <Image source={{ uri: tempAvatarUri }} style={styles.avatarPreview} resizeMode="cover" />
                 ) : (
                   <View style={[styles.avatarPreview, styles.defaultAvatar]}>
                     <Text style={{ fontSize: 22 }}>👤</Text>
@@ -734,11 +723,11 @@ export default function App() {
             </View>
           </View>
         </View>
-      </Modal>
+      )}
 
-      {/* 모달 2: 스토리(게시글) 작성 팝업 */}
-      <Modal visible={writeModalVisible} animationType="slide" transparent>
-        <View style={styles.modalBackdrop}>
+      {/* 오버레이 2: 스토리(게시글) 작성 화면 */}
+      {writeModalVisible && (
+        <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>새 스토리 올리기</Text>
             <TextInput
@@ -760,7 +749,7 @@ export default function App() {
               <TouchableOpacity
                 style={styles.attachPhotoBtn}
                 onPress={async () => {
-                  const uri = await selectFromGallery(null);
+                  const uri = await selectFromGallery();
                   if (uri) setImageUri(uri);
                 }}
               >
@@ -778,31 +767,29 @@ export default function App() {
             </View>
           </View>
         </View>
-      </Modal>
+      )}
 
-      {/* 모달 3: 앨범 사진 터치 시 크게 보기 */}
-      <Modal visible={Boolean(selectedAlbumPost)} animationType="fade" transparent>
+      {/* 오버레이 3: 앨범 사진 크게 보기 */}
+      {Boolean(selectedAlbumPost) && selectedAlbumPost && (
         <View style={styles.fullImageBackdrop}>
-          {selectedAlbumPost && (
-            <View style={styles.fullImageContainer}>
-              <Image
-                source={{ uri: selectedAlbumPost.image_urls[0] }}
-                style={styles.fullImage}
-                resizeMode="contain"
-              />
-              {selectedAlbumPost.content ? (
-                <Text style={styles.fullImageCaption}>{selectedAlbumPost.content}</Text>
-              ) : null}
-              <Text style={styles.fullImageDate}>
-                {new Date(selectedAlbumPost.created_at).toLocaleString('ko-KR')}
-              </Text>
-              <TouchableOpacity style={styles.closeFullBtn} onPress={() => setSelectedAlbumPost(null)}>
-                <Text style={styles.closeFullText}>닫기</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <View style={styles.fullImageContainer}>
+            <Image
+              source={{ uri: selectedAlbumPost.image_urls[0] }}
+              style={styles.fullImage}
+              resizeMode="contain"
+            />
+            {selectedAlbumPost.content ? (
+              <Text style={styles.fullImageCaption}>{selectedAlbumPost.content}</Text>
+            ) : null}
+            <Text style={styles.fullImageDate}>
+              {new Date(selectedAlbumPost.created_at).toLocaleString('ko-KR')}
+            </Text>
+            <TouchableOpacity style={styles.closeFullBtn} onPress={() => setSelectedAlbumPost(null)}>
+              <Text style={styles.closeFullText}>닫기</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -818,7 +805,6 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
-  // 상단 배경사진 및 오버레이 스타일 (사진 배치 반영)
   coverBackground: { width: '100%', height: 430, backgroundColor: '#4A5568' },
   coverOverlay: {
     flex: 1,
@@ -850,7 +836,6 @@ const styles = StyleSheet.create({
   },
   topLogoutText: { color: '#EEE', fontSize: 11 },
 
-  // 좌측 원형 프로필 + 닉네임 + 소개글 + 반투명 박스
   profileBottomSection: { alignItems: 'flex-start' },
   circularAvatar: {
     width: 68,
@@ -884,7 +869,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
 
-  // 사진 속 반투명 사각형 테두리 액션 박스
   glassActionBox: {
     width: '100%',
     borderWidth: 1,
@@ -919,7 +903,6 @@ const styles = StyleSheet.create({
   },
   glassBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
 
-  // 전환 탭 (앨범 vs 게시글)
   tabBar: {
     flexDirection: 'row',
     backgroundColor: '#252525',
@@ -937,7 +920,6 @@ const styles = StyleSheet.create({
   tabText: { color: '#999', fontSize: 14, fontWeight: '600' },
   tabTextActive: { color: '#FEE500', fontWeight: 'bold' },
 
-  // 3열 앨범 격자 스타일
   gridItem: {
     width: GRID_ITEM_SIZE,
     height: GRID_ITEM_SIZE,
@@ -956,7 +938,6 @@ const styles = StyleSheet.create({
   },
   gridCaptionText: { color: '#FFF', fontSize: 10 },
 
-  // 게시글 카드 스타일
   card: { backgroundColor: '#FFFFFF', padding: 16, marginBottom: 8 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   cardAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -985,9 +966,19 @@ const styles = StyleSheet.create({
   emptyBox: { padding: 48, alignItems: 'center' },
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
 
-  // 모달 공통 스타일
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
-  modalCard: { backgroundColor: '#FFF', borderRadius: 12, padding: 20, maxHeight: '85%' },
+  // 메인 화면 위 전체 덮어쓰기 오버레이 스타일 (Android ActivityResultLauncher 유지)
+  overlayBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    padding: 20,
+    zIndex: 999,
+  },
+  modalCard: { backgroundColor: '#FFF', borderRadius: 12, padding: 20, maxHeight: '88%' },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#222', marginBottom: 14, textAlign: 'center' },
   fieldLabel: { fontSize: 13, fontWeight: 'bold', color: '#555', marginBottom: 6, marginTop: 8 },
   coverPickerBox: { height: 130, borderRadius: 8, backgroundColor: '#F2F2F2', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth: 1, borderColor: '#DDD' },
@@ -1007,7 +998,18 @@ const styles = StyleSheet.create({
   removePhotoBtn: { alignSelf: 'flex-end', marginTop: 6, padding: 6, backgroundColor: '#EEE', borderRadius: 4 },
   attachPhotoBtn: { padding: 14, borderRadius: 8, backgroundColor: '#F5F5F5', alignItems: 'center', borderWidth: 1, borderColor: '#DDD' },
 
-  fullImageBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  fullImageBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+    zIndex: 1000,
+  },
   fullImageContainer: { width: '100%', alignItems: 'center' },
   fullImage: { width: '100%', height: 420, borderRadius: 8 },
   fullImageCaption: { color: '#FFF', fontSize: 15, marginTop: 14, textAlign: 'center' },
