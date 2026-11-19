@@ -7,7 +7,6 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 
@@ -38,7 +37,6 @@ try {
   initError = e?.message || String(e);
 }
 
-// 피드(홈)에서 사진의 원본 가로·세로 비율을 유지해 잘림 없이 보여주는 컴포넌트
 const AutoHeightImage = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
 
@@ -66,7 +64,6 @@ const AutoHeightImage = ({ uri, onPress }) => {
   );
 };
 
-// 터치 시 사진의 원본 비율 크기 그대로 화면에 띄워주는 전체 팝업 컴포넌트
 const OriginalImagePopup = ({ imageInfo, onClose }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
   const [loadingSize, setLoadingSize] = useState(true);
@@ -135,7 +132,6 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
   );
 };
 
-// 3열 그리드 게시물 터치 시 원본 비율 사진 + 글 내용 + 좋아요 + 수정/삭제를 보여주는 상세 팝업
 const PostDetailPopup = ({
   post,
   currentUserId,
@@ -345,10 +341,8 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
-  // 인스타그램 스타일 5단 메뉴바 탭 ('home': 홈 피드, 'friends': 친구/검색, 'chats': DM 채팅, 'story': 내 스토리)
   const [mainTab, setMainTab] = useState('home');
 
-  // 프로필 및 방문자 상태
   const [profile, setProfile] = useState({
     nickname: '',
     bio: '나만의 스토리를 기록해 보세요 ✨',
@@ -358,14 +352,12 @@ export default function App() {
     total_visits: 1,
   });
 
-  // 프로필 꾸미기(변경) 화면 표시 상태
   const [editProfileModal, setEditProfileModal] = useState(false);
   const [tempNickname, setTempNickname] = useState('');
   const [tempBio, setTempBio] = useState('');
   const [tempAvatarUri, setTempAvatarUri] = useState(null);
   const [tempCoverUri, setTempCoverUri] = useState(null);
 
-  // 친구탭 상태
   const [members, setMembers] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -373,18 +365,15 @@ export default function App() {
   const [friendsSectionOpen, setFriendsSectionOpen] = useState(true);
   const [selectedFriend, setSelectedFriend] = useState(null);
 
-  // 게시글 상태
   const [posts, setPosts] = useState([]);
   const [writeModalVisible, setWriteModalVisible] = useState(false);
   const [content, setContent] = useState('');
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // 3열 그리드 선택 게시물 상세 팝업 & 사진 원본 팝업 상태
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [viewingImage, setViewingImage] = useState(null);
 
-  // 메신저(1:1 실시간 채팅방 & '+' 첨부 서랍) 상태
   const [chatPartner, setChatPartner] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -394,7 +383,6 @@ export default function App() {
 
   const lastBackPressRef = useRef(0);
 
-  // --- 안드로이드 하드웨어/제스처 뒤로가기 버튼 제어 ---
   useEffect(() => {
     const onHardwareBackPress = () => {
       if (!session) {
@@ -809,18 +797,12 @@ export default function App() {
     }
   };
 
+  // ActivityResultLauncher 미등록 오류 회피를 위해 DocumentPicker로 갤러리 이미지 선택 후 원본 비율 유지 압축
   const selectFromGallery = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        showAlert('권한 필요', '사진을 선택하려면 스마트폰 설정에서 사진 접근 권한을 허용해 주세요.');
-        return null;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : ['images'],
-        allowsEditing: false,
-        quality: 0.85,
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/*',
+        copyToCacheDirectory: true,
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
@@ -1049,7 +1031,7 @@ export default function App() {
 
     return (
       <SafeAreaView style={styles.authContainer}>
-        <Text style={styles.logo}>내 스토리</Text>
+        <Text style={styles.logo}>Mestory</Text>
         <TextInput style={styles.input} placeholder="이메일" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
         <TextInput style={styles.input} placeholder="비밀번호 (6자 이상)" value={password} onChangeText={setPassword} secureTextEntry />
         <TouchableOpacity style={styles.btnPrimary} onPress={handleLogin} disabled={loading}>
@@ -1064,12 +1046,10 @@ export default function App() {
 
   const otherMembers = members.filter((m) => m.id !== session.user.id);
 
-  // --- 화면 1: 인스타그램 스타일 홈 피드 ('home') ---
   const renderHomeFeedHeader = () => (
     <View style={styles.igHeaderContainer}>
-      {/* 상단 로고 & 우측 DM 버튼 */}
       <View style={styles.igTopBar}>
-        <Text style={styles.igLogoText}>MyStory</Text>
+        <Text style={styles.igLogoText}>Mestory</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
           <TouchableOpacity
             onPress={() => {
@@ -1086,13 +1066,11 @@ export default function App() {
         </View>
       </View>
 
-      {/* 가로 스크롤 원형 스토리 바 (내 스토리 + 가입 회원들) */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.igStoryBarContent}
       >
-        {/* 내 스토리 원형 아이템 */}
         <TouchableOpacity
           style={styles.igStoryItem}
           onPress={() => {
@@ -1116,7 +1094,6 @@ export default function App() {
           <Text style={styles.igStoryName} numberOfLines={1}>내 스토리</Text>
         </TouchableOpacity>
 
-        {/* 다른 회원들의 원형 프로필 바 */}
         {otherMembers.map((member) => (
           <TouchableOpacity
             key={member.id}
@@ -1147,7 +1124,6 @@ export default function App() {
 
     return (
       <View style={styles.igPostCard}>
-        {/* 게시물 상단 작성자 바 */}
         <View style={styles.igPostHeader}>
           <TouchableOpacity
             style={styles.igPostAuthorRow}
@@ -1182,7 +1158,6 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {/* 게시물 원본 비율 사진 (터치 시 원본 크기 팝업) */}
         {item.image_urls?.[0] && (
           <AutoHeightImage
             uri={item.image_urls[0]}
@@ -1197,7 +1172,6 @@ export default function App() {
           />
         )}
 
-        {/* 하단 감정 표현 & 본문 영역 */}
         <View style={styles.igPostFooter}>
           <View style={styles.igReactionBar}>
             {REACTIONS.map((r) => {
@@ -1233,7 +1207,6 @@ export default function App() {
     );
   };
 
-  // --- 화면 2: 친구 & 검색 탭 ('friends') ---
   const filteredMembers = otherMembers.filter((m) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -1289,7 +1262,6 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* 상단 고정 검색창 */}
       <View style={styles.ktSearchBox}>
         <TextInput
           style={styles.ktSearchInput}
@@ -1367,7 +1339,6 @@ export default function App() {
     </View>
   );
 
-  // --- 화면 3: DM 채팅 목록 탭 ('chats') ---
   const renderChatsTabScreen = () => (
     <View style={styles.ktContainer}>
       <View style={styles.ktHeader}>
@@ -1416,7 +1387,6 @@ export default function App() {
     </View>
   );
 
-  // --- 화면 4: 내 스토리 프로필 헤더 ('story', 탭 없이 3열 격자 직결) ---
   const renderProfileHeader = () => (
     <ImageBackground
       source={profile.cover_url ? { uri: profile.cover_url } : undefined}
@@ -1602,7 +1572,6 @@ export default function App() {
         )}
       </View>
 
-      {/* 인스타그램 스타일 5단 하단 메뉴바: [홈] [친구검색] [+글쓰기] [DM채팅] [내프로필] */}
       <View style={styles.igBottomNav}>
         <TouchableOpacity
           style={styles.igNavItem}
@@ -1664,7 +1633,6 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* 오버레이 1: 친구 미니 프로필 팝업 */}
       {selectedFriend && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.friendCardModal}>
@@ -1752,7 +1720,6 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 2: 1:1 실시간 채팅방 ('+' 사진 올리기 / 첨부파일 기능 포함) */}
       {chatPartner && (
         <KeyboardAvoidingView
           style={styles.messengerFullScreen}
@@ -1924,7 +1891,6 @@ export default function App() {
         </KeyboardAvoidingView>
       )}
 
-      {/* 오버레이 3: 내 프로필 꾸미기(변경) 화면 */}
       {editProfileModal && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
@@ -1993,7 +1959,6 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 4: 새 게시물(스토리 + 사진) 작성 화면 */}
       {writeModalVisible && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
@@ -2037,7 +2002,6 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 5: 3열 그리드 게시물 터치 시 상세 보기 */}
       <PostDetailPopup
         post={selectedPostObj}
         currentUserId={session.user.id}
@@ -2049,7 +2013,6 @@ export default function App() {
         onOpenFullImage={(info) => setViewingImage(info)}
       />
 
-      {/* 오버레이 6: 프로필 사진 / 배경사진 / 게시글 사진 원본 크기 비율 팝업 */}
       <OriginalImagePopup
         imageInfo={viewingImage}
         onClose={() => setViewingImage(null)}
@@ -2069,7 +2032,6 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
-  // --- 인스타그램 스타일 홈 피드 & 스토리 바 ---
   igHeaderContainer: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
@@ -2206,7 +2168,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // --- 인스타그램 스타일 5단 하단 메뉴바 ---
   igBottomNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2257,7 +2218,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
 
-  // --- 친구 검색 & 채팅 목록 스타일 ---
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
   ktHeader: {
     flexDirection: 'row',
@@ -2369,7 +2329,6 @@ const styles = StyleSheet.create({
   friendCardChatBtn: { backgroundColor: '#FEE500' },
   friendCardActionLabel: { fontSize: 13, color: '#333' },
 
-  // --- 내 스토리 탭 스타일 ---
   coverBackground: { width: '100%', height: COVER_HEIGHT, backgroundColor: '#4A5568' },
   coverOverlay: {
     flex: 1,
