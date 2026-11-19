@@ -15,7 +15,7 @@ const getWindowHeight = () => Dimensions.get('window').height;
 const SCREEN_WIDTH = getWindowWidth();
 const COVER_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3;
-const FEED_MEDIA_WIDTH = Math.max(240, SCREEN_WIDTH - 80);
+const FEED_MEDIA_WIDTH = Math.max(240, SCREEN_WIDTH - 72);
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
@@ -542,7 +542,7 @@ const PostDetailPopup = ({
 };
 
 const REACTIONS = [
-  { type: 'like', label: '❤️ 좋아요' },
+  { type: 'like', label: '♡ 좋아요' },
   { type: 'cool', label: '👍 멋져요' },
   { type: 'happy', label: '😄 기뻐요' },
   { type: 'sad', label: '😢 슬퍼요' },
@@ -847,7 +847,7 @@ export default function App() {
         setCommentsByPost(grouped);
       }
     } catch {
-      // comments 테이블 미생성 환경에서도 앱 동작 유지
+      // 무시
     }
   };
 
@@ -1446,7 +1446,7 @@ export default function App() {
             setMainTab('chats');
           }}
         >
-          <Text style={{ fontSize: 20, color: '#111111' }}>✈️</Text>
+          <Text style={{ fontSize: 19, color: '#111111' }}>💬</Text>
         </TouchableOpacity>
       </View>
 
@@ -1461,7 +1461,7 @@ export default function App() {
               setMainTab('friends');
             }}
           >
-            <Text style={styles.igDropdownIcon}>👥</Text>
+            <Text style={styles.igDropdownIcon}>⌕</Text>
             <Text style={styles.igDropdownLabel}>친구하기</Text>
           </TouchableOpacity>
 
@@ -1501,7 +1501,7 @@ export default function App() {
               <Image source={{ uri: profile.avatar_url }} style={styles.igStoryAvatar} />
             ) : (
               <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
-                <Text style={{ fontSize: 24 }}>👤</Text>
+                <Text style={{ fontSize: 22 }}>◦</Text>
               </View>
             )}
             <View style={styles.igStoryPlusBadge}>
@@ -1525,7 +1525,7 @@ export default function App() {
                 <Image source={{ uri: member.avatar_url }} style={styles.igStoryAvatar} />
               ) : (
                 <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
-                  <Text style={{ fontSize: 24 }}>👤</Text>
+                  <Text style={{ fontSize: 22 }}>◦</Text>
                 </View>
               )}
             </View>
@@ -1562,7 +1562,7 @@ export default function App() {
               <Image source={{ uri: item.profiles.avatar_url }} style={styles.igPostAvatar} />
             ) : (
               <View style={[styles.igPostAvatar, styles.ktDefaultAvatar]}>
-                <Text style={{ fontSize: 15 }}>👤</Text>
+                <Text style={{ fontSize: 14 }}>◦</Text>
               </View>
             )}
             <View>
@@ -1595,7 +1595,7 @@ export default function App() {
               </TouchableOpacity>
             )}
             <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
-              <Text style={{ fontSize: 16, color: '#333333', fontWeight: 'bold' }}>•••</Text>
+              <Text style={{ fontSize: 15, color: '#333333', fontWeight: 'bold' }}>•••</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1615,6 +1615,15 @@ export default function App() {
         )}
 
         <View style={styles.igPostFooter}>
+          <View style={styles.igActionIconRow}>
+            <TouchableOpacity onPress={() => toggleReaction(item.id, 'like')} style={styles.igQuickIconBtn}>
+              <Text style={{ fontSize: 19, color: '#111111' }}>♡</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={styles.igQuickIconBtn}>
+              <Text style={{ fontSize: 18, color: '#111111' }}>💬</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.igReactionBar}>
             {REACTIONS.map((r) => {
               const count = item.reactions?.filter((x) => x.type === r.type).length || 0;
@@ -1681,7 +1690,7 @@ export default function App() {
           <Image source={{ uri: friend.avatar_url }} style={styles.ktFriendAvatar} />
         ) : (
           <View style={[styles.ktFriendAvatar, styles.ktDefaultAvatar]}>
-            <Text style={{ fontSize: 20 }}>👤</Text>
+            <Text style={{ fontSize: 18 }}>◦</Text>
           </View>
         )}
         <View style={{ flex: 1 }}>
@@ -1709,14 +1718,14 @@ export default function App() {
       <View style={styles.ktHeader}>
         <Text style={styles.ktPageTitle}>친구하기</Text>
         <TouchableOpacity style={styles.ktIconBtn} onPress={openProfileEditor}>
-          <Text style={{ fontSize: 19 }}>⚙️</Text>
+          <Text style={{ fontSize: 18, color: '#111111' }}>☰</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.ktSearchBox}>
         <TextInput
           style={styles.ktSearchInput}
-          placeholder="🔍 이름 또는 상태메시지로 친구 검색..."
+          placeholder="⌕ 이름 또는 상태메시지로 친구 검색..."
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -1734,7 +1743,7 @@ export default function App() {
           }
         >
           <View style={styles.ktSelfBadge}>
-            <Text style={{ fontSize: 16 }}>💬</Text>
+            <Text style={{ fontSize: 15 }}>💬</Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.ktSelfTitle}>나와의 채팅 (개인 메모장)</Text>
@@ -1793,9 +1802,9 @@ export default function App() {
   const renderChatsTabScreen = () => (
     <View style={styles.ktContainer}>
       <View style={styles.ktHeader}>
-        <Text style={styles.ktPageTitle}>메시지 (DM)</Text>
+        <Text style={styles.ktPageTitle}>메시지</Text>
         <TouchableOpacity style={styles.ktIconBtn} onPress={fetchFriendsAndFavorites}>
-          <Text style={{ fontSize: 15, color: '#333' }}>🔄 새로고침</Text>
+          <Text style={{ fontSize: 14, color: '#333' }}>↻ 새로고침</Text>
         </TouchableOpacity>
       </View>
 
@@ -1814,7 +1823,7 @@ export default function App() {
                 <Image source={{ uri: item.avatar_url }} style={styles.memberAvatar} />
               ) : (
                 <View style={[styles.memberAvatar, styles.ktDefaultAvatar]}>
-                  <Text style={{ fontSize: 18 }}>👤</Text>
+                  <Text style={{ fontSize: 18 }}>◦</Text>
                 </View>
               )}
               <View style={{ flex: 1 }}>
@@ -1830,7 +1839,7 @@ export default function App() {
                   {item.bio || '터치하여 1:1 대화 시작하기'}
                 </Text>
               </View>
-              <Text style={styles.chatStartArrow}>대화 ›</Text>
+              <Text style={styles.chatStartArrow}>💬</Text>
             </TouchableOpacity>
           );
         }}
@@ -1897,7 +1906,7 @@ export default function App() {
               <Image source={{ uri: profile.avatar_url }} style={styles.circularAvatar} />
             ) : (
               <View style={[styles.circularAvatar, styles.defaultAvatar]}>
-                <Text style={styles.defaultAvatarText}>👤</Text>
+                <Text style={styles.defaultAvatarText}>◦</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -1907,7 +1916,7 @@ export default function App() {
 
           <View style={styles.glassActionBox}>
             <TouchableOpacity style={styles.glassTopBtn} onPress={openProfileEditor}>
-              <Text style={styles.glassBtnText}>✧ 내 프로필 꾸미기</Text>
+              <Text style={styles.glassBtnText}>내 프로필 꾸미기</Text>
             </TouchableOpacity>
             <View style={styles.glassDividerHorizontal} />
             <View style={styles.glassBottomRow}>
@@ -1932,7 +1941,7 @@ export default function App() {
                   setWriteModalVisible(true);
                 }}
               >
-                <Text style={styles.glassBtnText}>⊞ 새 게시물</Text>
+                <Text style={styles.glassBtnText}>+ 새 게시물</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1975,7 +1984,7 @@ export default function App() {
 
         {reactionCount > 0 && (
           <View style={styles.gridHeartBadge}>
-            <Text style={styles.gridHeartText}>❤️ {reactionCount}</Text>
+            <Text style={styles.gridHeartText}>♡ {reactionCount}</Text>
           </View>
         )}
       </TouchableOpacity>
@@ -2008,6 +2017,7 @@ export default function App() {
               }
             />
 
+            {/* 오른쪽 여백 심플 세로 아이콘 레일 */}
             <View style={styles.rightVerticalRail}>
               <TouchableOpacity
                 style={styles.verticalRailBtn}
@@ -2017,7 +2027,7 @@ export default function App() {
                   setMainTab('home');
                 }}
               >
-                <Text style={[styles.verticalRailIcon, mainTab === 'home' && styles.verticalRailIconActive]}>🏠</Text>
+                <Text style={[styles.verticalRailIcon, mainTab === 'home' && styles.verticalRailIconActive]}>⌂</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -2028,7 +2038,18 @@ export default function App() {
                   setMainTab('friends');
                 }}
               >
-                <Text style={[styles.verticalRailIcon, mainTab === 'friends' && styles.verticalRailIconActive]}>🔍</Text>
+                <Text style={[styles.verticalRailIcon, mainTab === 'friends' && styles.verticalRailIconActive]}>⌕</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.verticalRailBtn}
+                onPress={() => {
+                  setBrandMenuOpen(false);
+                  fetchFriendsAndFavorites();
+                  setMainTab('chats');
+                }}
+              >
+                <Text style={[styles.verticalRailIcon, mainTab === 'chats' && styles.verticalRailIconActive]}>💬</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -2040,20 +2061,7 @@ export default function App() {
                   setWriteModalVisible(true);
                 }}
               >
-                <View style={styles.verticalPlusBox}>
-                  <Text style={styles.verticalPlusText}>+</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.verticalRailBtn}
-                onPress={() => {
-                  setBrandMenuOpen(false);
-                  fetchFriendsAndFavorites();
-                  setMainTab('chats');
-                }}
-              >
-                <Text style={[styles.verticalRailIcon, mainTab === 'chats' && styles.verticalRailIconActive]}>✈️</Text>
+                <Text style={styles.verticalPlusText}>+</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -2068,7 +2076,7 @@ export default function App() {
                     <Image source={{ uri: profile.avatar_url }} style={styles.verticalAvatarImg} />
                   ) : (
                     <View style={[styles.verticalAvatarImg, styles.ktDefaultAvatar]}>
-                      <Text style={{ fontSize: 12 }}>👤</Text>
+                      <Text style={{ fontSize: 11 }}>◦</Text>
                     </View>
                   )}
                 </View>
@@ -2089,7 +2097,7 @@ export default function App() {
             ListEmptyComponent={
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyText}>
-                  아직 등록된 게시물이 없습니다.{'\n'}상단의 [⊞ 새 게시물]을 눌러 첫 스토리를 올려 보세요!
+                  아직 등록된 게시물이 없습니다.{'\n'}상단의 [+ 새 게시물]을 눌러 첫 스토리를 올려 보세요!
                 </Text>
               </View>
             }
@@ -2107,7 +2115,7 @@ export default function App() {
               setMainTab('home');
             }}
           >
-            <Text style={styles.igNavIcon}>🏠</Text>
+            <Text style={styles.igNavIcon}>⌂</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -2117,7 +2125,17 @@ export default function App() {
               setMainTab('friends');
             }}
           >
-            <Text style={[styles.igNavIcon, mainTab === 'friends' && styles.igNavIconActive]}>🔍</Text>
+            <Text style={[styles.igNavIcon, mainTab === 'friends' && styles.igNavIconActive]}>⌕</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.igNavItem}
+            onPress={() => {
+              fetchFriendsAndFavorites();
+              setMainTab('chats');
+            }}
+          >
+            <Text style={[styles.igNavIcon, mainTab === 'chats' && styles.igNavIconActive]}>💬</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -2128,19 +2146,7 @@ export default function App() {
               setWriteModalVisible(true);
             }}
           >
-            <View style={styles.igNavPlusBox}>
-              <Text style={styles.igNavPlusText}>+</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.igNavItem}
-            onPress={() => {
-              fetchFriendsAndFavorites();
-              setMainTab('chats');
-            }}
-          >
-            <Text style={[styles.igNavIcon, mainTab === 'chats' && styles.igNavIconActive]}>✈️</Text>
+            <Text style={styles.igNavPlusText}>+</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -2152,7 +2158,7 @@ export default function App() {
                 <Image source={{ uri: profile.avatar_url }} style={styles.igNavAvatar} />
               ) : (
                 <View style={[styles.igNavAvatar, styles.ktDefaultAvatar]}>
-                  <Text style={{ fontSize: 13 }}>👤</Text>
+                  <Text style={{ fontSize: 12 }}>◦</Text>
                 </View>
               )}
             </View>
@@ -2207,7 +2213,7 @@ export default function App() {
                   <Image source={{ uri: selectedFriend.avatar_url }} style={styles.friendCardAvatar} />
                 ) : (
                   <View style={[styles.friendCardAvatar, styles.defaultAvatar]}>
-                    <Text style={{ fontSize: 30 }}>👤</Text>
+                    <Text style={{ fontSize: 28 }}>◦</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -2220,11 +2226,11 @@ export default function App() {
                   style={styles.friendCardActionBtn}
                   onPress={() => toggleFavoriteFriend(selectedFriend.id)}
                 >
-                  <Text style={{ fontSize: 20 }}>
-                    {favoriteIds.includes(selectedFriend.id) ? '⭐' : '☆'}
+                  <Text style={{ fontSize: 18 }}>
+                    {favoriteIds.includes(selectedFriend.id) ? '★' : '☆'}
                   </Text>
                   <Text style={styles.friendCardActionLabel}>
-                    {favoriteIds.includes(selectedFriend.id) ? '즐겨찾기 됨' : '즐겨찾기'}
+                    {favoriteIds.includes(selectedFriend.id) ? '친구됨' : '친구하기'}
                   </Text>
                 </TouchableOpacity>
 
@@ -2236,7 +2242,7 @@ export default function App() {
                     setChatPartner(target);
                   }}
                 >
-                  <Text style={{ fontSize: 20 }}>💬</Text>
+                  <Text style={{ fontSize: 18 }}>💬</Text>
                   <Text style={[styles.friendCardActionLabel, { fontWeight: 'bold', color: '#3C1E1E' }]}>
                     1:1 채팅하기
                   </Text>
@@ -2305,7 +2311,7 @@ export default function App() {
                           <Image source={{ uri: chatPartner.avatar_url }} style={styles.chatAvatar} />
                         ) : (
                           <View style={[styles.chatAvatar, styles.defaultSmallAvatar]}>
-                            <Text style={{ fontSize: 13 }}>👤</Text>
+                            <Text style={{ fontSize: 12 }}>◦</Text>
                           </View>
                         )}
                       </TouchableOpacity>
@@ -2341,7 +2347,7 @@ export default function App() {
                           style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, styles.fileBubbleBox]}
                         >
                           <View style={styles.fileIconCircle}>
-                            <Text style={{ fontSize: 18 }}>📎</Text>
+                            <Text style={{ fontSize: 16 }}>📎</Text>
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={styles.fileBubbleName} numberOfLines={2}>
@@ -2401,14 +2407,14 @@ export default function App() {
               <View style={styles.attachDrawer}>
                 <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatPhoto}>
                   <View style={[styles.attachDrawerIconBox, { backgroundColor: '#48BB78' }]}>
-                    <Text style={{ fontSize: 24 }}>🖼️</Text>
+                    <Text style={{ fontSize: 22, color: '#FFFFFF' }}>+</Text>
                   </View>
                   <Text style={styles.attachDrawerLabel}>사진 올리기</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatFile}>
                   <View style={[styles.attachDrawerIconBox, { backgroundColor: '#4299E1' }]}>
-                    <Text style={{ fontSize: 24 }}>📎</Text>
+                    <Text style={{ fontSize: 20, color: '#FFFFFF' }}>📎</Text>
                   </View>
                   <Text style={styles.attachDrawerLabel}>파일 첨부</Text>
                 </TouchableOpacity>
@@ -2434,7 +2440,7 @@ export default function App() {
                 {tempCoverUri ? (
                   <Image source={{ uri: tempCoverUri }} style={styles.coverPreview} resizeMode="cover" />
                 ) : (
-                  <Text style={styles.pickerPlaceholder}>🖼️ 터치하여 세로 배경사진 선택</Text>
+                  <Text style={styles.pickerPlaceholder}>+ 터치하여 세로 배경사진 선택</Text>
                 )}
               </TouchableOpacity>
 
@@ -2450,7 +2456,7 @@ export default function App() {
                   <Image source={{ uri: tempAvatarUri }} style={styles.avatarPreview} resizeMode="cover" />
                 ) : (
                   <View style={[styles.avatarPreview, styles.defaultAvatar]}>
-                    <Text style={{ fontSize: 22 }}>👤</Text>
+                    <Text style={{ fontSize: 20 }}>◦</Text>
                   </View>
                 )}
                 <Text style={styles.pickerLinkText}>원형 프로필 사진 변경하기</Text>
@@ -2513,7 +2519,7 @@ export default function App() {
                   if (uri) setImageUri(uri);
                 }}
               >
-                <Text style={{ color: '#333', fontWeight: 'bold' }}>📷 갤러리에서 사진 첨부</Text>
+                <Text style={{ color: '#333', fontWeight: 'bold' }}>+ 갤러리에서 사진 첨부</Text>
               </TouchableOpacity>
             )}
 
@@ -2563,12 +2569,13 @@ const styles = StyleSheet.create({
 
   igFeedOuter: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#FFFFFF',
   },
   igFeedList: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    marginHorizontal: 14,
+    marginLeft: 14,
+    marginRight: 42,
   },
   igHeaderContainer: {
     backgroundColor: '#FFFFFF',
@@ -2630,7 +2637,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     gap: 10,
   },
-  igDropdownIcon: { fontSize: 16 },
+  igDropdownIcon: { fontSize: 16, color: '#111111' },
   igDropdownLabel: { fontSize: 14, fontWeight: '600', color: '#191919' },
   igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 12 },
 
@@ -2753,6 +2760,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 10,
   },
+  igActionIconRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  igQuickIconBtn: {
+    padding: 4,
+  },
   igReactionBar: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2790,64 +2807,49 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  // --- 화면 오른쪽 여백 심플 세로 아이콘 레일 (테두리·박스 없이 아이콘만 정렬) ---
   rightVerticalRail: {
     position: 'absolute',
     right: 6,
-    top: '28%',
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    borderRadius: 24,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+    top: '20%',
+    width: 32,
     alignItems: 'center',
-    gap: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 5,
+    gap: 20,
+    paddingVertical: 6,
   },
   verticalRailBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 4,
+    padding: 3,
   },
   verticalRailIcon: {
-    fontSize: 20,
-    opacity: 0.5,
+    fontSize: 21,
+    color: '#111111',
+    opacity: 0.45,
   },
   verticalRailIconActive: {
     opacity: 1,
-  },
-  verticalPlusBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#111111',
-    justifyContent: 'center',
-    alignItems: 'center',
+    fontWeight: 'bold',
   },
   verticalPlusText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 23,
+    fontWeight: '300',
     color: '#111111',
-    lineHeight: 18,
+    lineHeight: 25,
   },
   verticalAvatarRing: {
-    padding: 1.5,
-    borderRadius: 15,
+    padding: 1,
+    borderRadius: 14,
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
   verticalAvatarRingActive: {
-    borderColor: '#0288D1',
+    borderColor: '#111111',
   },
   verticalAvatarImg: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
   },
 
   igBottomNav: {
@@ -2865,26 +2867,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   igNavIcon: {
-    fontSize: 22,
+    fontSize: 21,
+    color: '#111111',
     opacity: 0.45,
   },
   igNavIconActive: {
     opacity: 1,
   },
-  igNavPlusBox: {
-    width: 26,
-    height: 26,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: '#111111',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   igNavPlusText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 23,
+    fontWeight: '300',
     color: '#111111',
-    lineHeight: 20,
+    lineHeight: 25,
   },
   igNavAvatarRing: {
     padding: 1.5,
@@ -3062,7 +3056,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  defaultAvatarText: { fontSize: 28 },
+  defaultAvatarText: { fontSize: 26, color: '#FFFFFF' },
   profileName: {
     color: '#FFFFFF',
     fontSize: 18,
@@ -3341,7 +3335,7 @@ const styles = StyleSheet.create({
   memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
   meBadge: { backgroundColor: '#3C1E1E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   meBadgeText: { color: '#FEE500', fontSize: 10, fontWeight: 'bold' },
-  chatStartArrow: { fontSize: 13, color: '#2B6CB0', fontWeight: 'bold' },
+  chatStartArrow: { fontSize: 15, color: '#2B6CB0', fontWeight: 'bold' },
 
   messengerFullScreen: {
     position: 'absolute',
