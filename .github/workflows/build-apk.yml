@@ -26,13 +26,13 @@ jobs:
       - name: Install dependencies
         run: |
           npm install
-          npx expo install expo-asset
+          npx expo install @expo/vector-icons expo-asset
           npx expo install --fix
 
       - name: Prebuild Android
         run: |
           npx expo prebuild --platform android --clean
-          sed -i "s|repositories {|repositories {\n        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }|g" android/settings.gradle
+          sed -i "/dependencyResolutionManagement/,/}/ s|repositories {|repositories {\n        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }|g" android/settings.gradle || true
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
