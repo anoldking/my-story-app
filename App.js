@@ -15,10 +15,12 @@ const LEFT_RAIL_WIDTH = 52;
 const getWindowWidth = () => Dimensions.get('window').width;
 const getWindowHeight = () => Dimensions.get('window').height;
 const SCREEN_WIDTH = getWindowWidth();
+const SCREEN_HEIGHT = getWindowHeight();
 const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
 const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (CONTENT_WIDTH - 4) / 3;
-const FEED_MEDIA_WIDTH = Math.max(220, CONTENT_WIDTH - 28);
+const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - LEFT_RAIL_WIDTH);
+const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.44);
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
@@ -44,7 +46,7 @@ try {
 }
 
 // 핀치 줌 + 한 손가락 드래그 + 더블 탭 확대가 가능한 이미지 뷰어
-const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, onZoomStateChange }) => {
+const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, fillHeight = false, onZoomStateChange }) => {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
 
@@ -175,10 +177,9 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, onZoomStat
 
   const width = containerWidth || getWindowWidth();
   const ratio = aspectRatio || 1;
-  const computedHeight = Math.min(
-    maxHeight || getWindowHeight() * 0.72,
-    Math.round(width / ratio)
-  );
+  const computedHeight = fillHeight
+    ? (maxHeight || getWindowHeight())
+    : Math.min(maxHeight || getWindowHeight() * 0.72, Math.round(width / ratio));
 
   return (
     <View
@@ -188,7 +189,7 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, onZoomStat
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
-        backgroundColor: '#FFFFFF',
+        backgroundColor: fillHeight ? '#000000' : '#FFFFFF',
       }}
       {...panResponder.panHandlers}
     >
@@ -197,7 +198,7 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, onZoomStat
         style={{
           width,
           height: computedHeight,
-          backgroundColor: '#FFFFFF',
+          backgroundColor: fillHeight ? '#000000' : '#FFFFFF',
           transform: [
             { translateX: translate.x },
             { translateY: translate.y },
@@ -210,7 +211,8 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, onZoomStat
   );
 };
 
-const AutoHeightImage = ({ uri, onPress }) => {
+// 피드 화면용: 한 화면 안에 깔끔하게 들어오는 사이즈로 표시
+const CompactFeedImage = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
 
   useEffect(() => {
@@ -226,92 +228,148 @@ const AutoHeightImage = ({ uri, onPress }) => {
     );
   }, [uri]);
 
+  const targetHeight = Math.min(
+    FEED_MEDIA_MAX_HEIGHT,
+    Math.max(170, Math.round(FEED_MEDIA_WIDTH / (aspectRatio || 1)))
+  );
+
   return (
-    <TouchableOpacity activeOpacity={0.95} onPress={onPress} style={{ width: '100%', alignItems: 'center' }}>
+    <TouchableOpacity activeOpacity={0.94} onPress={onPress} style={styles.compactImageWrap}>
       <Image
         source={{ uri }}
-        style={[styles.feedImage, { aspectRatio }]}
-        resizeMode="contain"
+        style={[styles.compactFeedImage, { width: FEED_MEDIA_WIDTH, height: targetHeight }]}
+        resizeMode="cover"
       />
     </TouchableOpacity>
   );
 };
 
-const OriginalImagePopup = ({ imageInfo, onClose }) => {
+// 전체화면 원본 사진 팝업 (원본 비율 + 확대/드래그/더블탭 + 작성자 프로필·좋아요·채팅 버튼)
+const FullscreenPhotoPopup = ({
+  photoInfo,
+  currentUserId,
+  onClose,
+  onToggleReaction,
+  onOpenCommentOrDetail,
+  onOpenAuthorChat,
+}) => {
   const [aspectRatio, setAspectRatio] = useState(1);
-  const [loadingSize, setLoadingSize] = useState(true);
   const [isZoomed, setIsZoomed] = useState(false);
   const winWidth = getWindowWidth();
   const winHeight = getWindowHeight();
 
   useEffect(() => {
-    if (!imageInfo?.uri) return;
-    setLoadingSize(true);
+    if (!photoInfo?.uri) return;
     setIsZoomed(false);
     Image.getSize(
-      imageInfo.uri,
+      photoInfo.uri,
       (width, height) => {
         if (width && height) {
           setAspectRatio(width / height);
         }
-        setLoadingSize(false);
       },
-      () => {
-        setAspectRatio(1);
-        setLoadingSize(false);
-      }
+      () => setAspectRatio(1)
     );
-  }, [imageInfo?.uri]);
+  }, [photoInfo?.uri]);
 
-  if (!imageInfo) return null;
+  if (!photoInfo) return null;
+
+  const isLikedByMe = Boolean(photoInfo.isLikedByMe);
+  const likeCount = photoInfo.likeCount ?? 0;
 
   return (
-    <View style={styles.whitePopupBackdrop}>
-      <View style={styles.whitePopupTopBar}>
-        <Text style={styles.whitePopupTitle} numberOfLines={1}>
-          {imageInfo.title || '사진 원본 보기'}
-        </Text>
-        <TouchableOpacity style={styles.popupCloseIconBtn} onPress={onClose}>
-          <Ionicons name="close" size={15} color="#3C1E1E" />
-          <Text style={styles.popupCloseIconText}>닫기</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.fullscreenViewerRoot}>
+      <ZoomableImage
+        uri={photoInfo.uri}
+        aspectRatio={aspectRatio}
+        containerWidth={winWidth}
+        maxHeight={winHeight}
+        fillHeight
+        onZoomStateChange={setIsZoomed}
+      />
 
-      <ScrollView
-        style={{ width: '100%', flex: 1 }}
-        scrollEnabled={!isZoomed}
-        contentContainerStyle={styles.whitePopupScrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {loadingSize && (
-          <ActivityIndicator size="large" color="#0288D1" style={{ marginVertical: 30 }} />
-        )}
+      {/* 좌측 상단 뒤로가기 버튼 */}
+      <TouchableOpacity style={styles.fullscreenBackBtn} onPress={onClose} activeOpacity={0.8}>
+        <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
 
-        <ZoomableImage
-          uri={imageInfo.uri}
-          aspectRatio={aspectRatio}
-          containerWidth={winWidth}
-          maxHeight={Math.round(winHeight * 0.72)}
-          onZoomStateChange={setIsZoomed}
-        />
-
-        <Text style={styles.zoomHintText}>두 손가락으로 확대·축소, 한 손가락으로 이동, 두 번 탭으로 확대</Text>
-
-        {(imageInfo.caption || imageInfo.date) && (
-          <View style={styles.whitePopupCaptionBox}>
-            {imageInfo.caption ? (
-              <Text style={styles.whitePopupCaption}>{imageInfo.caption}</Text>
-            ) : null}
-            {imageInfo.date ? (
-              <Text style={styles.whitePopupDate}>{imageInfo.date}</Text>
-            ) : null}
+      {/* 하단 그라데이션 정보 바: 좌측 올린 사람 프로필·정보, 우측 좋아요 개수·채팅 버튼 */}
+      <View style={styles.fullscreenBottomOverlay} pointerEvents="box-none">
+        <View style={styles.fullscreenAuthorMeta}>
+          <View style={styles.fullscreenAuthorHeader}>
+            {photoInfo.avatarUrl ? (
+              <Image source={{ uri: photoInfo.avatarUrl }} style={styles.fullscreenAuthorAvatar} />
+            ) : (
+              <View style={[styles.fullscreenAuthorAvatar, styles.fullscreenDefaultAvatar]}>
+                <Ionicons name="person" size={16} color="#FFFFFF" />
+              </View>
+            )}
+            <Text style={styles.fullscreenAuthorName} numberOfLines={1}>
+              {photoInfo.authorName || '내 스토리'}
+            </Text>
           </View>
-        )}
-      </ScrollView>
+
+          {photoInfo.dateText ? (
+            <Text style={styles.fullscreenSubMeta} numberOfLines={1}>
+              {photoInfo.dateText}
+            </Text>
+          ) : null}
+
+          {photoInfo.caption ? (
+            <Text style={styles.fullscreenCaptionText} numberOfLines={2}>
+              {photoInfo.caption}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.fullscreenRightActions}>
+          {photoInfo.postId && onToggleReaction && (
+            <TouchableOpacity
+              style={styles.fullscreenActionBtn}
+              onPress={() => onToggleReaction(photoInfo.postId, 'like')}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={isLikedByMe ? 'heart' : 'heart-outline'}
+                size={26}
+                color={isLikedByMe ? '#FF4D6D' : '#FFFFFF'}
+              />
+              <Text style={styles.fullscreenActionCount}>{likeCount}</Text>
+            </TouchableOpacity>
+          )}
+
+          {photoInfo.authorId && onOpenAuthorChat && (
+            <TouchableOpacity
+              style={styles.fullscreenActionBtn}
+              onPress={() =>
+                onOpenAuthorChat({
+                  id: photoInfo.authorId,
+                  nickname: photoInfo.authorName || (photoInfo.authorId === currentUserId ? '나' : '친구'),
+                  avatar_url: photoInfo.avatarUrl || null,
+                })
+              }
+              activeOpacity={0.8}
+            >
+              <Ionicons name="chatbubble-outline" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+
+          {photoInfo.postId && onOpenCommentOrDetail && (
+            <TouchableOpacity
+              style={styles.fullscreenActionBtn}
+              onPress={() => onOpenCommentOrDetail(photoInfo.postId)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
     </View>
   );
 };
 
+// 게시물 상세 팝업 (원본 사진 확대·드래그 + 좋아요 + 수정/삭제 + 댓글 작성/목록)
 const PostDetailPopup = ({
   post,
   currentUserId,
@@ -438,9 +496,14 @@ const PostDetailPopup = ({
                 onPress={() =>
                   onOpenFullImage({
                     uri: imgUri,
-                    title: post.profiles?.nickname || defaultNickname || '사진 원본 보기',
+                    postId: post.id,
+                    authorId: post.author_id,
+                    authorName: post.profiles?.nickname || defaultNickname || '내 스토리',
+                    avatarUrl: post.profiles?.avatar_url || null,
+                    dateText: new Date(post.created_at).toLocaleString('ko-KR'),
                     caption: post.content || '',
-                    date: new Date(post.created_at).toLocaleString('ko-KR'),
+                    likeCount: post.reactions?.length || 0,
+                    isLikedByMe: Boolean(post.reactions?.some((x) => x.user_id === currentUserId)),
                   })
                 }
               >
@@ -755,6 +818,22 @@ export default function App() {
       fetchCommentsForPost(selectedPostId);
     }
   }, [selectedPostId]);
+
+  // 전체화면 뷰어에 표시 중인 게시글의 좋아요 수가 바뀌면 동기화
+  useEffect(() => {
+    if (!viewingImage?.postId) return;
+    const targetPost = posts.find((p) => p.id === viewingImage.postId);
+    if (!targetPost) return;
+    setViewingImage((prev) =>
+      prev
+        ? {
+            ...prev,
+            likeCount: targetPost.reactions?.length || 0,
+            isLikedByMe: Boolean(targetPost.reactions?.some((x) => x.user_id === session?.user?.id)),
+          }
+        : null
+    );
+  }, [posts, viewingImage?.postId, session?.user?.id]);
 
   useEffect(() => {
     if (!supabase || !session || !chatPartner) return;
@@ -1551,10 +1630,12 @@ export default function App() {
   const renderHomeFeedPostItem = ({ item }) => {
     const isMyPost = item.author_id === session.user.id;
     const isFriendFav = favoriteIds.includes(item.author_id);
-    const myReaction = item.reactions?.find((x) => x.user_id === session.user.id);
-    const isLikedByMe = Boolean(myReaction);
+    const isLikedByMe = Boolean(item.reactions?.some((x) => x.user_id === session.user.id));
     const totalReactions = item.reactions?.length || 0;
     const postComments = commentsByPost[String(item.id)] || [];
+    const authorName = item.profiles?.nickname || profile.nickname || '친구';
+    const authorAvatar = item.profiles?.avatar_url || null;
+    const dateText = new Date(item.created_at).toLocaleString('ko-KR');
 
     return (
       <View style={styles.minimalPostCard}>
@@ -1570,20 +1651,16 @@ export default function App() {
               }
             }}
           >
-            {item.profiles?.avatar_url ? (
-              <Image source={{ uri: item.profiles.avatar_url }} style={styles.igPostAvatar} />
+            {authorAvatar ? (
+              <Image source={{ uri: authorAvatar }} style={styles.igPostAvatar} />
             ) : (
               <View style={[styles.igPostAvatar, styles.ktDefaultAvatar]}>
                 <Ionicons name="person" size={16} color="#64748B" />
               </View>
             )}
             <View>
-              <Text style={styles.igPostAuthorName}>
-                {item.profiles?.nickname || profile.nickname || '친구'}
-              </Text>
-              <Text style={styles.igPostDate}>
-                {new Date(item.created_at).toLocaleString('ko-KR')}
-              </Text>
+              <Text style={styles.igPostAuthorName}>{authorName}</Text>
+              <Text style={styles.igPostDate}>{dateText}</Text>
             </View>
           </TouchableOpacity>
 
@@ -1613,14 +1690,19 @@ export default function App() {
         </View>
 
         {item.image_urls?.[0] && (
-          <AutoHeightImage
+          <CompactFeedImage
             uri={item.image_urls[0]}
             onPress={() =>
               setViewingImage({
                 uri: item.image_urls[0],
-                title: item.profiles?.nickname || profile.nickname || '게시글 사진',
+                postId: item.id,
+                authorId: item.author_id,
+                authorName,
+                avatarUrl: authorAvatar,
+                dateText,
                 caption: item.content || '',
-                date: new Date(item.created_at).toLocaleString('ko-KR'),
+                likeCount: totalReactions,
+                isLikedByMe,
               })
             }
           />
@@ -1656,9 +1738,7 @@ export default function App() {
           {item.content ? (
             <TouchableOpacity activeOpacity={0.85} onPress={() => setSelectedPostId(item.id)}>
               <Text style={styles.minimalPostCaption}>
-                <Text style={styles.minimalCaptionAuthor}>
-                  {item.profiles?.nickname || profile.nickname || '친구'}{' '}
-                </Text>
+                <Text style={styles.minimalCaptionAuthor}>{authorName} </Text>
                 {item.content}
               </Text>
             </TouchableOpacity>
@@ -1866,8 +1946,13 @@ export default function App() {
           if (profile.cover_url) {
             setViewingImage({
               uri: profile.cover_url,
-              title: `${profile.nickname || '내'}의 배경사진`,
+              authorId: session.user.id,
+              authorName: profile.nickname || '내 스토리',
+              avatarUrl: profile.avatar_url || null,
+              dateText: '프로필 배경사진',
               caption: profile.bio || '',
+              likeCount: 0,
+              isLikedByMe: false,
             });
           }
         }}
@@ -1900,8 +1985,13 @@ export default function App() {
               if (profile.avatar_url) {
                 setViewingImage({
                   uri: profile.avatar_url,
-                  title: `${profile.nickname || '내'}의 프로필 사진`,
+                  authorId: session.user.id,
+                  authorName: profile.nickname || '내 스토리',
+                  avatarUrl: profile.avatar_url,
+                  dateText: '프로필 사진',
                   caption: profile.bio || '',
+                  likeCount: 0,
+                  isLikedByMe: false,
                 });
               } else {
                 showAlert('알림', '등록된 프로필 사진이 없습니다.\n아래 [내 프로필 꾸미기] 버튼에서 사진을 등록해 보세요!');
@@ -2012,7 +2102,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.mainShellRow}>
-        {/* 화면 왼쪽 세로 Ionicons 메뉴바 */}
+        {/* 화면 왼쪽 세로 메뉴바: 한 손 터치가 편하도록 중앙에 모음 */}
         <View style={styles.leftVerticalMenuBar}>
           <TouchableOpacity
             style={styles.leftMenuBtn}
@@ -2025,7 +2115,7 @@ export default function App() {
           >
             <Ionicons
               name={isHomeActive ? 'home' : 'home-outline'}
-              size={23}
+              size={22}
               color="#111111"
               style={{ opacity: isHomeActive ? 1 : 0.45 }}
             />
@@ -2041,7 +2131,7 @@ export default function App() {
           >
             <Ionicons
               name="search"
-              size={23}
+              size={22}
               color="#111111"
               style={{ opacity: isFriendsActive ? 1 : 0.45 }}
             />
@@ -2057,7 +2147,7 @@ export default function App() {
           >
             <Ionicons
               name={isChatsActive ? 'chatbubble' : 'chatbubble-outline'}
-              size={22}
+              size={21}
               color="#111111"
               style={{ opacity: isChatsActive ? 1 : 0.45 }}
             />
@@ -2073,7 +2163,7 @@ export default function App() {
           >
             <Ionicons
               name={isFavActive ? 'heart' : 'heart-outline'}
-              size={23}
+              size={22}
               color="#111111"
               style={{ opacity: isFavActive ? 1 : 0.45 }}
             />
@@ -2088,7 +2178,7 @@ export default function App() {
               setWriteModalVisible(true);
             }}
           >
-            <Ionicons name="add" size={26} color="#111111" />
+            <Ionicons name="add" size={25} color="#111111" />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -2168,8 +2258,13 @@ export default function App() {
                   if (selectedFriend.cover_url) {
                     setViewingImage({
                       uri: selectedFriend.cover_url,
-                      title: `${selectedFriend.nickname || '친구'}의 배경사진`,
+                      authorId: selectedFriend.id,
+                      authorName: selectedFriend.nickname || '친구',
+                      avatarUrl: selectedFriend.avatar_url || null,
+                      dateText: '프로필 배경사진',
                       caption: selectedFriend.bio || '',
+                      likeCount: 0,
+                      isLikedByMe: false,
                     });
                   }
                 }}
@@ -2190,8 +2285,13 @@ export default function App() {
                   if (selectedFriend.avatar_url) {
                     setViewingImage({
                       uri: selectedFriend.avatar_url,
-                      title: `${selectedFriend.nickname || '친구'}의 프로필 사진`,
+                      authorId: selectedFriend.id,
+                      authorName: selectedFriend.nickname || '친구',
+                      avatarUrl: selectedFriend.avatar_url,
+                      dateText: '프로필 사진',
                       caption: selectedFriend.bio || '',
+                      likeCount: 0,
+                      isLikedByMe: false,
                     });
                   }
                 }}
@@ -2292,7 +2392,12 @@ export default function App() {
                           if (chatPartner.avatar_url) {
                             setViewingImage({
                               uri: chatPartner.avatar_url,
-                              title: `${chatPartner.nickname || '상대방'}의 프로필 사진`,
+                              authorId: chatPartner.id,
+                              authorName: chatPartner.nickname || '상대방',
+                              avatarUrl: chatPartner.avatar_url,
+                              dateText: '프로필 사진',
+                              likeCount: 0,
+                              isLikedByMe: false,
                             });
                           }
                         }}
@@ -2318,8 +2423,12 @@ export default function App() {
                           onPress={() =>
                             setViewingImage({
                               uri: item.image_url,
-                              title: isMine ? '내가 보낸 사진' : `${chatPartner.nickname || '상대방'}이 보낸 사진`,
-                              date: new Date(item.created_at).toLocaleString('ko-KR'),
+                              authorId: item.sender_id,
+                              authorName: isMine ? (profile.nickname || '나') : (chatPartner.nickname || '상대방'),
+                              avatarUrl: isMine ? profile.avatar_url : chatPartner.avatar_url,
+                              dateText: new Date(item.created_at).toLocaleString('ko-KR'),
+                              likeCount: 0,
+                              isLikedByMe: false,
                             })
                           }
                           style={styles.chatPhotoBubble}
@@ -2437,7 +2546,7 @@ export default function App() {
                 )}
               </TouchableOpacity>
 
-              <Text style={styles.fieldLabel}>좌측 원형 메인 프로필 사진</Text>
+              <Text style={styles.fieldLabel}>원형 메인 프로필 사진</Text>
               <TouchableOpacity
                 style={styles.avatarPickerRow}
                 onPress={async () => {
@@ -2540,12 +2649,25 @@ export default function App() {
         onToggleReaction={toggleReaction}
         onSaveEdit={saveEditPost}
         onDeletePost={confirmDeletePost}
-        onOpenFullImage={(info) => setViewingImage(info)}
+        onOpenFullImage={(info) => {
+          setSelectedPostId(null);
+          setViewingImage(info);
+        }}
       />
 
-      <OriginalImagePopup
-        imageInfo={viewingImage}
+      <FullscreenPhotoPopup
+        photoInfo={viewingImage}
+        currentUserId={session.user.id}
         onClose={() => setViewingImage(null)}
+        onToggleReaction={toggleReaction}
+        onOpenCommentOrDetail={(postId) => {
+          setViewingImage(null);
+          setSelectedPostId(postId);
+        }}
+        onOpenAuthorChat={(partner) => {
+          setViewingImage(null);
+          setChatPartner(partner);
+        }}
       />
     </SafeAreaView>
   );
@@ -2575,15 +2697,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
 
+  // --- 화면 왼쪽 세로 메뉴바: 한 손 터치용 중앙 정렬 ---
   leftVerticalMenuBar: {
     width: LEFT_RAIL_WIDTH,
     backgroundColor: '#FFFFFF',
     borderRightWidth: 1,
-    borderRightColor: '#EFEFEF',
+    borderRightColor: '#F3F4F6',
     alignItems: 'center',
-    paddingTop: 22,
-    paddingBottom: 22,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 14,
   },
   leftMenuBtn: {
     width: 44,
@@ -2606,9 +2728,11 @@ const styles = StyleSheet.create({
     borderRadius: 13,
   },
 
+  // --- 우측 메인 콘텐츠 영역 (좌우 여백 균형) ---
   rightContentArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingRight: LEFT_RAIL_WIDTH,
   },
 
   igHeaderContainer: {
@@ -2719,8 +2843,8 @@ const styles = StyleSheet.create({
   // --- 미니멀 & 간결 피드 카드 ---
   minimalPostCard: {
     backgroundColor: '#FFFFFF',
-    paddingTop: 18,
-    paddingBottom: 20,
+    paddingTop: 16,
+    paddingBottom: 18,
     borderBottomWidth: 1,
     borderBottomColor: '#F2F2F2',
   },
@@ -2729,7 +2853,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingBottom: 12,
+    paddingBottom: 10,
   },
   igPostAuthorRow: {
     flexDirection: 'row',
@@ -2775,20 +2899,24 @@ const styles = StyleSheet.create({
     color: '#A1A1AA',
   },
 
-  feedImage: {
-    width: FEED_MEDIA_WIDTH,
+  compactImageWrap: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactFeedImage: {
     borderRadius: 12,
     backgroundColor: '#FAFAFA',
   },
   minimalPostFooter: {
     paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingTop: 10,
   },
   minimalStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   minimalStatBtn: {
     flexDirection: 'row',
@@ -2804,11 +2932,107 @@ const styles = StyleSheet.create({
   minimalPostCaption: {
     fontSize: 14,
     color: '#27272A',
-    lineHeight: 21,
+    lineHeight: 20,
   },
   minimalCaptionAuthor: {
     fontWeight: '700',
     color: '#18181B',
+  },
+
+  // --- 전체화면 원본 팝업 (참고 이미지 스타일) ---
+  fullscreenViewerRoot: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000000',
+    zIndex: 1200,
+  },
+  fullscreenBackBtn: {
+    position: 'absolute',
+    top: 18,
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1220,
+  },
+  fullscreenBottomOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 18,
+    paddingTop: 48,
+    paddingBottom: 28,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(0, 0, 0, 0.42)',
+    zIndex: 1210,
+  },
+  fullscreenAuthorMeta: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  fullscreenAuthorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 6,
+  },
+  fullscreenAuthorAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  fullscreenDefaultAvatar: {
+    backgroundColor: '#3F3F46',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullscreenAuthorName: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0, 0, 0, 0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  fullscreenSubMeta: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  fullscreenCaptionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  fullscreenRightActions: {
+    alignItems: 'center',
+    gap: 18,
+  },
+  fullscreenActionBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 40,
+    paddingVertical: 4,
+  },
+  fullscreenActionCount: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 3,
+    textShadowColor: 'rgba(0, 0, 0, 0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
@@ -3092,13 +3316,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  whitePopupScrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
-  },
   imageToolbarRow: {
     width: '100%',
     flexDirection: 'row',
@@ -3130,14 +3347,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  whitePopupCaptionBox: {
-    width: '100%',
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    alignItems: 'center',
-  },
-  whitePopupCaption: { color: '#222222', fontSize: 15, textAlign: 'center', lineHeight: 22 },
-  whitePopupDate: { color: '#888888', fontSize: 12, marginTop: 6 },
   whiteDetailBodyBox: {
     width: '100%',
     padding: 16,
