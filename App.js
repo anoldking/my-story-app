@@ -506,6 +506,9 @@ export default function App() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
   const [mainTab, setMainTab] = useState('home');
+  // 홈 상단 'Mestory ∨' 드롭다운 메뉴 상태 및 '즐겨찾기만 보기' 필터
+  const [brandMenuOpen, setBrandMenuOpen] = useState(false);
+  const [onlyFavoritesFeed, setOnlyFavoritesFeed] = useState(false);
 
   const [profile, setProfile] = useState({
     nickname: '',
@@ -567,6 +570,11 @@ export default function App() {
         return true;
       }
 
+      if (brandMenuOpen) {
+        setBrandMenuOpen(false);
+        return true;
+      }
+
       if (editProfileModal) {
         setEditProfileModal(false);
         return true;
@@ -621,6 +629,7 @@ export default function App() {
     isSignUpScreen,
     viewingImage,
     selectedPostId,
+    brandMenuOpen,
     editProfileModal,
     writeModalVisible,
     selectedFriend,
@@ -1208,27 +1217,73 @@ export default function App() {
   }
 
   const otherMembers = members.filter((m) => m.id !== session.user.id);
+  const feedPosts = onlyFavoritesFeed
+    ? posts.filter((p) => p.author_id === session.user.id || favoriteIds.includes(p.author_id))
+    : posts;
 
+  // --- 화면 1: 인스타그램 스타일 홈 피드 ('home') ---
   const renderHomeFeedHeader = () => (
     <View style={styles.igHeaderContainer}>
+      {/* 상단 바: 좌측 여백 균형 + 중앙 'Mestory ∨' + 우측 DM 아이콘 */}
       <View style={styles.igTopBar}>
-        <Text style={styles.igLogoText}>Mestory</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          <TouchableOpacity
-            onPress={() => {
-              setImageUri(null);
-              setContent('');
-              setWriteModalVisible(true);
-            }}
-          >
-            <Text style={{ fontSize: 22, color: '#111' }}>＋</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setMainTab('chats')}>
-            <Text style={{ fontSize: 20, color: '#111' }}>✈️</Text>
-          </TouchableOpacity>
-        </View>
+        <View style={{ width: 32 }} />
+
+        <TouchableOpacity
+          style={styles.igCenterBrandBtn}
+          activeOpacity={0.75}
+          onPress={() => setBrandMenuOpen(!brandMenuOpen)}
+        >
+          <Text style={styles.igLogoText}>
+            {onlyFavoritesFeed ? 'Mestory ★' : 'Mestory'}
+          </Text>
+          <Text style={styles.igBrandChevron}>{brandMenuOpen ? ' ∧' : ' ∨'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.igTopRightBtn}
+          onPress={() => {
+            setBrandMenuOpen(false);
+            setMainTab('chats');
+          }}
+        >
+          <Text style={{ fontSize: 20, color: '#111111' }}>✈️</Text>
+        </TouchableOpacity>
       </View>
 
+      {/* 'Mestory ∨' 클릭 시 펼쳐지는 '친구하기' / '즐겨찾기' 메뉴 */}
+      {brandMenuOpen && (
+        <View style={styles.igBrandDropdown}>
+          <TouchableOpacity
+            style={styles.igDropdownRow}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              setOnlyFavoritesFeed(false);
+              fetchFriendsAndFavorites();
+              setMainTab('friends');
+            }}
+          >
+            <Text style={styles.igDropdownIcon}>👥</Text>
+            <Text style={styles.igDropdownLabel}>친구하기</Text>
+          </TouchableOpacity>
+
+          <View style={styles.igDropdownDivider} />
+
+          <TouchableOpacity
+            style={styles.igDropdownRow}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              setOnlyFavoritesFeed(!onlyFavoritesFeed);
+            }}
+          >
+            <Text style={styles.igDropdownIcon}>{onlyFavoritesFeed ? '★' : '☆'}</Text>
+            <Text style={styles.igDropdownLabel}>
+              {onlyFavoritesFeed ? '즐겨찾기 필터 끄기 (전체 보기)' : '즐겨찾기'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 가로 스크롤 원형 스토리 바 (내 스토리 + 가입 회원들) */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -1237,6 +1292,7 @@ export default function App() {
         <TouchableOpacity
           style={styles.igStoryItem}
           onPress={() => {
+            setBrandMenuOpen(false);
             setImageUri(null);
             setContent('');
             setWriteModalVisible(true);
@@ -1261,7 +1317,10 @@ export default function App() {
           <TouchableOpacity
             key={member.id}
             style={styles.igStoryItem}
-            onPress={() => setSelectedFriend(member)}
+            onPress={() => {
+              setBrandMenuOpen(false);
+              setSelectedFriend(member);
+            }}
           >
             <View style={styles.igStoryRing}>
               {member.avatar_url ? (
@@ -1283,10 +1342,12 @@ export default function App() {
 
   const renderHomeFeedPostItem = ({ item }) => {
     const isMyPost = item.author_id === session.user.id;
+    const isFriendFav = favoriteIds.includes(item.author_id);
     const totalReactions = item.reactions?.length || 0;
 
     return (
       <View style={styles.igPostCard}>
+        {/* 게시물 상단 작성자 바 + 오른쪽 '친구하기' & '•••' 버튼 */}
         <View style={styles.igPostHeader}>
           <TouchableOpacity
             style={styles.igPostAuthorRow}
@@ -1316,11 +1377,32 @@ export default function App() {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ padding: 6 }}>
-            <Text style={{ fontSize: 16, color: '#555' }}>•••</Text>
-          </TouchableOpacity>
+          <View style={styles.igPostRightActions}>
+            {!isMyPost && (
+              <TouchableOpacity
+                style={[
+                  styles.igFollowPillBtn,
+                  isFriendFav && styles.igFollowPillBtnActive,
+                ]}
+                onPress={() => toggleFavoriteFriend(item.author_id)}
+              >
+                <Text
+                  style={[
+                    styles.igFollowPillText,
+                    isFriendFav && styles.igFollowPillTextActive,
+                  ]}
+                >
+                  {isFriendFav ? '친구됨' : '친구하기'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
+              <Text style={{ fontSize: 16, color: '#333333', fontWeight: 'bold' }}>•••</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
+        {/* 게시물 원본 비율 사진 (터치 시 원본 크기 팝업) */}
         {item.image_urls?.[0] && (
           <AutoHeightImage
             uri={item.image_urls[0]}
@@ -1335,7 +1417,30 @@ export default function App() {
           />
         )}
 
+        {/* 하단 액션 바 (오른쪽 정렬 퀵 아이콘 + 감정 표현 칩 + 본문) */}
         <View style={styles.igPostFooter}>
+          <View style={styles.igActionIconRow}>
+            <TouchableOpacity onPress={() => toggleReaction(item.id, 'like')} style={styles.igQuickIconBtn}>
+              <Text style={{ fontSize: 20 }}>❤️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={styles.igQuickIconBtn}>
+              <Text style={{ fontSize: 19 }}>💬</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                if (!isMyPost) {
+                  const target = members.find((m) => m.id === item.author_id);
+                  if (target) setChatPartner(target);
+                } else {
+                  setMainTab('chats');
+                }
+              }}
+              style={styles.igQuickIconBtn}
+            >
+              <Text style={{ fontSize: 19 }}>✈️</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.igReactionBar}>
             {REACTIONS.map((r) => {
               const count = item.reactions?.filter((x) => x.type === r.type).length || 0;
@@ -1370,6 +1475,7 @@ export default function App() {
     );
   };
 
+  // --- 화면 2: 친구하기 & 검색 탭 ('friends') ---
   const filteredMembers = otherMembers.filter((m) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -1419,7 +1525,7 @@ export default function App() {
   const renderFriendsTabScreen = () => (
     <View style={styles.ktContainer}>
       <View style={styles.ktHeader}>
-        <Text style={styles.ktPageTitle}>친구 검색</Text>
+        <Text style={styles.ktPageTitle}>친구하기</Text>
         <TouchableOpacity style={styles.ktIconBtn} onPress={openProfileEditor}>
           <Text style={{ fontSize: 19 }}>⚙️</Text>
         </TouchableOpacity>
@@ -1502,6 +1608,7 @@ export default function App() {
     </View>
   );
 
+  // --- 화면 3: DM 채팅 목록 탭 ('chats') ---
   const renderChatsTabScreen = () => (
     <View style={styles.ktContainer}>
       <View style={styles.ktHeader}>
@@ -1550,6 +1657,7 @@ export default function App() {
     </View>
   );
 
+  // --- 화면 4: 내 스토리 프로필 헤더 ('story', 탭 없이 3열 격자 직결) ---
   const renderProfileHeader = () => (
     <ImageBackground
       source={profile.cover_url ? { uri: profile.cover_url } : undefined}
@@ -1702,14 +1810,16 @@ export default function App() {
         {mainTab === 'home' && (
           <FlatList
             style={{ backgroundColor: '#FFFFFF' }}
-            data={posts}
+            data={feedPosts}
             keyExtractor={(item) => String(item.id)}
             ListHeaderComponent={renderHomeFeedHeader}
             renderItem={renderHomeFeedPostItem}
             ListEmptyComponent={
               <View style={styles.emptyBox}>
                 <Text style={[styles.emptyText, { color: '#777' }]}>
-                  아직 올라온 스토리가 없습니다.{'\n'}하단 가운데 [+] 버튼을 눌러 첫 사진을 올려 보세요!
+                  {onlyFavoritesFeed
+                    ? '즐겨찾기한 친구의 새 게시물이 없습니다.\n상단 [Mestory ∨]에서 전체 보기로 전환해 보세요!'
+                    : '아직 올라온 스토리가 없습니다.\n하단 가운데 [+] 버튼을 눌러 첫 사진을 올려 보세요!'}
                 </Text>
               </View>
             }
@@ -1739,6 +1849,7 @@ export default function App() {
         <TouchableOpacity
           style={styles.igNavItem}
           onPress={() => {
+            setBrandMenuOpen(false);
             fetchPosts();
             fetchFriendsAndFavorites();
             setMainTab('home');
@@ -1750,6 +1861,7 @@ export default function App() {
         <TouchableOpacity
           style={styles.igNavItem}
           onPress={() => {
+            setBrandMenuOpen(false);
             fetchFriendsAndFavorites();
             setMainTab('friends');
           }}
@@ -1760,6 +1872,7 @@ export default function App() {
         <TouchableOpacity
           style={styles.igNavItem}
           onPress={() => {
+            setBrandMenuOpen(false);
             setImageUri(null);
             setContent('');
             setWriteModalVisible(true);
@@ -1773,6 +1886,7 @@ export default function App() {
         <TouchableOpacity
           style={styles.igNavItem}
           onPress={() => {
+            setBrandMenuOpen(false);
             fetchFriendsAndFavorites();
             setMainTab('chats');
           }}
@@ -1782,7 +1896,10 @@ export default function App() {
 
         <TouchableOpacity
           style={styles.igNavItem}
-          onPress={() => setMainTab('story')}
+          onPress={() => {
+            setBrandMenuOpen(false);
+            setMainTab('story');
+          }}
         >
           <View style={[styles.igNavAvatarRing, mainTab === 'story' && styles.igNavAvatarRingActive]}>
             {profile.avatar_url ? (
@@ -1860,7 +1977,7 @@ export default function App() {
                     {favoriteIds.includes(selectedFriend.id) ? '⭐' : '☆'}
                   </Text>
                   <Text style={styles.friendCardActionLabel}>
-                    {favoriteIds.includes(selectedFriend.id) ? '즐겨찾기 됨' : '즐겨찾기'}
+                    {favoriteIds.includes(selectedFriend.id) ? '친구됨' : '친구하기'}
                   </Text>
                 </TouchableOpacity>
 
@@ -2195,26 +2312,74 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
+  // --- 인스타그램 스타일 전체 여백 & 중앙 정렬 헤더 ---
   igHeaderContainer: {
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#EFEFEF',
+    borderBottomColor: '#F0F0F0',
+    paddingTop: 8,
+    paddingBottom: 6,
   },
   igTopBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
+  },
+  igCenterBrandBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
   igLogoText: {
-    fontSize: 23,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#111111',
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
   },
+  igBrandChevron: {
+    fontSize: 14,
+    color: '#333333',
+    fontWeight: 'bold',
+  },
+  igTopRightBtn: {
+    width: 32,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+
+  igBrandDropdown: {
+    alignSelf: 'center',
+    width: 190,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#EAEAEA',
+    paddingVertical: 6,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  igDropdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    gap: 10,
+  },
+  igDropdownIcon: { fontSize: 16 },
+  igDropdownLabel: { fontSize: 14, fontWeight: '600', color: '#191919' },
+  igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 12 },
+
   igStoryBarContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    paddingTop: 4,
     paddingBottom: 12,
     gap: 14,
   },
@@ -2224,14 +2389,14 @@ const styles = StyleSheet.create({
   },
   igStoryAvatarWrap: {
     position: 'relative',
-    marginBottom: 5,
+    marginBottom: 6,
   },
   igStoryRing: {
     padding: 2.5,
     borderRadius: 36,
     borderWidth: 2,
     borderColor: '#E1306C',
-    marginBottom: 5,
+    marginBottom: 6,
   },
   igStoryAvatar: {
     width: 60,
@@ -2263,28 +2428,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  // --- 인스타그램 스타일 피드 카드 & 오른쪽 액션 버튼 ---
   igPostCard: {
     backgroundColor: '#FFFFFF',
-    marginBottom: 10,
+    paddingTop: 12,
+    paddingBottom: 16,
+    marginBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#EFEFEF',
+    borderBottomColor: '#F2F2F2',
   },
   igPostHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
   },
   igPostAuthorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
   },
   igPostAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
   igPostAuthorName: {
     fontSize: 14,
@@ -2294,20 +2463,55 @@ const styles = StyleSheet.create({
   igPostDate: {
     fontSize: 11,
     color: '#8E8E8E',
+    marginTop: 1,
   },
+  igPostRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  igFollowPillBtn: {
+    backgroundColor: '#E3F2FD',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  igFollowPillBtnActive: {
+    backgroundColor: '#F2F2F2',
+  },
+  igFollowPillText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#0277BD',
+  },
+  igFollowPillTextActive: {
+    color: '#555555',
+  },
+
   feedImage: {
     width: '100%',
     backgroundColor: '#FFFFFF',
   },
   igPostFooter: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+  igActionIconRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  igQuickIconBtn: {
+    padding: 4,
   },
   igReactionBar: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'flex-end',
     gap: 6,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   igReactionPill: {
     backgroundColor: '#F5F5F5',
@@ -2331,13 +2535,15 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
+  // --- 인스타그램 스타일 5단 하단 메뉴바 ---
   igBottomNav: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E5E5E5',
-    paddingVertical: 9,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
   },
   igNavItem: {
     flex: 1,
@@ -2381,6 +2587,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
 
+  // --- 친구하기 & 채팅 목록 스타일 ---
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
   ktHeader: {
     flexDirection: 'row',
