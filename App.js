@@ -38,6 +38,7 @@ try {
   initError = e?.message || String(e);
 }
 
+// 피드(게시글)에서 사진의 원본 가로·세로 비율을 유지해 잘림 없이 보여주는 컴포넌트
 const AutoHeightImage = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
 
@@ -62,6 +63,77 @@ const AutoHeightImage = ({ uri, onPress }) => {
         resizeMode="contain"
       />
     </TouchableOpacity>
+  );
+};
+
+// 터치 시 사진의 원본 비율 크기 그대로 화면에 띄워주는 전체 팝업 컴포넌트
+const OriginalImagePopup = ({ imageInfo, onClose }) => {
+  const [aspectRatio, setAspectRatio] = useState(1);
+  const [loadingSize, setLoadingSize] = useState(true);
+
+  useEffect(() => {
+    if (!imageInfo?.uri) return;
+    setLoadingSize(true);
+    Image.getSize(
+      imageInfo.uri,
+      (width, height) => {
+        if (width && height) {
+          setAspectRatio(width / height);
+        }
+        setLoadingSize(false);
+      },
+      () => {
+        setAspectRatio(1);
+        setLoadingSize(false);
+      }
+    );
+  }, [imageInfo?.uri]);
+
+  if (!imageInfo) return null;
+
+  return (
+    <View style={styles.fullImageBackdrop}>
+      {/* 상단 닫기 헤더 바 */}
+      <View style={styles.popupTopBar}>
+        <Text style={styles.popupTitleText} numberOfLines={1}>
+          {imageInfo.title || '사진 원본 보기'}
+        </Text>
+        <TouchableOpacity style={styles.popupCloseIconBtn} onPress={onClose}>
+          <Text style={styles.popupCloseIconText}>✕ 닫기</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* 원본 비율 그대로 화면 너비에 맞춰 스크롤 가능한 영역 */}
+      <ScrollView
+        style={{ width: '100%' }}
+        contentContainerStyle={styles.popupScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {loadingSize && (
+          <ActivityIndicator size="large" color="#FEE500" style={{ marginVertical: 40 }} />
+        )}
+        <Image
+          source={{ uri: imageInfo.uri }}
+          style={{
+            width: SCREEN_WIDTH,
+            aspectRatio,
+            backgroundColor: '#000',
+          }}
+          resizeMode="contain"
+        />
+
+        {(imageInfo.caption || imageInfo.date) && (
+          <View style={styles.popupCaptionBox}>
+            {imageInfo.caption ? (
+              <Text style={styles.fullImageCaption}>{imageInfo.caption}</Text>
+            ) : null}
+            {imageInfo.date ? (
+              <Text style={styles.fullImageDate}>{imageInfo.date}</Text>
+            ) : null}
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 };
 
@@ -129,7 +201,7 @@ export default function App() {
     total_visits: 1,
   });
 
-  // 프로필 꾸미기 상태
+  // 프로필 꾸미기(변경) 화면 표시 상태
   const [editProfileModal, setEditProfileModal] = useState(false);
   const [tempNickname, setTempNickname] = useState('');
   const [tempBio, setTempBio] = useState('');
@@ -159,9 +231,8 @@ export default function App() {
   const [editingPostId, setEditingPostId] = useState(null);
   const [editingContent, setEditingContent] = useState('');
 
-  // 사진 크게 보기 상태 (게시글/앨범 및 채팅 사진 공용)
-  const [selectedAlbumPost, setSelectedAlbumPost] = useState(null);
-  const [selectedChatImage, setSelectedChatImage] = useState(null);
+  // 통합 사진 원본 팝업 상태 ({ uri, title, caption, date } 형태)
+  const [viewingImage, setViewingImage] = useState(null);
 
   // 메신저(1:1 실시간 채팅방 & '+' 첨부 서랍) 상태
   const [chatPartner, setChatPartner] = useState(null);
@@ -184,13 +255,9 @@ export default function App() {
         return false;
       }
 
-      if (selectedChatImage) {
-        setSelectedChatImage(null);
-        return true;
-      }
-
-      if (selectedAlbumPost) {
-        setSelectedAlbumPost(null);
+      // 1순위: 사진 원본 팝업이 열려 있으면 닫기
+      if (viewingImage) {
+        setViewingImage(null);
         return true;
       }
 
@@ -253,8 +320,7 @@ export default function App() {
   }, [
     session,
     isSignUpScreen,
-    selectedChatImage,
-    selectedAlbumPost,
+    viewingImage,
     editProfileModal,
     writeModalVisible,
     selectedFriend,
@@ -408,7 +474,6 @@ export default function App() {
     }
   };
 
-  // 일반 텍스트 메시지 전송
   const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text || !chatPartner || sendingMsg) return;
@@ -442,7 +507,6 @@ export default function App() {
     }
   };
 
-  // 채팅 '+' 메뉴 -> 사진 올리기
   const handleSendChatPhoto = async () => {
     if (!chatPartner || sendingMsg) return;
     setChatAttachMenuOpen(false);
@@ -492,7 +556,6 @@ export default function App() {
     }
   };
 
-  // 채팅 '+' 메뉴 -> 첨부파일(PDF, 문서, ZIP 등) 올리기
   const handleSendChatFile = async () => {
     if (!chatPartner || sendingMsg) return;
     setChatAttachMenuOpen(false);
@@ -510,8 +573,6 @@ export default function App() {
       const mimeType = picked.mimeType || 'application/octet-stream';
       const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
       const safeExt = extMatch ? extMatch[1] : 'bin';
-
-      // 한글 파일명으로 인한 Storage 경로 에러 방지를 위해 서버 경로는 영문/숫자로 생성
       const storagePath = `${session.user.id}/file_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${safeExt}`;
 
       setSendingMsg(true);
@@ -1088,7 +1149,20 @@ export default function App() {
         style={styles.coverBackground}
         resizeMode="cover"
       >
-        <View style={styles.coverOverlay}>
+        {/* 배경 빈 공간 터치 시 배경사진 원본 팝업 표시 */}
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.coverOverlay}
+          onPress={() => {
+            if (profile.cover_url) {
+              setViewingImage({
+                uri: profile.cover_url,
+                title: `${profile.nickname || '내'}의 배경사진`,
+                caption: profile.bio || '',
+              });
+            }
+          }}
+        >
           <View style={styles.topBar}>
             <TouchableOpacity style={styles.topHomeBtn} onPress={() => setMainTab('friends')}>
               <Text style={styles.topHomeText}>← 친구</Text>
@@ -1104,7 +1178,21 @@ export default function App() {
           </View>
 
           <View style={styles.profileBottomSection}>
-            <TouchableOpacity onPress={openProfileEditor} activeOpacity={0.85}>
+            {/* 원형 프로필 사진 터치 시: 프로필 사진 원본 팝업으로 띄우기 (편집창 X) */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => {
+                if (profile.avatar_url) {
+                  setViewingImage({
+                    uri: profile.avatar_url,
+                    title: `${profile.nickname || '내'}의 프로필 사진`,
+                    caption: profile.bio || '',
+                  });
+                } else {
+                  showAlert('알림', '등록된 프로필 사진이 없습니다.\n아래 [프로필 변경 / 꾸미기] 버튼에서 사진을 등록해 보세요!');
+                }
+              }}
+            >
               {profile.avatar_url ? (
                 <Image source={{ uri: profile.avatar_url }} style={styles.circularAvatar} />
               ) : (
@@ -1117,9 +1205,10 @@ export default function App() {
             <Text style={styles.profileName}>-{profile.nickname || '내 스토리'}-</Text>
             <Text style={styles.profileBio}>{profile.bio}</Text>
 
+            {/* 아래쪽에 따로 뺀 프로필 변경 / 메신저 / 새 게시물 버튼 박스 */}
             <View style={styles.glassActionBox}>
               <TouchableOpacity style={styles.glassTopBtn} onPress={openProfileEditor}>
-                <Text style={styles.glassBtnText}>✧ 내 프로필 꾸미기</Text>
+                <Text style={styles.glassBtnText}>✧ 프로필 변경 / 꾸미기</Text>
               </TouchableOpacity>
               <View style={styles.glassDividerHorizontal} />
               <View style={styles.glassBottomRow}>
@@ -1140,7 +1229,7 @@ export default function App() {
               </View>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
       </ImageBackground>
 
       <View style={styles.tabBar}>
@@ -1164,11 +1253,19 @@ export default function App() {
     </View>
   );
 
+  // 앨범 3열 사진 터치 시 원본 비율 팝업으로 열기
   const renderAlbumGridItem = ({ item }) => (
     <TouchableOpacity
       style={styles.gridItem}
       activeOpacity={0.85}
-      onPress={() => setSelectedAlbumPost(item)}
+      onPress={() =>
+        setViewingImage({
+          uri: item.image_urls[0],
+          title: item.profiles?.nickname || profile.nickname || '앨범 사진',
+          caption: item.content || '',
+          date: new Date(item.created_at).toLocaleString('ko-KR'),
+        })
+      }
     >
       <Image source={{ uri: item.image_urls[0] }} style={styles.gridImage} />
       {item.content ? (
@@ -1181,6 +1278,7 @@ export default function App() {
     </TouchableOpacity>
   );
 
+  // 게시글 사진 터치 시 원본 비율 팝업으로 열기
   const renderPostCardItem = ({ item }) => {
     const isMyPost = item.author_id === session.user.id;
     const isEditing = editingPostId === item.id;
@@ -1189,13 +1287,25 @@ export default function App() {
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={styles.cardAuthorRow}>
-            {item.profiles?.avatar_url ? (
-              <Image source={{ uri: item.profiles.avatar_url }} style={styles.smallAvatar} />
-            ) : (
-              <View style={[styles.smallAvatar, styles.defaultSmallAvatar]}>
-                <Text style={{ fontSize: 14 }}>👤</Text>
-              </View>
-            )}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                if (item.profiles?.avatar_url) {
+                  setViewingImage({
+                    uri: item.profiles.avatar_url,
+                    title: `${item.profiles?.nickname || '친구'}의 프로필 사진`,
+                  });
+                }
+              }}
+            >
+              {item.profiles?.avatar_url ? (
+                <Image source={{ uri: item.profiles.avatar_url }} style={styles.smallAvatar} />
+              ) : (
+                <View style={[styles.smallAvatar, styles.defaultSmallAvatar]}>
+                  <Text style={{ fontSize: 14 }}>👤</Text>
+                </View>
+              )}
+            </TouchableOpacity>
             <View>
               <Text style={styles.author}>{item.profiles?.nickname || profile.nickname || '친구'}</Text>
               <Text style={styles.date}>{new Date(item.created_at).toLocaleString('ko-KR')}</Text>
@@ -1245,7 +1355,14 @@ export default function App() {
         {item.image_urls?.[0] && (
           <AutoHeightImage
             uri={item.image_urls[0]}
-            onPress={() => setSelectedAlbumPost(item)}
+            onPress={() =>
+              setViewingImage({
+                uri: item.image_urls[0],
+                title: item.profiles?.nickname || profile.nickname || '게시글 사진',
+                caption: item.content || '',
+                date: new Date(item.created_at).toLocaleString('ko-KR'),
+              })
+            }
           />
         )}
 
@@ -1322,7 +1439,7 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* 오버레이 1: 친구 미니 프로필 팝업 */}
+      {/* 오버레이 1: 친구 미니 프로필 팝업 (배경/프로필 사진 터치 시 원본 팝업 연결) */}
       {selectedFriend && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.friendCardModal}>
@@ -1331,24 +1448,50 @@ export default function App() {
               style={styles.friendCardCover}
               resizeMode="cover"
             >
-              <View style={styles.friendCardCoverOverlay}>
+              <TouchableOpacity
+                activeOpacity={1}
+                style={styles.friendCardCoverOverlay}
+                onPress={() => {
+                  if (selectedFriend.cover_url) {
+                    setViewingImage({
+                      uri: selectedFriend.cover_url,
+                      title: `${selectedFriend.nickname || '친구'}의 배경사진`,
+                      caption: selectedFriend.bio || '',
+                    });
+                  }
+                }}
+              >
                 <TouchableOpacity
                   style={styles.friendCardCloseBtn}
                   onPress={() => setSelectedFriend(null)}
                 >
                   <Text style={{ color: '#FFF', fontWeight: 'bold' }}>✕</Text>
                 </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
             </ImageBackground>
 
             <View style={styles.friendCardBody}>
-              {selectedFriend.avatar_url ? (
-                <Image source={{ uri: selectedFriend.avatar_url }} style={styles.friendCardAvatar} />
-              ) : (
-                <View style={[styles.friendCardAvatar, styles.defaultAvatar]}>
-                  <Text style={{ fontSize: 30 }}>👤</Text>
-                </View>
-              )}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => {
+                  if (selectedFriend.avatar_url) {
+                    setViewingImage({
+                      uri: selectedFriend.avatar_url,
+                      title: `${selectedFriend.nickname || '친구'}의 프로필 사진`,
+                      caption: selectedFriend.bio || '',
+                    });
+                  }
+                }}
+              >
+                {selectedFriend.avatar_url ? (
+                  <Image source={{ uri: selectedFriend.avatar_url }} style={styles.friendCardAvatar} />
+                ) : (
+                  <View style={[styles.friendCardAvatar, styles.defaultAvatar]}>
+                    <Text style={{ fontSize: 30 }}>👤</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
               <Text style={styles.friendCardName}>-{selectedFriend.nickname || '친구'}-</Text>
               <Text style={styles.friendCardBio}>{selectedFriend.bio || '상태 메시지가 없습니다.'}</Text>
 
@@ -1428,13 +1571,25 @@ export default function App() {
                     )}
 
                     {!isMine && (
-                      chatPartner.avatar_url ? (
-                        <Image source={{ uri: chatPartner.avatar_url }} style={styles.chatAvatar} />
-                      ) : (
-                        <View style={[styles.chatAvatar, styles.defaultSmallAvatar]}>
-                          <Text style={{ fontSize: 13 }}>👤</Text>
-                        </View>
-                      )
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (chatPartner.avatar_url) {
+                            setViewingImage({
+                              uri: chatPartner.avatar_url,
+                              title: `${chatPartner.nickname || '상대방'}의 프로필 사진`,
+                            });
+                          }
+                        }}
+                      >
+                        {chatPartner.avatar_url ? (
+                          <Image source={{ uri: chatPartner.avatar_url }} style={styles.chatAvatar} />
+                        ) : (
+                          <View style={[styles.chatAvatar, styles.defaultSmallAvatar]}>
+                            <Text style={{ fontSize: 13 }}>👤</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
                     )}
 
                     <View style={{ maxWidth: '72%' }}>
@@ -1442,11 +1597,16 @@ export default function App() {
                         <Text style={styles.chatSenderName}>{chatPartner.nickname || '상대방'}</Text>
                       )}
 
-                      {/* 1) 사진 말풍선 */}
                       {item.image_url ? (
                         <TouchableOpacity
                           activeOpacity={0.9}
-                          onPress={() => setSelectedChatImage(item.image_url)}
+                          onPress={() =>
+                            setViewingImage({
+                              uri: item.image_url,
+                              title: isMine ? '내가 보낸 사진' : `${chatPartner.nickname || '상대방'}이 보낸 사진`,
+                              date: new Date(item.created_at).toLocaleString('ko-KR'),
+                            })
+                          }
                           style={styles.chatPhotoBubble}
                         >
                           <Image
@@ -1456,7 +1616,6 @@ export default function App() {
                           />
                         </TouchableOpacity>
                       ) : item.file_url ? (
-                        /* 2) 첨부파일 말풍선 */
                         <TouchableOpacity
                           activeOpacity={0.85}
                           onPress={() => Linking.openURL(item.file_url)}
@@ -1473,7 +1632,6 @@ export default function App() {
                           </View>
                         </TouchableOpacity>
                       ) : (
-                        /* 3) 일반 텍스트 말풍선 */
                         <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
                           <Text style={styles.bubbleText}>{item.content}</Text>
                         </View>
@@ -1493,7 +1651,6 @@ export default function App() {
               }
             />
 
-            {/* 하단 입력 바: 왼쪽 '+' 버튼 + 입력창 + 오른쪽 '전송' 버튼 */}
             <View style={styles.chatInputBar}>
               <TouchableOpacity
                 style={[styles.chatPlusBtn, chatAttachMenuOpen && styles.chatPlusBtnActive]}
@@ -1521,7 +1678,6 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            {/* '+' 버튼을 눌렀을 때 펼쳐지는 사진 올리기 / 첨부파일 서랍 메뉴 */}
             {chatAttachMenuOpen && (
               <View style={styles.attachDrawer}>
                 <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatPhoto}>
@@ -1543,11 +1699,11 @@ export default function App() {
         </KeyboardAvoidingView>
       )}
 
-      {/* 오버레이 3: 내 프로필 꾸미기 */}
+      {/* 오버레이 3: 내 프로필 꾸미기(변경) 화면 */}
       {editProfileModal && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>내 프로필 꾸미기</Text>
+            <Text style={styles.modalTitle}>프로필 변경 / 꾸미기</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.fieldLabel}>상단 프로필 배경사진 (세로 4:3 비율)</Text>
               <TouchableOpacity
@@ -1656,43 +1812,11 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 5: 게시글/앨범 사진 크게 보기 */}
-      {Boolean(selectedAlbumPost) && selectedAlbumPost && (
-        <View style={styles.fullImageBackdrop}>
-          <View style={styles.fullImageContainer}>
-            <Image
-              source={{ uri: selectedAlbumPost.image_urls[0] }}
-              style={styles.fullImage}
-              resizeMode="contain"
-            />
-            {selectedAlbumPost.content ? (
-              <Text style={styles.fullImageCaption}>{selectedAlbumPost.content}</Text>
-            ) : null}
-            <Text style={styles.fullImageDate}>
-              {new Date(selectedAlbumPost.created_at).toLocaleString('ko-KR')}
-            </Text>
-            <TouchableOpacity style={styles.closeFullBtn} onPress={() => setSelectedAlbumPost(null)}>
-              <Text style={styles.closeFullText}>닫기</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* 오버레이 6: 채팅창 사진 터치 시 크게 보기 */}
-      {Boolean(selectedChatImage) && selectedChatImage && (
-        <View style={styles.fullImageBackdrop}>
-          <View style={styles.fullImageContainer}>
-            <Image
-              source={{ uri: selectedChatImage }}
-              style={styles.fullImage}
-              resizeMode="contain"
-            />
-            <TouchableOpacity style={styles.closeFullBtn} onPress={() => setSelectedChatImage(null)}>
-              <Text style={styles.closeFullText}>닫기</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      {/* 오버레이 5: 프로필 사진 / 배경사진 / 게시글 사진 원본 크기 비율 팝업 */}
+      <OriginalImagePopup
+        imageInfo={viewingImage}
+        onClose={() => setViewingImage(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -1897,10 +2021,10 @@ const styles = StyleSheet.create({
 
   profileBottomSection: { alignItems: 'flex-start' },
   circularAvatar: {
-    width: 66,
-    height: 66,
-    borderRadius: 33,
-    borderWidth: 2,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2.5,
     borderColor: '#FFFFFF',
     marginBottom: 8,
   },
@@ -2052,7 +2176,6 @@ const styles = StyleSheet.create({
   bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 2 },
   bubbleText: { fontSize: 14, color: '#222', lineHeight: 20 },
 
-  // 채팅 사진 및 첨부파일 말풍선 스타일
   chatPhotoBubble: {
     borderRadius: 12,
     overflow: 'hidden',
@@ -2140,7 +2263,6 @@ const styles = StyleSheet.create({
   chatSendBtn: { backgroundColor: '#FEE500', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18 },
   chatSendText: { color: '#3C1E1E', fontWeight: 'bold', fontSize: 14 },
 
-  // '+' 버튼을 눌렀을 때 펼쳐지는 첨부 서랍 스타일
   attachDrawer: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
@@ -2209,22 +2331,56 @@ const styles = StyleSheet.create({
   removePhotoBtn: { alignSelf: 'flex-end', marginTop: 6, padding: 6, backgroundColor: '#EEE', borderRadius: 4 },
   attachPhotoBtn: { padding: 14, borderRadius: 8, backgroundColor: '#F5F5F5', alignItems: 'center', borderWidth: 1, borderColor: '#DDD' },
 
+  // 원본 크기 비율 사진 팝업 뷰어 스타일
   fullImageBackdrop: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.92)',
+    backgroundColor: 'rgba(0,0,0,0.96)',
+    zIndex: 1100,
+  },
+  popupTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  popupTitleText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+    flex: 1,
+    marginRight: 12,
+  },
+  popupCloseIconBtn: {
+    backgroundColor: '#FEE500',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  popupCloseIconText: {
+    color: '#3C1E1E',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  popupScrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
-    zIndex: 1000,
+    paddingVertical: 16,
   },
-  fullImageContainer: { width: '100%', alignItems: 'center' },
-  fullImage: { width: '100%', height: 420, borderRadius: 8 },
-  fullImageCaption: { color: '#FFF', fontSize: 15, marginTop: 14, textAlign: 'center' },
+  popupCaptionBox: {
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    alignItems: 'center',
+  },
+  fullImageCaption: { color: '#FFF', fontSize: 15, textAlign: 'center', lineHeight: 22 },
   fullImageDate: { color: '#AAA', fontSize: 12, marginTop: 6 },
-  closeFullBtn: { marginTop: 20, paddingHorizontal: 28, paddingVertical: 10, backgroundColor: '#FEE500', borderRadius: 20 },
-  closeFullText: { color: '#3C1E1E', fontWeight: 'bold' },
 });
