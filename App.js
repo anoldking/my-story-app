@@ -1428,27 +1428,87 @@ export default function App() {
     }
   };
 
-  const handleFindId = async () => {
-    const savedEmail = await AsyncStorage.getItem(LAST_EMAIL_STORAGE_KEY);
-    const currentInput = email.trim();
-    if (savedEmail) {
-      showAlert('아이디 찾기', `최근 로그인에 사용된 이메일 아이디는\n"${savedEmail}" 입니다.`);
-    } else if (currentInput) {
-      showAlert('아이디 찾기', `입력하신 이메일 아이디 "${currentInput}"로 가입 여부를 확인해 보세요.`);
-    } else {
-      showAlert('아이디 찾기', '저장된 로그인 아이디가 없습니다.\n가입하신 이메일 주소를 입력해 로그인해 주세요.');
+  const checkIsRegisteredEmail = async (targetEmail) => {
+    const normalized = targetEmail.trim().toLowerCase();
+    if (!normalized) return false;
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, nickname')
+        .ilike('email', normalized)
+        .limit(1);
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return true;
+      }
+    } catch {
+      // profiles에 email 컬럼이 없는 경우 폴백으로 진행
     }
+
+    const { error: probeError } = await supabase.auth.signInWithPassword({
+      email: normalized,
+      password: '__NON_EXISTENT_CHECK_PASSWORD_999!@#',
+    });
+
+    if (!probeError) {
+      await supabase.auth.signOut();
+      return true;
+    }
+
+    const msg = (probeError.message || '').toLowerCase();
+    if (msg.includes('invalid login credentials') || (probeError.code || '').toLowerCase() === 'invalid_credentials') {
+      return true;
+    }
+    return false;
+  };
+
+  const handleFindId = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      showAlert('아이디 찾기', '가입된 이메일 아이디를 입력해 주세요.');
+      return;
+    }
+
+    setLoading(true);
+    const isRegistered = await checkIsRegisteredEmail(trimmedEmail);
+    setLoading(false);
+
+    if (!isRegistered) {
+      showAlert('아이디 찾기', '가입되지 않은 사용자입니다.');
+      return;
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
+    if (error) {
+      showAlert('전송 실패', getKoreanErrorMessage(error));
+      return;
+    }
+
+    showAlert(
+      '아이디 찾기',
+      `가입된 아이디(${trimmedEmail})가 확인되었습니다.\n보안상 기존 비밀번호는 발송되지 않으며, 가입된 메일로 비밀번호 재설정 안내를 보냈습니다.`
+    );
   };
 
   const handleResetPassword = async () => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      showAlert('비밀번호 재설정', '재설정 링크를 받을 이메일 아이디를 먼저 입력해 주세요.');
+      showAlert('비밀번호 재설정', '이메일 아이디를 먼저 입력해 주세요.');
       return;
     }
+
     setLoading(true);
+    const isRegistered = await checkIsRegisteredEmail(trimmedEmail);
+    if (!isRegistered) {
+      setLoading(false);
+      showAlert('비밀번호 재설정', '가입되지 않은 사용자입니다.');
+      return;
+    }
+
     const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
     setLoading(false);
+
     if (error) {
       showAlert('재설정 실패', getKoreanErrorMessage(error));
     } else {
