@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   FlatList, Image, ImageBackground, Alert, SafeAreaView,
-  ActivityIndicator, ScrollView, Dimensions, KeyboardAvoidingView, Platform
+  ActivityIndicator, ScrollView, Dimensions, KeyboardAvoidingView,
+  Platform, BackHandler, ToastAndroid
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
@@ -114,7 +115,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
-  // 하단 메인 내비게이션 탭 ('friends': 친구탭, 'chats': 채팅탭, 'story': 내 스토리)
+  // 하단 메인 내비게이션 탭 ('friends': 친구탭(홈), 'chats': 채팅탭, 'story': 내 스토리)
   const [mainTab, setMainTab] = useState('friends');
 
   // 프로필 및 방문자 상태
@@ -134,7 +135,7 @@ export default function App() {
   const [tempAvatarUri, setTempAvatarUri] = useState(null);
   const [tempCoverUri, setTempCoverUri] = useState(null);
 
-  // 친구탭 상태 (전체 회원, 즐겨찾기 ID 목록, 검색창, 접기/펼치기, 친구 미니프로필)
+  // 친구탭 상태
   const [members, setMembers] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState([]);
   const [searchVisible, setSearchVisible] = useState(false);
@@ -167,6 +168,99 @@ export default function App() {
   const [sendingMsg, setSendingMsg] = useState(false);
   const chatListRef = useRef(null);
 
+  // 뒤로가기 두 번 눌러 종료하기 시간 기록용 ref
+  const lastBackPressRef = useRef(0);
+
+  // --- 안드로이드 하드웨어/제스처 뒤로가기 버튼 제어 ---
+  useEffect(() => {
+    const onHardwareBackPress = () => {
+      // 0. 로그인 전 회원가입 화면이라면 로그인 화면으로 복귀
+      if (!session) {
+        if (isSignUpScreen) {
+          setIsSignUpScreen(false);
+          return true;
+        }
+        return false;
+      }
+
+      // 1. 사진 전체 화면 크게 보기가 열려 있으면 닫기
+      if (selectedAlbumPost) {
+        setSelectedAlbumPost(null);
+        return true;
+      }
+
+      // 2. 내 프로필 꾸미기 창이 열려 있으면 닫기
+      if (editProfileModal) {
+        setEditProfileModal(false);
+        return true;
+      }
+
+      // 3. 새 스토리 작성 창이 열려 있으면 닫기
+      if (writeModalVisible) {
+        setWriteModalVisible(false);
+        return true;
+      }
+
+      // 4. 친구 미니 프로필 카드가 열려 있으면 닫기
+      if (selectedFriend) {
+        setSelectedFriend(null);
+        return true;
+      }
+
+      // 5. 1:1 실시간 채팅방에 들어가 있으면 채팅방 나가기
+      if (chatPartner) {
+        setChatPartner(null);
+        return true;
+      }
+
+      // 6. 게시글 인라인 수정 중이면 수정 취소
+      if (editingPostId) {
+        setEditingPostId(null);
+        setEditingContent('');
+        return true;
+      }
+
+      // 7. 친구 검색창이 열려 있으면 검색창 닫기
+      if (searchVisible) {
+        setSearchVisible(false);
+        setSearchQuery('');
+        return true;
+      }
+
+      // 8. 다른 탭('chats' 또는 'story')에 있다면 홈('friends') 탭으로 이동
+      if (mainTab !== 'friends') {
+        setMainTab('friends');
+        return true;
+      }
+
+      // 9. 이미 홈('friends') 화면이라면 2초 이내 두 번 눌렀을 때만 앱 종료
+      const now = Date.now();
+      if (now - lastBackPressRef.current < 2000) {
+        return false; // 안드로이드 시스템에 종료 위임
+      }
+
+      lastBackPressRef.current = now;
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('뒤로 버튼을 한 번 더 누르면 종료됩니다.', ToastAndroid.SHORT);
+      }
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBackPress);
+    return () => subscription.remove();
+  }, [
+    session,
+    isSignUpScreen,
+    selectedAlbumPost,
+    editProfileModal,
+    writeModalVisible,
+    selectedFriend,
+    chatPartner,
+    editingPostId,
+    searchVisible,
+    mainTab,
+  ]);
+
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -184,7 +278,6 @@ export default function App() {
     }
   }, [session]);
 
-  // 1:1 채팅방 실시간 구독 및 읽음('1' 소멸) 처리
   useEffect(() => {
     if (!supabase || !session || !chatPartner) return;
 
@@ -252,7 +345,6 @@ export default function App() {
     );
   }
 
-  // 친구 목록 & 즐겨찾기 목록 불러오기
   const fetchFriendsAndFavorites = async () => {
     const { data: memberData } = await supabase
       .from('profiles')
@@ -271,7 +363,6 @@ export default function App() {
     }
   };
 
-  // 즐겨찾는 친구 등록 / 해제 토글
   const toggleFavoriteFriend = async (friendId) => {
     const isAlreadyFav = favoriteIds.includes(friendId);
     if (isAlreadyFav) {
@@ -289,7 +380,6 @@ export default function App() {
     }
   };
 
-  // 상대방이 보낸 메시지 읽음 처리
   const markMessagesAsRead = async (partnerId) => {
     const myId = session.user.id;
     await supabase
@@ -644,7 +734,6 @@ export default function App() {
     );
   }
 
-  // 친구 목록 데이터 가공 (나를 제외한 친구들 + 검색어 필터)
   const otherMembers = members.filter((m) => m.id !== session.user.id);
   const filteredMembers = otherMembers.filter((m) => {
     if (!searchQuery.trim()) return true;
@@ -656,7 +745,6 @@ export default function App() {
   });
   const favoriteFriends = filteredMembers.filter((m) => favoriteIds.includes(m.id));
 
-  // 친구 한 줄 렌더링 (카카오톡 친구탭 스타일)
   const renderFriendRow = (friend) => {
     const isFav = favoriteIds.includes(friend.id);
     return (
@@ -696,7 +784,6 @@ export default function App() {
   // --- 화면 1: 카카오톡 스타일 친구탭 ('friends') ---
   const renderFriendsTabScreen = () => (
     <View style={styles.ktContainer}>
-      {/* 상단 내 미니 프로필 & 검색/설정 아이콘 */}
       <View style={styles.ktHeader}>
         <TouchableOpacity
           style={styles.ktMyMiniProfile}
@@ -728,7 +815,6 @@ export default function App() {
         </View>
       </View>
 
-      {/* 친구 / 소식 알약 버튼 바 */}
       <View style={styles.ktPillBar}>
         <TouchableOpacity style={styles.ktPillActive}>
           <Text style={styles.ktPillActiveText}>친구</Text>
@@ -744,7 +830,6 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* 돋보기 클릭 시 나타나는 친구 검색창 */}
       {searchVisible && (
         <View style={styles.ktSearchBox}>
           <TextInput
@@ -758,7 +843,6 @@ export default function App() {
       )}
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
-        {/* 나와의 채팅 / 내 프로필 바로가기 카드 */}
         <TouchableOpacity
           style={styles.ktSelfBanner}
           onPress={() =>
@@ -781,7 +865,6 @@ export default function App() {
           <Text style={{ color: '#888', fontSize: 13 }}>열기 ›</Text>
         </TouchableOpacity>
 
-        {/* 섹션 1: 즐겨찾는 친구 (접기/펼치기 지원) */}
         <View style={styles.ktSection}>
           <TouchableOpacity
             style={styles.ktSectionHeader}
@@ -804,7 +887,6 @@ export default function App() {
 
         <View style={styles.ktDivider} />
 
-        {/* 섹션 2: 전체 친구 N (접기/펼치기 지원) */}
         <View style={styles.ktSection}>
           <TouchableOpacity
             style={styles.ktSectionHeader}
@@ -877,7 +959,7 @@ export default function App() {
     </View>
   );
 
-  // --- 화면 3: 내 스토리 탭 ('story') 헤더 & 피드 ---
+  // --- 화면 3: 내 스토리 탭 ('story') ---
   const albumPosts = posts.filter((p) => p.image_urls && p.image_urls.length > 0);
 
   const renderProfileHeader = () => (
@@ -889,7 +971,9 @@ export default function App() {
       >
         <View style={styles.coverOverlay}>
           <View style={styles.topBar}>
-            <View style={{ width: 65 }} />
+            <TouchableOpacity style={styles.topHomeBtn} onPress={() => setMainTab('friends')}>
+              <Text style={styles.topHomeText}>← 친구</Text>
+            </TouchableOpacity>
             <View style={styles.visitorBadge}>
               <Text style={styles.visitorText}>
                 TODAY {profile.today_visits}  |  TOTAL {profile.total_visits}
@@ -1062,7 +1146,6 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* 메인 콘텐츠 영역 (친구탭 / 채팅탭 / 내 스토리) */}
       <View style={{ flex: 1 }}>
         {mainTab === 'friends' && renderFriendsTabScreen()}
         {mainTab === 'chats' && renderChatsTabScreen()}
@@ -1120,7 +1203,7 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* 오버레이 1: 친구 미니 프로필 팝업 (프로필 확인 + 즐겨찾기 + 1:1 대화 시작) */}
+      {/* 오버레이 1: 친구 미니 프로필 팝업 */}
       {selectedFriend && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.friendCardModal}>
@@ -1182,7 +1265,7 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 2: 1:1 실시간 채팅방 (안 읽음 '1' 표시 지원) */}
+      {/* 오버레이 2: 1:1 실시간 채팅방 */}
       {chatPartner && (
         <KeyboardAvoidingView
           style={styles.messengerFullScreen}
@@ -1424,7 +1507,6 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
-  // --- 카카오톡 스타일 친구탭 & 채팅탭 스타일 ---
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
   ktHeader: {
     flexDirection: 'row',
@@ -1518,7 +1600,6 @@ const styles = StyleSheet.create({
   ktFriendBio: { fontSize: 12, color: '#888888', marginTop: 2 },
   ktFavStarBtn: { padding: 6 },
 
-  // 하단 메인 탭 바
   bottomNav: {
     flexDirection: 'row',
     backgroundColor: '#F9F9F9',
@@ -1531,7 +1612,6 @@ const styles = StyleSheet.create({
   bottomNavLabel: { fontSize: 11, color: '#888888', fontWeight: '600' },
   bottomNavActive: { color: '#191919', fontWeight: 'bold' },
 
-  // 친구 미니 프로필 팝업
   friendCardModal: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -1576,7 +1656,6 @@ const styles = StyleSheet.create({
   friendCardChatBtn: { backgroundColor: '#FEE500' },
   friendCardActionLabel: { fontSize: 13, color: '#333' },
 
-  // --- 내 스토리 탭 스타일 ---
   coverBackground: { width: '100%', height: COVER_HEIGHT, backgroundColor: '#4A5568' },
   coverOverlay: {
     flex: 1,
@@ -1591,6 +1670,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  topHomeBtn: {
+    backgroundColor: 'rgba(0, 0, 0, 0.38)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  topHomeText: { color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' },
   visitorBadge: {
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
     paddingHorizontal: 16,
@@ -1714,7 +1800,6 @@ const styles = StyleSheet.create({
   emptyBox: { padding: 48, alignItems: 'center' },
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
 
-  // --- 채팅 목록 및 1:1 채팅방 스타일 ---
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
