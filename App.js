@@ -12,6 +12,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 
 const LEFT_RAIL_WIDTH = 52;
+const RIGHT_RAIL_WIDTH = 52;
 const LAST_EMAIL_STORAGE_KEY = '@me_last_login_email';
 const getWindowWidth = () => Dimensions.get('window').width;
 const getWindowHeight = () => Dimensions.get('window').height;
@@ -20,8 +21,9 @@ const SCREEN_HEIGHT = getWindowHeight();
 const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
 const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (CONTENT_WIDTH - 4) / 3;
-const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - LEFT_RAIL_WIDTH);
+const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - RIGHT_RAIL_WIDTH);
 const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.44);
+const EXPANDED_CHAT_HEIGHT = Math.max(380, Math.round(SCREEN_HEIGHT * 0.62));
 
 const VISIBILITY_OPTIONS = [
   { key: 'public', label: '전체공개', icon: 'globe-outline' },
@@ -159,7 +161,7 @@ const fetchLinkPreviewData = async (url) => {
   }
 };
 
-const LinkPreviewCard = ({ url, onPress }) => {
+const LinkPreviewCard = ({ url, onPress, onLongPress }) => {
   const [preview, setPreview] = useState(() => linkPreviewCache[url] || {
     title: getDomainFromUrl(url),
     description: '',
@@ -193,6 +195,8 @@ const LinkPreviewCard = ({ url, onPress }) => {
       style={styles.linkPreviewCard}
       activeOpacity={0.85}
       onPress={() => onPress(url)}
+      onLongPress={onLongPress}
+      delayLongPress={400}
     >
       {preview.image ? (
         <Image
@@ -1311,6 +1315,12 @@ export default function App() {
             setChatMessages((prev) =>
               prev.map((m) => (m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m))
             );
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old?.id;
+            if (deletedId) {
+              setChatMessages((prev) => prev.filter((m) => m.id !== deletedId));
+            }
+            await fetchUnreadCountsBySender(myId);
           }
         }
       )
@@ -1352,6 +1362,36 @@ export default function App() {
     }
   };
 
+  // 보낸 메시지 길게 눌러 삭제
+  const handleDeleteSentMessage = (msgItem) => {
+    if (!msgItem || msgItem.sender_id !== session?.user?.id) return;
+
+    Alert.alert('메시지 삭제', '보낸 메시지를 삭제하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          const targetId = msgItem.id;
+          setChatMessages((prev) => prev.filter((m) => m.id !== targetId));
+
+          const { error } = await supabase
+            .from('messages')
+            .delete()
+            .eq('id', targetId)
+            .eq('sender_id', session.user.id);
+
+          if (error) {
+            showAlert('삭제 실패', getKoreanErrorMessage(error));
+            if (chatPartner?.id) {
+              await fetchChatMessages(chatPartner.id);
+            }
+          }
+        },
+      },
+    ]);
+  };
+
   const fetchUnreadCountsBySender = async (myId) => {
     if (!myId) return;
     try {
@@ -1364,7 +1404,7 @@ export default function App() {
       if (!error && Array.isArray(data)) {
         const counts = {};
         data.forEach((row) => {
-          if (!row?.sender_id) return;
+          if (!row?.sender_id || row.sender_id === myId) return;
           counts[row.sender_id] = (counts[row.sender_id] || 0) + 1;
         });
         setUnreadCountBySender(counts);
@@ -2458,6 +2498,40 @@ export default function App() {
   const incomingCount = incomingRequests.length;
   const totalUnreadMessages = Object.values(unreadCountBySender).reduce((sum, n) => sum + (n || 0), 0);
 
+  // 아직 읽지 않은 메시지가 있는 상대방 목록 (읽지 않은 개수 내림차순 정렬)
+  const unreadSendersSorted = Object.entries(unreadCountBySender)
+    .filter(([senderId, count]) => senderId !== session.user.id && (count || 0) > 0)
+    .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+    .map(([senderId, count]) => {
+      const found = members.find((m) => m.id === senderId);
+      return {
+        id: senderId,
+        nickname: found?.nickname || '회원',
+        bio: found?.bio || '',
+        avatar_url: found?.avatar_url || null,
+        unreadCount: count,
+      };
+    });
+
+  // 메시지 목록 정렬: '나와의 채팅' 항상 최상위 고정 -> 나머지 회원은 안 읽은 개수 내림차순 -> 이름순
+  const sortedChatMembers = (() => {
+    const myId = session.user.id;
+    const meItem = members.find((m) => m.id === myId) || {
+      id: myId,
+      nickname: profile.nickname || '나',
+      bio: profile.bio || '',
+      avatar_url: profile.avatar_url || null,
+    };
+    const others = members
+      .filter((m) => m.id !== myId)
+      .sort((a, b) => {
+        const diff = (unreadCountBySender[b.id] || 0) - (unreadCountBySender[a.id] || 0);
+        if (diff !== 0) return diff;
+        return (a.nickname || '').localeCompare(b.nickname || '', 'ko');
+      });
+    return [meItem, ...others];
+  })();
+
   const currentAccountEmail = session.user?.email || '';
   const currentAccountName = profile.nickname || (currentAccountEmail ? currentAccountEmail.split('@')[0] : '내 계정');
 
@@ -2927,6 +3001,7 @@ export default function App() {
     </View>
   );
 
+  // 선택된 채팅창: 아래로 최대 크기로 길게 펼쳐지고, 내가 보낸 메시지를 길게 누르면 삭제 가능
   const renderInlineChatDrawer = (partner) => {
     const isSelfChat = partner.id === session.user.id;
 
@@ -2934,7 +3009,9 @@ export default function App() {
       <View style={styles.inlineChatDrawer}>
         <View style={styles.inlineChatDrawerTop}>
           <Text style={styles.inlineChatDrawerLabel} numberOfLines={1}>
-            {isSelfChat ? `${partner.nickname || '나'} (나와의 채팅)` : `${partner.nickname || '대화방'} 대화`}
+            {isSelfChat
+              ? `${partner.nickname || '나'} (나와의 채팅 · 길게 눌러 삭제)`
+              : `${partner.nickname || '대화방'} 대화 (보낸 메시지 길게 눌러 삭제)`}
           </Text>
           <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.inlineChatCollapseBtn}>
             <Text style={styles.inlineChatCollapseText}>접기</Text>
@@ -2944,10 +3021,10 @@ export default function App() {
 
         <ScrollView
           ref={inlineChatScrollRef}
-          style={styles.inlineChatHistoryScroll}
-          contentContainerStyle={{ padding: 12, paddingBottom: 14 }}
+          style={[styles.inlineChatHistoryScroll, { height: EXPANDED_CHAT_HEIGHT }]}
+          contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
           nestedScrollEnabled
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={true}
           onContentSizeChange={() => inlineChatScrollRef.current?.scrollToEnd({ animated: true })}
         >
           {chatMessages.length === 0 ? (
@@ -3020,6 +3097,8 @@ export default function App() {
                             isLikedByMe: false,
                           })
                         }
+                        onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
+                        delayLongPress={400}
                         style={styles.chatPhotoBubble}
                       >
                         <Image
@@ -3032,6 +3111,8 @@ export default function App() {
                       <TouchableOpacity
                         activeOpacity={0.85}
                         onPress={() => handleOpenExternalLink(item.file_url)}
+                        onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
+                        delayLongPress={400}
                         style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, styles.fileBubbleBox]}
                       >
                         <View style={styles.fileIconCircle}>
@@ -3045,7 +3126,13 @@ export default function App() {
                         </View>
                       </TouchableOpacity>
                     ) : (
-                      <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                      <TouchableOpacity
+                        activeOpacity={isMine ? 0.85 : 1}
+                        onPress={detectedUrl ? () => handleOpenExternalLink(detectedUrl) : undefined}
+                        onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
+                        delayLongPress={400}
+                        style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}
+                      >
                         <Text
                           style={[styles.bubbleText, detectedUrl && styles.linkBubbleText]}
                           onPress={detectedUrl ? () => handleOpenExternalLink(detectedUrl) : undefined}
@@ -3053,9 +3140,13 @@ export default function App() {
                           {item.content}
                         </Text>
                         {detectedUrl && (
-                          <LinkPreviewCard url={detectedUrl} onPress={handleOpenExternalLink} />
+                          <LinkPreviewCard
+                            url={detectedUrl}
+                            onPress={handleOpenExternalLink}
+                            onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
+                          />
                         )}
-                      </View>
+                      </TouchableOpacity>
                     )}
                   </View>
 
@@ -3137,7 +3228,7 @@ export default function App() {
       </View>
 
       <FlatList
-        data={members}
+        data={sortedChatMembers}
         keyExtractor={(item) => item.id}
         extraData={{
           activeChatId: chatPartner?.id,
@@ -3147,7 +3238,7 @@ export default function App() {
           chatAttachMenuOpen,
           unreadCountBySender,
         }}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 32 }}
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => {
           const isMe = item.id === session.user.id;
@@ -3155,7 +3246,13 @@ export default function App() {
           const unreadForSender = isMe ? 0 : (unreadCountBySender[item.id] || 0);
 
           return (
-            <View style={[styles.memberCardGroup, isExpanded && styles.memberCardGroupExpanded]}>
+            <View
+              style={[
+                styles.memberCardGroup,
+                isMe && styles.pinnedSelfCardGroup,
+                isExpanded && styles.memberCardGroupExpanded,
+              ]}
+            >
               <TouchableOpacity
                 style={[styles.memberRow, isExpanded && styles.memberRowActive]}
                 activeOpacity={0.75}
@@ -3378,6 +3475,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.mainShellRow}>
+        {/* 화면 왼쪽 세로 메뉴바 */}
         <View style={styles.leftVerticalMenuBar}>
           <TouchableOpacity
             style={styles.leftMenuBtn}
@@ -3492,7 +3590,8 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.rightContentArea}>
+        {/* 중앙 메인 콘텐츠 영역 */}
+        <View style={styles.centerContentArea}>
           {mainTab === 'home' && (
             <FlatList
               style={{ flex: 1, backgroundColor: '#FFFFFF' }}
@@ -3531,6 +3630,50 @@ export default function App() {
               }
             />
           )}
+        </View>
+
+        {/* 오른쪽 여백 세로 레일: 아직 읽지 않은 메시지가 있는 상대 프로필 (읽지 않은 개수 내림차순, 스크롤 가능) */}
+        <View style={styles.rightUnreadRailBar}>
+          <ScrollView
+            style={{ width: '100%' }}
+            contentContainerStyle={styles.rightUnreadRailScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {unreadSendersSorted.map((sender) => {
+              const isSelectedPartner = chatPartner?.id === sender.id && mainTab === 'chats';
+              return (
+                <TouchableOpacity
+                  key={sender.id}
+                  style={styles.rightUnreadItem}
+                  activeOpacity={0.8}
+                  onPress={() => openInlineChatInMessagesTab(sender)}
+                >
+                  <View
+                    style={[
+                      styles.rightUnreadAvatarWrap,
+                      isSelectedPartner && styles.rightUnreadAvatarWrapActive,
+                    ]}
+                  >
+                    {sender.avatar_url ? (
+                      <Image source={{ uri: sender.avatar_url }} style={styles.rightUnreadAvatar} />
+                    ) : (
+                      <View style={[styles.rightUnreadAvatar, styles.ktDefaultAvatar]}>
+                        <Ionicons name="person" size={16} color="#64748B" />
+                      </View>
+                    )}
+                    <View style={styles.rightUnreadCountPill}>
+                      <Text style={styles.rightUnreadCountText}>
+                        {sender.unreadCount > 99 ? '99+' : sender.unreadCount}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.rightUnreadName} numberOfLines={1}>
+                    {sender.nickname}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
       </View>
 
@@ -3920,10 +4063,70 @@ const styles = StyleSheet.create({
     borderRadius: 13,
   },
 
-  rightContentArea: {
+  centerContentArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingRight: LEFT_RAIL_WIDTH,
+  },
+
+  // --- 오른쪽 여백 세로 안 읽은 메시지 프로필 레일 ---
+  rightUnreadRailBar: {
+    width: RIGHT_RAIL_WIDTH,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    paddingTop: 18,
+    paddingBottom: 18,
+  },
+  rightUnreadRailScrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  rightUnreadItem: {
+    alignItems: 'center',
+    width: RIGHT_RAIL_WIDTH - 4,
+  },
+  rightUnreadAvatarWrap: {
+    position: 'relative',
+    padding: 1.5,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+  },
+  rightUnreadAvatarWrapActive: {
+    borderColor: '#0288D1',
+  },
+  rightUnreadAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  rightUnreadCountPill: {
+    position: 'absolute',
+    top: -5,
+    right: -6,
+    minWidth: 17,
+    height: 17,
+    paddingHorizontal: 3.5,
+    borderRadius: 8.5,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rightUnreadCountText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  rightUnreadName: {
+    fontSize: 9.5,
+    color: '#3F3F46',
+    marginTop: 3,
+    textAlign: 'center',
+    width: RIGHT_RAIL_WIDTH - 6,
   },
 
   igHeaderContainer: {
@@ -4962,6 +5165,10 @@ const styles = StyleSheet.create({
     borderColor: '#EEEEEE',
     overflow: 'hidden',
   },
+  pinnedSelfCardGroup: {
+    borderColor: '#FDE047',
+    backgroundColor: '#FEFCE8',
+  },
   memberCardGroupExpanded: {
     backgroundColor: '#F8FAFC',
     borderColor: '#CBD5E1',
@@ -5005,13 +5212,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 8,
     backgroundColor: '#E1ECF4',
     borderBottomWidth: 1,
     borderBottomColor: '#D4E2ED',
   },
   inlineChatDrawerLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
     color: '#334155',
     flex: 1,
@@ -5029,10 +5236,10 @@ const styles = StyleSheet.create({
     color: '#52525B',
   },
   inlineChatHistoryScroll: {
-    maxHeight: 240,
+    width: '100%',
   },
   inlineChatEmpty: {
-    paddingVertical: 24,
+    paddingVertical: 40,
     paddingHorizontal: 14,
     alignItems: 'center',
   },
