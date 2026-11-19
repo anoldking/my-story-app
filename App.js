@@ -148,10 +148,10 @@ export default function App() {
   // 사진 크게 보기 상태
   const [selectedAlbumPost, setSelectedAlbumPost] = useState(null);
 
-  // --- 메신저(1:1 채팅) 관련 상태 ---
+  // --- 메신저(1:1 실시간 채팅 & 읽음 확인) 관련 상태 ---
   const [messengerVisible, setMessengerVisible] = useState(false);
   const [members, setMembers] = useState([]);
-  const [chatPartner, setChatPartner] = useState(null); // null이면 회원 목록, 객체면 1:1 대화방
+  const [chatPartner, setChatPartner] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
@@ -173,38 +173,64 @@ export default function App() {
     }
   }, [session]);
 
-  // 1:1 채팅방이 열려 있을 때 실시간(Realtime) 새 메시지 수신 구독
+  // 1:1 채팅방이 열려 있을 때: ① 이전 대화 불러오기 + 읽음 처리, ② 실시간(INSERT/UPDATE) 수신 구독
   useEffect(() => {
     if (!supabase || !session || !chatPartner) return;
-
-    fetchChatMessages(chatPartner.id);
 
     const myId = session.user.id;
     const partnerId = chatPartner.id;
 
+    // 1) 처음 방에 들어왔을 때 메시지 조회 및 상대방 메시지 읽음(is_read = true) 처리
+    const initChatRoom = async () => {
+      await markMessagesAsRead(partnerId);
+      await fetchChatMessages(partnerId);
+    };
+    initChatRoom();
+
+    // 2) Supabase Realtime 실시간 구독 (새 메시지 수신 + 상대방 읽음 '1' 소멸 동시 감지)
     const channel = supabase
-      .channel(`chat_${myId}_${partnerId}`)
+      .channel(`realtime_chat_${myId}_${partnerId}_${Date.now()}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        (payload) => {
-          const newMsg = payload.new;
-          const isRelevant =
-            (newMsg.sender_id === myId && newMsg.receiver_id === partnerId) ||
-            (newMsg.sender_id === partnerId && newMsg.receiver_id === myId);
+        { event: '*', schema: 'public', table: 'messages' },
+        async (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newMsg = payload.new;
+            const isRelevant =
+              (newMsg.sender_id === myId && newMsg.receiver_id === partnerId) ||
+              (newMsg.sender_id === partnerId && newMsg.receiver_id === myId);
 
-          if (isRelevant) {
-            setChatMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
-            });
+            if (isRelevant) {
+              // 상대방이 보낸 메시지가 실시간으로 도착했고 내가 현재 채팅방을 보고 있다면 즉시 읽음 처리
+              if (newMsg.sender_id === partnerId && newMsg.receiver_id === myId && !newMsg.is_read) {
+                newMsg.is_read = true;
+                markMessagesAsRead(partnerId);
+              }
+
+              setChatMessages((prev) => {
+                if (prev.some((m) => m.id === newMsg.id)) return prev;
+                return [...prev, newMsg];
+              });
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedMsg = payload.new;
+            setChatMessages((prev) =>
+              prev.map((m) => (m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m))
+            );
           }
         }
       )
       .subscribe();
 
+    // 3) 모바일 네트워크 전환 시에도 누락이 없도록 4초마다 안전 동기화
+    const syncTimer = setInterval(async () => {
+      await markMessagesAsRead(partnerId);
+      await fetchChatMessages(partnerId);
+    }, 4000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(syncTimer);
     };
   }, [chatPartner, session]);
 
@@ -218,6 +244,17 @@ export default function App() {
       </SafeAreaView>
     );
   }
+
+  // 상대방이 나에게 보낸 안 읽은 메시지를 모두 '읽음(is_read: true)'으로 변경
+  const markMessagesAsRead = async (partnerId) => {
+    const myId = session.user.id;
+    await supabase
+      .from('messages')
+      .update({ is_read: true })
+      .eq('sender_id', partnerId)
+      .eq('receiver_id', myId)
+      .eq('is_read', false);
+  };
 
   // 메신저 열기 및 전체 회원 목록 조회
   const openMessenger = async () => {
@@ -233,7 +270,7 @@ export default function App() {
     }
   };
 
-  // 선택한 상대방과의 이전 대화 내역 불러오기
+  // 선택한 상대방과의 대화 내역 불러오기
   const fetchChatMessages = async (partnerId) => {
     const myId = session.user.id;
     const { data, error } = await supabase
@@ -247,7 +284,7 @@ export default function App() {
     }
   };
 
-  // 메시지 전송하기
+  // 메시지 전송하기 (상대방이 읽기 전까지 is_read: false -> '1' 표시)
   const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text || !chatPartner || sendingMsg) return;
@@ -255,12 +292,15 @@ export default function App() {
     setSendingMsg(true);
     setChatInput('');
 
+    const isSelfChat = chatPartner.id === session.user.id;
+
     const { data, error } = await supabase
       .from('messages')
       .insert({
         sender_id: session.user.id,
         receiver_id: chatPartner.id,
         content: text,
+        is_read: isSelfChat, // 나와의 채팅은 즉시 읽음 처리, 타인은 안 읽음(false -> 1 표시)
       })
       .select()
       .single();
@@ -611,7 +651,6 @@ export default function App() {
             <Text style={styles.profileName}>-{profile.nickname || '내 스토리'}-</Text>
             <Text style={styles.profileBio}>{profile.bio}</Text>
 
-            {/* 반투명 액션 박스: 상단(프로필 꾸미기) / 하단(메신저 채팅 & 새 게시물) */}
             <View style={styles.glassActionBox}>
               <TouchableOpacity style={styles.glassTopBtn} onPress={openProfileEditor}>
                 <Text style={styles.glassBtnText}>✧ 내 프로필 꾸미기</Text>
@@ -778,14 +817,13 @@ export default function App() {
         }
       />
 
-      {/* 오버레이 1: 회원 간 메신저 (회원 목록 & 실시간 1:1 채팅방) */}
+      {/* 오버레이 1: 회원 간 메신저 (회원 목록 & 실시간 1:1 채팅방 + 안 읽음 '1' 표시) */}
       {messengerVisible && (
         <KeyboardAvoidingView
           style={styles.messengerFullScreen}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           {!chatPartner ? (
-            // 1-A. 회원 목록 화면
             <View style={{ flex: 1 }}>
               <View style={styles.msgHeader}>
                 <Text style={styles.msgHeaderTitle}>💬 메신저 - 대화 상대 선택</Text>
@@ -835,7 +873,6 @@ export default function App() {
               />
             </View>
           ) : (
-            // 1-B. 1:1 실시간 채팅방 화면
             <View style={{ flex: 1, backgroundColor: '#BACEE0' }}>
               <View style={styles.msgHeader}>
                 <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.msgBackBtn}>
@@ -866,6 +903,14 @@ export default function App() {
 
                   return (
                     <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
+                      {/* 내가 보낸 메시지일 때: 왼쪽에 [안 읽음 '1' + 보낸 시간] 표시 */}
+                      {isMine && (
+                        <View style={styles.mineMetaCol}>
+                          {!item.is_read && <Text style={styles.unreadBadgeText}>1</Text>}
+                          <Text style={styles.bubbleTime}>{timeStr}</Text>
+                        </View>
+                      )}
+
                       {!isMine && (
                         chatPartner.avatar_url ? (
                           <Image source={{ uri: chatPartner.avatar_url }} style={styles.chatAvatar} />
@@ -875,7 +920,8 @@ export default function App() {
                           </View>
                         )
                       )}
-                      <View style={{ maxWidth: '75%' }}>
+
+                      <View style={{ maxWidth: '72%' }}>
                         {!isMine && (
                           <Text style={styles.chatSenderName}>{chatPartner.nickname || '상대방'}</Text>
                         )}
@@ -883,7 +929,9 @@ export default function App() {
                           <Text style={styles.bubbleText}>{item.content}</Text>
                         </View>
                       </View>
-                      <Text style={styles.bubbleTime}>{timeStr}</Text>
+
+                      {/* 상대방이 보낸 메시지일 때: 오른쪽에 보낸 시간 표시 */}
+                      {!isMine && <Text style={styles.bubbleTime}>{timeStr}</Text>}
                     </View>
                   );
                 }}
@@ -1281,7 +1329,17 @@ const styles = StyleSheet.create({
   bubbleMine: { backgroundColor: '#FEE500', borderBottomRightRadius: 2 },
   bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 2 },
   bubbleText: { fontSize: 14, color: '#222', lineHeight: 20 },
-  bubbleTime: { fontSize: 10, color: '#555', marginBottom: 2 },
+  mineMetaCol: { alignItems: 'flex-end', justifyContent: 'flex-end', marginBottom: 2 },
+  unreadBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#FFE600',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+    marginBottom: 1,
+  },
+  bubbleTime: { fontSize: 10, color: '#4A5568', marginBottom: 1 },
 
   chatInputBar: {
     flexDirection: 'row',
