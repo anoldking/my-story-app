@@ -380,14 +380,14 @@ const FullscreenPhotoPopup = ({
   );
 };
 
-// 게시물 상세 팝업 (댓글 수정·삭제, 대댓글, 등록 후 자동 닫힘)
+// 게시물 상세 팝업 (댓글/대댓글 작성·수정·삭제, 등록 후 입력창만 닫힘)
 const PostDetailPopup = ({
   post,
   currentUserId,
   defaultNickname,
   comments,
   onAddComment,
-  onUpdateComment,
+  onEditComment,
   onDeleteComment,
   onClose,
   onToggleReaction,
@@ -400,11 +400,15 @@ const PostDetailPopup = ({
   const [editValue, setEditValue] = useState('');
   const [editVisibility, setEditVisibility] = useState('public');
 
+  // 댓글 작성창 열림 여부 및 대상 댓글(대댓글용)
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [replyTargetComment, setReplyTargetComment] = useState(null);
   const [commentText, setCommentText] = useState('');
-  const [replyTarget, setReplyTarget] = useState(null); // { id, authorName }
-  const [editingCommentId, setEditingCommentId] = useState(null);
-  const [editingCommentValue, setEditingCommentValue] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+
+  // 댓글/대댓글 인라인 수정 상태
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
 
   const [isZoomed, setIsZoomed] = useState(false);
   const winWidth = getWindowWidth();
@@ -414,10 +418,11 @@ const PostDetailPopup = ({
     setIsEditing(false);
     setEditValue(post?.content || '');
     setEditVisibility(post?.visibility || 'public');
+    setComposerOpen(false);
+    setReplyTargetComment(null);
     setCommentText('');
-    setReplyTarget(null);
     setEditingCommentId(null);
-    setEditingCommentValue('');
+    setEditingCommentText('');
     setIsZoomed(false);
     const imgUri = post?.image_urls?.[0];
     if (!imgUri) return;
@@ -435,6 +440,46 @@ const PostDetailPopup = ({
   const isMyPost = post.author_id === currentUserId;
   const imgUri = post.image_urls?.[0];
 
+  const openNewCommentComposer = () => {
+    setReplyTargetComment(null);
+    setComposerOpen(true);
+  };
+
+  const openReplyComposer = (targetComment) => {
+    setReplyTargetComment(targetComment);
+    setComposerOpen(true);
+  };
+
+  const closeComposerOnly = () => {
+    setComposerOpen(false);
+    setReplyTargetComment(null);
+    setCommentText('');
+  };
+
+  const handleSubmitComment = async () => {
+    const trimmed = commentText.trim();
+    if (!trimmed || submittingComment) return;
+    setSubmittingComment(true);
+    const parentId = replyTargetComment ? replyTargetComment.id : null;
+    const ok = await onAddComment(post.id, trimmed, parentId);
+    setSubmittingComment(false);
+    if (ok) {
+      // 댓글/대댓글 작성 후 입력창만 닫고 팝업 및 목록은 유지
+      closeComposerOnly();
+    }
+  };
+
+  const handleSaveCommentEdit = async (commentId) => {
+    const trimmed = editingCommentText.trim();
+    if (!trimmed) return;
+    const ok = await onEditComment(post.id, commentId, trimmed);
+    if (ok) {
+      setEditingCommentId(null);
+      setEditingCommentText('');
+    }
+  };
+
+  // 최상위 댓글과 대댓글 분리
   const topLevelComments = comments.filter((c) => !c.parent_id);
   const repliesByParent = {};
   comments.forEach((c) => {
@@ -445,110 +490,79 @@ const PostDetailPopup = ({
     }
   });
 
-  const handleSubmitComment = async () => {
-    const trimmed = commentText.trim();
-    if (!trimmed || submittingComment) return;
-    setSubmittingComment(true);
-    const ok = await onAddComment(post.id, trimmed, replyTarget?.id || null);
-    setSubmittingComment(false);
-    if (ok) {
-      setCommentText('');
-      setReplyTarget(null);
-      onClose(); // 댓글·대댓글 작성 후 창 자동 닫힘
-    }
-  };
-
-  const handleSaveCommentEdit = async (commentId) => {
-    const trimmed = editingCommentValue.trim();
-    if (!trimmed) return;
-    await onUpdateComment(post.id, commentId, trimmed);
-    setEditingCommentId(null);
-    setEditingCommentValue('');
-  };
-
-  const renderCommentCard = (c, isReply = false) => {
+  const renderCommentRow = (c, isReply = false) => {
     const isMine = c.user_id === currentUserId;
-    const isEditingThis = editingCommentId === c.id;
+    const isEditingThis = String(editingCommentId) === String(c.id);
 
     return (
       <View
         key={String(c.id)}
-        style={[styles.commentItemRow, isReply && styles.replyCommentItemRow]}
+        style={[styles.commentItemRow, isReply && styles.replyItemRow]}
       >
-        <View style={styles.commentTopRow}>
+        <View style={styles.commentTopMetaRow}>
           <Text style={styles.commentAuthorText}>
             {isReply ? `↳ ${c.authorName || '회원'}` : (c.authorName || '회원')}
           </Text>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {!isReply && (
-              <TouchableOpacity
-                onPress={() => {
-                  setEditingCommentId(null);
-                  setReplyTarget({ id: c.id, authorName: c.authorName || '회원' });
-                }}
-              >
-                <Text style={styles.commentActionLink}>답글</Text>
-              </TouchableOpacity>
-            )}
-            {isMine && !isEditingThis && (
-              <>
-                <TouchableOpacity
-                  onPress={() => {
-                    setReplyTarget(null);
-                    setEditingCommentId(c.id);
-                    setEditingCommentValue(c.content || '');
-                  }}
-                >
-                  <Text style={styles.commentActionLink}>수정</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => onDeleteComment(post.id, c.id)}>
-                  <Text style={[styles.commentActionLink, { color: '#DC2626' }]}>삭제</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+          <Text style={styles.commentTimeText}>
+            {new Date(c.created_at).toLocaleString('ko-KR', {
+              month: 'numeric',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </Text>
         </View>
 
         {isEditingThis ? (
           <View style={{ marginTop: 6 }}>
             <TextInput
-              style={styles.commentEditInlineInput}
-              value={editingCommentValue}
-              onChangeText={setEditingCommentValue}
+              style={styles.commentEditInput}
+              value={editingCommentText}
+              onChangeText={setEditingCommentText}
               multiline
               autoFocus
             />
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 6 }}>
+            <View style={styles.commentActionLinksRow}>
               <TouchableOpacity
-                style={styles.commentMiniActionBtn}
                 onPress={() => {
                   setEditingCommentId(null);
-                  setEditingCommentValue('');
+                  setEditingCommentText('');
                 }}
               >
-                <Text style={styles.commentMiniActionText}>취소</Text>
+                <Text style={styles.commentActionLink}>취소</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.commentMiniActionBtn, { backgroundColor: '#0288D1' }]}
-                onPress={() => handleSaveCommentEdit(c.id)}
-              >
-                <Text style={[styles.commentMiniActionText, { color: '#FFFFFF' }]}>저장</Text>
+              <TouchableOpacity onPress={() => handleSaveCommentEdit(c.id)}>
+                <Text style={[styles.commentActionLink, { color: '#0288D1', fontWeight: '700' }]}>저장</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          <Text style={styles.commentContentText}>{c.content}</Text>
+          <>
+            <Text style={styles.commentContentText}>{c.content}</Text>
+            <View style={styles.commentActionLinksRow}>
+              {!isReply && (
+                <TouchableOpacity onPress={() => openReplyComposer(c)}>
+                  <Text style={styles.commentActionLink}>답글</Text>
+                </TouchableOpacity>
+              )}
+              {isMine && (
+                <>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setEditingCommentId(c.id);
+                      setEditingCommentText(c.content || '');
+                    }}
+                  >
+                    <Text style={styles.commentActionLink}>수정</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => onDeleteComment(post.id, c.id)}>
+                    <Text style={[styles.commentActionLink, { color: '#DC2626' }]}>삭제</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </>
         )}
-
-        <Text style={styles.commentTimeText}>
-          {new Date(c.created_at).toLocaleString('ko-KR', {
-            month: 'numeric',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </Text>
       </View>
     );
   };
@@ -721,17 +735,25 @@ const PostDetailPopup = ({
           </View>
 
           <View style={styles.commentSectionBox}>
-            <Text style={styles.commentSectionTitle}>댓글 {comments.length}</Text>
+            <View style={styles.commentSectionHeader}>
+              <Text style={styles.commentSectionTitle}>댓글 {comments.length}</Text>
+              {!composerOpen && (
+                <TouchableOpacity style={styles.openCommentComposerBtn} onPress={openNewCommentComposer}>
+                  <Ionicons name="create-outline" size={14} color="#0288D1" />
+                  <Text style={styles.openCommentComposerText}>댓글 작성</Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
             {topLevelComments.length === 0 ? (
               <Text style={styles.commentEmptyText}>아직 댓글이 없습니다. 첫 댓글을 남겨 보세요!</Text>
             ) : (
               topLevelComments.map((c) => {
-                const childReplies = repliesByParent[String(c.id)] || [];
+                const children = repliesByParent[String(c.id)] || [];
                 return (
-                  <View key={String(c.id)}>
-                    {renderCommentCard(c, false)}
-                    {childReplies.map((reply) => renderCommentCard(reply, true))}
+                  <View key={String(c.id)} style={{ marginBottom: 4 }}>
+                    {renderCommentRow(c, false)}
+                    {children.map((reply) => renderCommentRow(reply, true))}
                   </View>
                 );
               })
@@ -740,33 +762,39 @@ const PostDetailPopup = ({
         </View>
       </ScrollView>
 
-      {replyTarget && (
-        <View style={styles.replyBannerBar}>
-          <Text style={styles.replyBannerText} numberOfLines={1}>
-            @{replyTarget.authorName}님에게 답글 남기는 중...
-          </Text>
-          <TouchableOpacity onPress={() => setReplyTarget(null)}>
-            <Ionicons name="close" size={16} color="#475569" />
-          </TouchableOpacity>
+      {composerOpen && (
+        <View style={styles.commentComposerPanel}>
+          <View style={styles.composerBannerRow}>
+            <Text style={styles.composerBannerText} numberOfLines={1}>
+              {replyTargetComment
+                ? `@${replyTargetComment.authorName || '회원'} 님에게 대댓글 작성 중`
+                : '새 댓글 작성 중'}
+            </Text>
+            <TouchableOpacity onPress={closeComposerOnly} style={styles.composerCloseBtn}>
+              <Ionicons name="close" size={15} color="#52525B" />
+              <Text style={styles.composerCloseText}>닫기</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.commentInputBar}>
+            <TextInput
+              style={styles.commentTextInput}
+              placeholder={replyTargetComment ? '대댓글을 입력하세요...' : '댓글을 입력하세요...'}
+              value={commentText}
+              onChangeText={setCommentText}
+              multiline
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.commentSubmitBtn, (!commentText.trim() || submittingComment) && { opacity: 0.5 }]}
+              onPress={handleSubmitComment}
+              disabled={!commentText.trim() || submittingComment}
+            >
+              <Text style={styles.commentSubmitText}>등록</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
-
-      <View style={styles.commentInputBar}>
-        <TextInput
-          style={styles.commentTextInput}
-          placeholder={replyTarget ? `${replyTarget.authorName}님에게 답글 입력...` : '댓글을 입력하세요...'}
-          value={commentText}
-          onChangeText={setCommentText}
-          multiline
-        />
-        <TouchableOpacity
-          style={[styles.commentSubmitBtn, (!commentText.trim() || submittingComment) && { opacity: 0.5 }]}
-          onPress={handleSubmitComment}
-          disabled={!commentText.trim() || submittingComment}
-        >
-          <Text style={styles.commentSubmitText}>{replyTarget ? '답글' : '등록'}</Text>
-        </TouchableOpacity>
-      </View>
     </KeyboardAvoidingView>
   );
 };
@@ -1186,6 +1214,7 @@ export default function App() {
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push({
             ...row,
+            parent_id: row.parent_id || null,
             authorName: resolveAuthorName(row.user_id),
           });
         });
@@ -1207,6 +1236,7 @@ export default function App() {
       if (!error && Array.isArray(data)) {
         const mapped = data.map((row) => ({
           ...row,
+          parent_id: row.parent_id || null,
           authorName: resolveAuthorName(row.user_id),
         }));
         setCommentsByPost((prev) => ({
@@ -1237,9 +1267,7 @@ export default function App() {
         user_id: session.user.id,
         content: text,
       };
-      if (parentId) {
-        insertPayload.parent_id = parentId;
-      }
+      if (parentId) insertPayload.parent_id = parentId;
 
       const { data, error } = await supabase
         .from('comments')
@@ -1257,7 +1285,7 @@ export default function App() {
 
       const savedRow = {
         ...data,
-        parent_id: data.parent_id ?? parentId ?? null,
+        parent_id: data.parent_id || parentId || null,
         authorName: myName,
       };
       setCommentsByPost((prev) => {
@@ -1278,25 +1306,27 @@ export default function App() {
     }
   };
 
-  const handleUpdateComment = async (postId, commentId, nextText) => {
+  const handleEditComment = async (postId, commentId, newContent) => {
     const key = String(postId);
     setCommentsByPost((prev) => ({
       ...prev,
       [key]: (prev[key] || []).map((c) =>
-        c.id === commentId ? { ...c, content: nextText } : c
+        String(c.id) === String(commentId) ? { ...c, content: newContent } : c
       ),
     }));
 
     if (!String(commentId).startsWith('local_')) {
       const { error } = await supabase
         .from('comments')
-        .update({ content: nextText })
+        .update({ content: newContent })
         .eq('id', commentId);
+
       if (error) {
         showAlert('댓글 수정 실패', getKoreanErrorMessage(error));
-        fetchCommentsForPost(postId);
+        return false;
       }
     }
+    return true;
   };
 
   const handleDeleteComment = (postId, commentId) => {
@@ -1310,15 +1340,15 @@ export default function App() {
           setCommentsByPost((prev) => ({
             ...prev,
             [key]: (prev[key] || []).filter(
-              (c) => c.id !== commentId && String(c.parent_id) !== String(commentId)
+              (c) => String(c.id) !== String(commentId) && String(c.parent_id) !== String(commentId)
             ),
           }));
 
           if (!String(commentId).startsWith('local_')) {
+            await supabase.from('comments').delete().eq('parent_id', commentId);
             const { error } = await supabase.from('comments').delete().eq('id', commentId);
             if (error) {
               showAlert('댓글 삭제 실패', getKoreanErrorMessage(error));
-              fetchCommentsForPost(postId);
             }
           }
         },
@@ -3056,7 +3086,6 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.mainShellRow}>
-        {/* 화면 왼쪽 세로 메뉴바: 한 손 터치가 편하도록 중앙에 모음 */}
         <View style={styles.leftVerticalMenuBar}>
           <TouchableOpacity
             style={styles.leftMenuBtn}
@@ -3161,7 +3190,6 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
-        {/* 왼쪽 세로 메뉴바 옆 메인 콘텐츠 영역 */}
         <View style={styles.rightContentArea}>
           {mainTab === 'home' && (
             <FlatList
@@ -3439,7 +3467,7 @@ export default function App() {
         defaultNickname={profile.nickname}
         comments={selectedPostComments}
         onAddComment={handleAddComment}
-        onUpdateComment={handleUpdateComment}
+        onEditComment={handleEditComment}
         onDeleteComment={handleDeleteComment}
         onClose={() => setSelectedPostId(null)}
         onToggleReaction={toggleReaction}
@@ -4459,11 +4487,30 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#EAEAEA',
   },
+  commentSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   commentSectionTitle: {
     fontSize: 13,
     fontWeight: 'bold',
     color: '#222222',
-    marginBottom: 10,
+  },
+  openCommentComposerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#F0F9FF',
+  },
+  openCommentComposerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0288D1',
   },
   commentEmptyText: {
     fontSize: 12,
@@ -4474,50 +4521,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
     borderRadius: 10,
     padding: 10,
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  replyCommentItemRow: {
+  replyItemRow: {
     marginLeft: 18,
     backgroundColor: '#F1F5F9',
     borderLeftWidth: 2,
-    borderLeftColor: '#94A3B8',
+    borderLeftColor: '#CBD5E1',
   },
-  commentTopRow: {
+  commentTopMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
   },
   commentAuthorText: {
     fontSize: 12,
     fontWeight: 'bold',
     color: '#01579B',
-  },
-  commentActionLink: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  commentEditInlineInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    fontSize: 13.5,
-    color: '#18181B',
-  },
-  commentMiniActionBtn: {
-    backgroundColor: '#E2E8F0',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  commentMiniActionText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
   },
   commentContentText: {
     fontSize: 14,
@@ -4528,23 +4548,60 @@ const styles = StyleSheet.create({
   commentTimeText: {
     fontSize: 10,
     color: '#999999',
-    marginTop: 4,
   },
-  replyBannerBar: {
+  commentActionLinksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  commentActionLink: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  commentEditInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    fontSize: 13.5,
+    color: '#18181B',
+  },
+
+  commentComposerPanel: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+  },
+  composerBannerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F1F5F9',
     paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    paddingTop: 7,
+    paddingBottom: 4,
+    backgroundColor: '#F8FAFC',
   },
-  replyBannerText: {
-    fontSize: 12,
+  composerBannerText: {
+    fontSize: 11.5,
     fontWeight: '600',
     color: '#334155',
     flex: 1,
+  },
+  composerCloseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  composerCloseText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#52525B',
   },
   commentInputBar: {
     flexDirection: 'row',
@@ -4552,8 +4609,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
     gap: 8,
   },
   commentTextInput: {
