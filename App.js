@@ -38,7 +38,7 @@ try {
   initError = e?.message || String(e);
 }
 
-// 피드(게시글)에서 사진의 원본 가로·세로 비율을 유지해 잘림 없이 보여주는 컴포넌트
+// 피드(홈)에서 사진의 원본 가로·세로 비율을 유지해 잘림 없이 보여주는 컴포넌트
 const AutoHeightImage = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
 
@@ -56,10 +56,10 @@ const AutoHeightImage = ({ uri, onPress }) => {
   }, [uri]);
 
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={onPress}>
+    <TouchableOpacity activeOpacity={0.95} onPress={onPress}>
       <Image
         source={{ uri }}
-        style={[styles.postImage, { aspectRatio }]}
+        style={[styles.feedImage, { aspectRatio }]}
         resizeMode="contain"
       />
     </TouchableOpacity>
@@ -93,7 +93,6 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
 
   return (
     <View style={styles.fullImageBackdrop}>
-      {/* 상단 닫기 헤더 바 */}
       <View style={styles.popupTopBar}>
         <Text style={styles.popupTitleText} numberOfLines={1}>
           {imageInfo.title || '사진 원본 보기'}
@@ -103,7 +102,6 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
         </TouchableOpacity>
       </View>
 
-      {/* 원본 비율 그대로 화면 너비에 맞춰 스크롤 가능한 영역 */}
       <ScrollView
         style={{ width: '100%' }}
         contentContainerStyle={styles.popupScrollContent}
@@ -132,6 +130,165 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
             ) : null}
           </View>
         )}
+      </ScrollView>
+    </View>
+  );
+};
+
+// 3열 그리드 게시물 터치 시 원본 비율 사진 + 글 내용 + 좋아요 + 수정/삭제를 보여주는 상세 팝업
+const PostDetailPopup = ({
+  post,
+  currentUserId,
+  defaultNickname,
+  onClose,
+  onToggleReaction,
+  onSaveEdit,
+  onDeletePost,
+  onOpenFullImage,
+}) => {
+  const [aspectRatio, setAspectRatio] = useState(1);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+
+  useEffect(() => {
+    setIsEditing(false);
+    setEditValue(post?.content || '');
+    const imgUri = post?.image_urls?.[0];
+    if (!imgUri) return;
+    Image.getSize(
+      imgUri,
+      (width, height) => {
+        if (width && height) setAspectRatio(width / height);
+      },
+      () => setAspectRatio(1)
+    );
+  }, [post?.id]);
+
+  if (!post) return null;
+
+  const isMyPost = post.author_id === currentUserId;
+  const imgUri = post.image_urls?.[0];
+
+  return (
+    <View style={styles.fullImageBackdrop}>
+      <View style={styles.popupTopBar}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+          {post.profiles?.avatar_url ? (
+            <Image source={{ uri: post.profiles.avatar_url }} style={styles.popupSmallAvatar} />
+          ) : (
+            <View style={[styles.popupSmallAvatar, styles.defaultSmallAvatar]}>
+              <Text style={{ fontSize: 12 }}>👤</Text>
+            </View>
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.popupTitleText} numberOfLines={1}>
+              {post.profiles?.nickname || defaultNickname || '내 스토리'}
+            </Text>
+            <Text style={{ color: '#AAA', fontSize: 11 }}>
+              {new Date(post.created_at).toLocaleString('ko-KR')}
+            </Text>
+          </View>
+        </View>
+
+        {isMyPost && !isEditing && (
+          <View style={{ flexDirection: 'row', gap: 6, marginRight: 8 }}>
+            <TouchableOpacity
+              style={styles.popupMiniBtn}
+              onPress={() => {
+                setEditValue(post.content || '');
+                setIsEditing(true);
+              }}
+            >
+              <Text style={styles.popupMiniBtnText}>수정</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.popupMiniBtn, { backgroundColor: '#E53E3E' }]}
+              onPress={() => onDeletePost(post.id)}
+            >
+              <Text style={styles.popupMiniBtnText}>삭제</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <TouchableOpacity style={styles.popupCloseIconBtn} onPress={onClose}>
+          <Text style={styles.popupCloseIconText}>✕ 닫기</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={{ width: '100%' }}
+        contentContainerStyle={{ paddingBottom: 36 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {imgUri && (
+          <TouchableOpacity
+            activeOpacity={0.95}
+            onPress={() =>
+              onOpenFullImage({
+                uri: imgUri,
+                title: post.profiles?.nickname || defaultNickname || '사진 원본 보기',
+                caption: post.content || '',
+                date: new Date(post.created_at).toLocaleString('ko-KR'),
+              })
+            }
+          >
+            <Image
+              source={{ uri: imgUri }}
+              style={{ width: SCREEN_WIDTH, aspectRatio, backgroundColor: '#000' }}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.detailBodyBox}>
+          {isEditing ? (
+            <View style={{ marginBottom: 12 }}>
+              <TextInput
+                style={styles.detailEditInput}
+                value={editValue}
+                onChangeText={setEditValue}
+                multiline
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <TouchableOpacity
+                  style={styles.popupMiniBtn}
+                  onPress={() => setIsEditing(false)}
+                >
+                  <Text style={styles.popupMiniBtnText}>취소</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.popupMiniBtn, { backgroundColor: '#FEE500' }]}
+                  onPress={async () => {
+                    await onSaveEdit(post.id, editValue);
+                    setIsEditing(false);
+                  }}
+                >
+                  <Text style={[styles.popupMiniBtnText, { color: '#3C1E1E' }]}>저장</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            post.content ? <Text style={styles.detailContentText}>{post.content}</Text> : null
+          )}
+
+          <View style={styles.detailReactionRow}>
+            {REACTIONS.map((r) => {
+              const count = post.reactions?.filter((x) => x.type === r.type).length || 0;
+              return (
+                <TouchableOpacity
+                  key={r.type}
+                  style={styles.detailReactionBtn}
+                  onPress={() => onToggleReaction(post.id, r.type)}
+                >
+                  <Text style={styles.detailReactionText}>
+                    {r.label} {count > 0 ? count : ''}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -188,8 +345,8 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
-  // 하단 메인 내비게이션 탭 ('friends': 친구탭(홈), 'chats': 채팅탭, 'story': 내 스토리)
-  const [mainTab, setMainTab] = useState('friends');
+  // 인스타그램 스타일 5단 메뉴바 탭 ('home': 홈 피드, 'friends': 친구/검색, 'chats': DM 채팅, 'story': 내 스토리)
+  const [mainTab, setMainTab] = useState('home');
 
   // 프로필 및 방문자 상태
   const [profile, setProfile] = useState({
@@ -211,14 +368,10 @@ export default function App() {
   // 친구탭 상태
   const [members, setMembers] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState([]);
-  const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [favSectionOpen, setFavSectionOpen] = useState(true);
   const [friendsSectionOpen, setFriendsSectionOpen] = useState(true);
   const [selectedFriend, setSelectedFriend] = useState(null);
-
-  // 내 스토리 내부 탭 ('album' | 'posts')
-  const [activeTab, setActiveTab] = useState('album');
 
   // 게시글 상태
   const [posts, setPosts] = useState([]);
@@ -227,11 +380,8 @@ export default function App() {
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // 게시글 수정 상태
-  const [editingPostId, setEditingPostId] = useState(null);
-  const [editingContent, setEditingContent] = useState('');
-
-  // 통합 사진 원본 팝업 상태 ({ uri, title, caption, date } 형태)
+  // 3열 그리드 선택 게시물 상세 팝업 & 사진 원본 팝업 상태
+  const [selectedPostId, setSelectedPostId] = useState(null);
   const [viewingImage, setViewingImage] = useState(null);
 
   // 메신저(1:1 실시간 채팅방 & '+' 첨부 서랍) 상태
@@ -255,9 +405,13 @@ export default function App() {
         return false;
       }
 
-      // 1순위: 사진 원본 팝업이 열려 있으면 닫기
       if (viewingImage) {
         setViewingImage(null);
+        return true;
+      }
+
+      if (selectedPostId) {
+        setSelectedPostId(null);
         return true;
       }
 
@@ -286,20 +440,13 @@ export default function App() {
         return true;
       }
 
-      if (editingPostId) {
-        setEditingPostId(null);
-        setEditingContent('');
-        return true;
-      }
-
-      if (searchVisible) {
-        setSearchVisible(false);
+      if (searchQuery) {
         setSearchQuery('');
         return true;
       }
 
-      if (mainTab !== 'friends') {
-        setMainTab('friends');
+      if (mainTab !== 'home') {
+        setMainTab('home');
         return true;
       }
 
@@ -321,13 +468,13 @@ export default function App() {
     session,
     isSignUpScreen,
     viewingImage,
+    selectedPostId,
     editProfileModal,
     writeModalVisible,
     selectedFriend,
     chatAttachMenuOpen,
     chatPartner,
-    editingPostId,
-    searchVisible,
+    searchQuery,
     mainTab,
   ]);
 
@@ -835,23 +982,21 @@ export default function App() {
     }
   };
 
-  const saveEditPost = async (postId) => {
-    if (!editingContent.trim()) {
+  const saveEditPost = async (postId, newText) => {
+    if (!newText.trim()) {
       showAlert('알림', '수정할 내용을 입력해 주세요.');
       return;
     }
     setLoading(true);
     const { error } = await supabase
       .from('posts')
-      .update({ content: editingContent.trim() })
+      .update({ content: newText.trim() })
       .eq('id', postId);
     setLoading(false);
 
     if (error) {
       showAlert('수정 실패', getKoreanErrorMessage(error));
     } else {
-      setEditingPostId(null);
-      setEditingContent('');
       fetchPosts();
     }
   };
@@ -867,7 +1012,10 @@ export default function App() {
           const { error } = await supabase.from('posts').delete().eq('id', postId);
           setLoading(false);
           if (error) showAlert('삭제 실패', getKoreanErrorMessage(error));
-          else fetchPosts();
+          else {
+            setSelectedPostId(null);
+            fetchPosts();
+          }
         },
       },
     ]);
@@ -915,6 +1063,177 @@ export default function App() {
   }
 
   const otherMembers = members.filter((m) => m.id !== session.user.id);
+
+  // --- 화면 1: 인스타그램 스타일 홈 피드 ('home') ---
+  const renderHomeFeedHeader = () => (
+    <View style={styles.igHeaderContainer}>
+      {/* 상단 로고 & 우측 DM 버튼 */}
+      <View style={styles.igTopBar}>
+        <Text style={styles.igLogoText}>MyStory</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <TouchableOpacity
+            onPress={() => {
+              setImageUri(null);
+              setContent('');
+              setWriteModalVisible(true);
+            }}
+          >
+            <Text style={{ fontSize: 22, color: '#111' }}>＋</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setMainTab('chats')}>
+            <Text style={{ fontSize: 20, color: '#111' }}>✈️</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* 가로 스크롤 원형 스토리 바 (내 스토리 + 가입 회원들) */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.igStoryBarContent}
+      >
+        {/* 내 스토리 원형 아이템 */}
+        <TouchableOpacity
+          style={styles.igStoryItem}
+          onPress={() => {
+            setImageUri(null);
+            setContent('');
+            setWriteModalVisible(true);
+          }}
+        >
+          <View style={styles.igStoryAvatarWrap}>
+            {profile.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.igStoryAvatar} />
+            ) : (
+              <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
+                <Text style={{ fontSize: 24 }}>👤</Text>
+              </View>
+            )}
+            <View style={styles.igStoryPlusBadge}>
+              <Text style={styles.igStoryPlusText}>+</Text>
+            </View>
+          </View>
+          <Text style={styles.igStoryName} numberOfLines={1}>내 스토리</Text>
+        </TouchableOpacity>
+
+        {/* 다른 회원들의 원형 프로필 바 */}
+        {otherMembers.map((member) => (
+          <TouchableOpacity
+            key={member.id}
+            style={styles.igStoryItem}
+            onPress={() => setSelectedFriend(member)}
+          >
+            <View style={styles.igStoryRing}>
+              {member.avatar_url ? (
+                <Image source={{ uri: member.avatar_url }} style={styles.igStoryAvatar} />
+              ) : (
+                <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
+                  <Text style={{ fontSize: 24 }}>👤</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.igStoryName} numberOfLines={1}>
+              {member.nickname || '친구'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
+  const renderHomeFeedPostItem = ({ item }) => {
+    const isMyPost = item.author_id === session.user.id;
+    const totalReactions = item.reactions?.length || 0;
+
+    return (
+      <View style={styles.igPostCard}>
+        {/* 게시물 상단 작성자 바 */}
+        <View style={styles.igPostHeader}>
+          <TouchableOpacity
+            style={styles.igPostAuthorRow}
+            onPress={() => {
+              if (isMyPost) {
+                setMainTab('story');
+              } else {
+                const target = members.find((m) => m.id === item.author_id);
+                if (target) setSelectedFriend(target);
+              }
+            }}
+          >
+            {item.profiles?.avatar_url ? (
+              <Image source={{ uri: item.profiles.avatar_url }} style={styles.igPostAvatar} />
+            ) : (
+              <View style={[styles.igPostAvatar, styles.ktDefaultAvatar]}>
+                <Text style={{ fontSize: 15 }}>👤</Text>
+              </View>
+            )}
+            <View>
+              <Text style={styles.igPostAuthorName}>
+                {item.profiles?.nickname || profile.nickname || '친구'}
+              </Text>
+              <Text style={styles.igPostDate}>
+                {new Date(item.created_at).toLocaleString('ko-KR')}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ padding: 6 }}>
+            <Text style={{ fontSize: 16, color: '#555' }}>•••</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 게시물 원본 비율 사진 (터치 시 원본 크기 팝업) */}
+        {item.image_urls?.[0] && (
+          <AutoHeightImage
+            uri={item.image_urls[0]}
+            onPress={() =>
+              setViewingImage({
+                uri: item.image_urls[0],
+                title: item.profiles?.nickname || profile.nickname || '게시글 사진',
+                caption: item.content || '',
+                date: new Date(item.created_at).toLocaleString('ko-KR'),
+              })
+            }
+          />
+        )}
+
+        {/* 하단 감정 표현 & 본문 영역 */}
+        <View style={styles.igPostFooter}>
+          <View style={styles.igReactionBar}>
+            {REACTIONS.map((r) => {
+              const count = item.reactions?.filter((x) => x.type === r.type).length || 0;
+              return (
+                <TouchableOpacity
+                  key={r.type}
+                  style={styles.igReactionPill}
+                  onPress={() => toggleReaction(item.id, r.type)}
+                >
+                  <Text style={styles.igReactionText}>
+                    {r.label} {count > 0 ? count : ''}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {totalReactions > 0 && (
+            <Text style={styles.igLikeSummary}>공감 {totalReactions}개</Text>
+          )}
+
+          {item.content ? (
+            <Text style={styles.igPostCaption}>
+              <Text style={{ fontWeight: 'bold' }}>
+                {item.profiles?.nickname || profile.nickname || '친구'}{' '}
+              </Text>
+              {item.content}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
+
+  // --- 화면 2: 친구 & 검색 탭 ('friends') ---
   const filteredMembers = otherMembers.filter((m) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -961,66 +1280,24 @@ export default function App() {
     );
   };
 
-  // --- 화면 1: 카카오톡 스타일 친구탭 ('friends') ---
   const renderFriendsTabScreen = () => (
     <View style={styles.ktContainer}>
       <View style={styles.ktHeader}>
-        <TouchableOpacity
-          style={styles.ktMyMiniProfile}
-          onPress={() => setMainTab('story')}
-        >
-          {profile.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.ktMyMiniAvatar} />
-          ) : (
-            <View style={[styles.ktMyMiniAvatar, styles.ktDefaultAvatar]}>
-              <Text style={{ fontSize: 18 }}>👤</Text>
-            </View>
-          )}
-          <Text style={styles.ktMyMiniName}>-{profile.nickname || '내 스토리'}-</Text>
-        </TouchableOpacity>
-
-        <View style={styles.ktHeaderIcons}>
-          <TouchableOpacity
-            style={styles.ktIconBtn}
-            onPress={() => {
-              setSearchVisible(!searchVisible);
-              setSearchQuery('');
-            }}
-          >
-            <Text style={{ fontSize: 19 }}>🔍</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.ktIconBtn} onPress={openProfileEditor}>
-            <Text style={{ fontSize: 19 }}>⚙️</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.ktPillBar}>
-        <TouchableOpacity style={styles.ktPillActive}>
-          <Text style={styles.ktPillActiveText}>친구</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.ktPillInactive}
-          onPress={() => {
-            setActiveTab('posts');
-            setMainTab('story');
-          }}
-        >
-          <Text style={styles.ktPillInactiveText}>소식</Text>
+        <Text style={styles.ktPageTitle}>친구 검색</Text>
+        <TouchableOpacity style={styles.ktIconBtn} onPress={openProfileEditor}>
+          <Text style={{ fontSize: 19 }}>⚙️</Text>
         </TouchableOpacity>
       </View>
 
-      {searchVisible && (
-        <View style={styles.ktSearchBox}>
-          <TextInput
-            style={styles.ktSearchInput}
-            placeholder="이름 또는 상태메시지 검색..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoFocus
-          />
-        </View>
-      )}
+      {/* 상단 고정 검색창 */}
+      <View style={styles.ktSearchBox}>
+        <TextInput
+          style={styles.ktSearchInput}
+          placeholder="🔍 이름 또는 상태메시지로 친구 검색..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
         <TouchableOpacity
@@ -1072,7 +1349,7 @@ export default function App() {
             style={styles.ktSectionHeader}
             onPress={() => setFriendsSectionOpen(!friendsSectionOpen)}
           >
-            <Text style={styles.ktSectionTitle}>친구 {filteredMembers.length}</Text>
+            <Text style={styles.ktSectionTitle}>전체 친구 {filteredMembers.length}</Text>
             <Text style={styles.ktSectionArrow}>{friendsSectionOpen ? '⌃' : '⌄'}</Text>
           </TouchableOpacity>
 
@@ -1090,13 +1367,13 @@ export default function App() {
     </View>
   );
 
-  // --- 화면 2: 채팅 목록 탭 ('chats') ---
+  // --- 화면 3: DM 채팅 목록 탭 ('chats') ---
   const renderChatsTabScreen = () => (
     <View style={styles.ktContainer}>
       <View style={styles.ktHeader}>
-        <Text style={styles.ktPageTitle}>채팅</Text>
+        <Text style={styles.ktPageTitle}>메시지 (DM)</Text>
         <TouchableOpacity style={styles.ktIconBtn} onPress={fetchFriendsAndFavorites}>
-          <Text style={{ fontSize: 16, color: '#333' }}>🔄 새로고침</Text>
+          <Text style={{ fontSize: 15, color: '#333' }}>🔄 새로고침</Text>
         </TouchableOpacity>
       </View>
 
@@ -1139,266 +1416,185 @@ export default function App() {
     </View>
   );
 
-  // --- 화면 3: 내 스토리 탭 ('story') ---
-  const albumPosts = posts.filter((p) => p.image_urls && p.image_urls.length > 0);
-
+  // --- 화면 4: 내 스토리 프로필 헤더 ('story', 탭 없이 3열 격자 직결) ---
   const renderProfileHeader = () => (
-    <View>
-      <ImageBackground
-        source={profile.cover_url ? { uri: profile.cover_url } : undefined}
-        style={styles.coverBackground}
-        resizeMode="cover"
-      >
-        {/* 배경 빈 공간 터치 시 배경사진 원본 팝업 표시 */}
-        <TouchableOpacity
-          activeOpacity={1}
-          style={styles.coverOverlay}
-          onPress={() => {
-            if (profile.cover_url) {
-              setViewingImage({
-                uri: profile.cover_url,
-                title: `${profile.nickname || '내'}의 배경사진`,
-                caption: profile.bio || '',
-              });
-            }
-          }}
-        >
-          <View style={styles.topBar}>
-            <TouchableOpacity style={styles.topHomeBtn} onPress={() => setMainTab('friends')}>
-              <Text style={styles.topHomeText}>← 친구</Text>
-            </TouchableOpacity>
-            <View style={styles.visitorBadge}>
-              <Text style={styles.visitorText}>
-                TODAY {profile.today_visits}  |  TOTAL {profile.total_visits}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.topLogoutBtn} onPress={() => supabase.auth.signOut()}>
-              <Text style={styles.topLogoutText}>로그아웃</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.profileBottomSection}>
-            {/* 원형 프로필 사진 터치 시: 프로필 사진 원본 팝업으로 띄우기 (편집창 X) */}
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => {
-                if (profile.avatar_url) {
-                  setViewingImage({
-                    uri: profile.avatar_url,
-                    title: `${profile.nickname || '내'}의 프로필 사진`,
-                    caption: profile.bio || '',
-                  });
-                } else {
-                  showAlert('알림', '등록된 프로필 사진이 없습니다.\n아래 [프로필 변경 / 꾸미기] 버튼에서 사진을 등록해 보세요!');
-                }
-              }}
-            >
-              {profile.avatar_url ? (
-                <Image source={{ uri: profile.avatar_url }} style={styles.circularAvatar} />
-              ) : (
-                <View style={[styles.circularAvatar, styles.defaultAvatar]}>
-                  <Text style={styles.defaultAvatarText}>👤</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            <Text style={styles.profileName}>-{profile.nickname || '내 스토리'}-</Text>
-            <Text style={styles.profileBio}>{profile.bio}</Text>
-
-            {/* 아래쪽에 따로 뺀 프로필 변경 / 메신저 / 새 게시물 버튼 박스 */}
-            <View style={styles.glassActionBox}>
-              <TouchableOpacity style={styles.glassTopBtn} onPress={openProfileEditor}>
-                <Text style={styles.glassBtnText}>✧ 프로필 변경 / 꾸미기</Text>
-              </TouchableOpacity>
-              <View style={styles.glassDividerHorizontal} />
-              <View style={styles.glassBottomRow}>
-                <TouchableOpacity style={styles.glassHalfBtn} onPress={() => setMainTab('chats')}>
-                  <Text style={styles.glassBtnText}>💬 메신저 (채팅)</Text>
-                </TouchableOpacity>
-                <View style={styles.glassDividerVertical} />
-                <TouchableOpacity
-                  style={styles.glassHalfBtn}
-                  onPress={() => {
-                    setImageUri(null);
-                    setContent('');
-                    setWriteModalVisible(true);
-                  }}
-                >
-                  <Text style={styles.glassBtnText}>⊞ 새 게시물 쓰기</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </ImageBackground>
-
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'album' && styles.tabItemActive]}
-          onPress={() => setActiveTab('album')}
-        >
-          <Text style={[styles.tabText, activeTab === 'album' && styles.tabTextActive]}>
-            🖼️ 앨범 ({albumPosts.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'posts' && styles.tabItemActive]}
-          onPress={() => setActiveTab('posts')}
-        >
-          <Text style={[styles.tabText, activeTab === 'posts' && styles.tabTextActive]}>
-            📄 게시글 ({posts.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  // 앨범 3열 사진 터치 시 원본 비율 팝업으로 열기
-  const renderAlbumGridItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.gridItem}
-      activeOpacity={0.85}
-      onPress={() =>
-        setViewingImage({
-          uri: item.image_urls[0],
-          title: item.profiles?.nickname || profile.nickname || '앨범 사진',
-          caption: item.content || '',
-          date: new Date(item.created_at).toLocaleString('ko-KR'),
-        })
-      }
+    <ImageBackground
+      source={profile.cover_url ? { uri: profile.cover_url } : undefined}
+      style={styles.coverBackground}
+      resizeMode="cover"
     >
-      <Image source={{ uri: item.image_urls[0] }} style={styles.gridImage} />
-      {item.content ? (
-        <View style={styles.gridCaptionOverlay}>
-          <Text style={styles.gridCaptionText} numberOfLines={1}>
-            {item.content}
-          </Text>
+      <TouchableOpacity
+        activeOpacity={1}
+        style={styles.coverOverlay}
+        onPress={() => {
+          if (profile.cover_url) {
+            setViewingImage({
+              uri: profile.cover_url,
+              title: `${profile.nickname || '내'}의 배경사진`,
+              caption: profile.bio || '',
+            });
+          }
+        }}
+      >
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.topCircleBtn} onPress={() => setMainTab('home')}>
+            <Text style={styles.topCircleBtnText}>←</Text>
+          </TouchableOpacity>
+
+          <View style={styles.visitorBadge}>
+            <Text style={styles.visitorText}>
+              TODAY {profile.today_visits}  |  TOTAL {profile.total_visits}
+            </Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <TouchableOpacity style={styles.topPillBtn} onPress={openProfileEditor}>
+              <Text style={styles.topPillBtnText}>프로필 편집</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.topCircleBtn} onPress={() => supabase.auth.signOut()}>
+              <Text style={[styles.topCircleBtnText, { fontSize: 12 }]}>로그아웃</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      ) : null}
-    </TouchableOpacity>
+
+        <View style={styles.profileBottomSection}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => {
+              if (profile.avatar_url) {
+                setViewingImage({
+                  uri: profile.avatar_url,
+                  title: `${profile.nickname || '내'}의 프로필 사진`,
+                  caption: profile.bio || '',
+                });
+              } else {
+                showAlert('알림', '등록된 프로필 사진이 없습니다.\n아래 [내 프로필 꾸미기] 버튼에서 사진을 등록해 보세요!');
+              }
+            }}
+          >
+            {profile.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.circularAvatar} />
+            ) : (
+              <View style={[styles.circularAvatar, styles.defaultAvatar]}>
+                <Text style={styles.defaultAvatarText}>👤</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <Text style={styles.profileName}>-{profile.nickname || '내 스토리'}-</Text>
+          <Text style={styles.profileBio}>{profile.bio}</Text>
+
+          <View style={styles.glassActionBox}>
+            <TouchableOpacity style={styles.glassTopBtn} onPress={openProfileEditor}>
+              <Text style={styles.glassBtnText}>✧ 내 프로필 꾸미기</Text>
+            </TouchableOpacity>
+            <View style={styles.glassDividerHorizontal} />
+            <View style={styles.glassBottomRow}>
+              <TouchableOpacity
+                style={styles.glassHalfBtn}
+                onPress={() =>
+                  setChatPartner({
+                    id: session.user.id,
+                    nickname: profile.nickname || '나',
+                    avatar_url: profile.avatar_url,
+                  })
+                }
+              >
+                <Text style={styles.glassBtnText}>💬 나와의 채팅</Text>
+              </TouchableOpacity>
+              <View style={styles.glassDividerVertical} />
+              <TouchableOpacity
+                style={styles.glassHalfBtn}
+                onPress={() => {
+                  setImageUri(null);
+                  setContent('');
+                  setWriteModalVisible(true);
+                }}
+              >
+                <Text style={styles.glassBtnText}>⊞ 새 게시물</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </ImageBackground>
   );
 
-  // 게시글 사진 터치 시 원본 비율 팝업으로 열기
-  const renderPostCardItem = ({ item }) => {
-    const isMyPost = item.author_id === session.user.id;
-    const isEditing = editingPostId === item.id;
+  const renderGridItem = ({ item }) => {
+    const hasImage = item.image_urls && item.image_urls.length > 0;
+    const reactionCount = item.reactions?.length || 0;
 
     return (
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View style={styles.cardAuthorRow}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => {
-                if (item.profiles?.avatar_url) {
-                  setViewingImage({
-                    uri: item.profiles.avatar_url,
-                    title: `${item.profiles?.nickname || '친구'}의 프로필 사진`,
-                  });
-                }
-              }}
-            >
-              {item.profiles?.avatar_url ? (
-                <Image source={{ uri: item.profiles.avatar_url }} style={styles.smallAvatar} />
-              ) : (
-                <View style={[styles.smallAvatar, styles.defaultSmallAvatar]}>
-                  <Text style={{ fontSize: 14 }}>👤</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-            <View>
-              <Text style={styles.author}>{item.profiles?.nickname || profile.nickname || '친구'}</Text>
-              <Text style={styles.date}>{new Date(item.created_at).toLocaleString('ko-KR')}</Text>
-            </View>
-          </View>
-
-          {isMyPost && !isEditing && (
-            <View style={styles.ownerActions}>
-              <TouchableOpacity
-                onPress={() => {
-                  setEditingPostId(item.id);
-                  setEditingContent(item.content || '');
-                }}
-                style={styles.editBtn}
-              >
-                <Text style={styles.editBtnText}>수정</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => confirmDeletePost(item.id)} style={styles.deleteBtn}>
-                <Text style={styles.deleteBtnText}>삭제</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {isEditing ? (
-          <View style={styles.editBox}>
-            <TextInput
-              style={styles.editInput}
-              value={editingContent}
-              onChangeText={setEditingContent}
-              multiline
-              autoFocus
-            />
-            <View style={styles.editActions}>
-              <TouchableOpacity onPress={() => setEditingPostId(null)} style={styles.cancelEditBtn}>
-                <Text style={styles.cancelEditText}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => saveEditPost(item.id)} style={styles.saveEditBtn}>
-                <Text style={styles.saveEditText}>저장</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+      <TouchableOpacity
+        style={styles.gridItem}
+        activeOpacity={0.85}
+        onPress={() => setSelectedPostId(item.id)}
+      >
+        {hasImage ? (
+          <>
+            <Image source={{ uri: item.image_urls[0] }} style={styles.gridImage} />
+            {item.content ? (
+              <View style={styles.gridCaptionOverlay}>
+                <Text style={styles.gridCaptionText} numberOfLines={1}>
+                  {item.content}
+                </Text>
+              </View>
+            ) : null}
+          </>
         ) : (
-          item.content ? <Text style={styles.postText}>{item.content}</Text> : null
+          <View style={styles.gridTextOnlyBox}>
+            <Text style={styles.gridTextOnlyContent} numberOfLines={4}>
+              {item.content}
+            </Text>
+            <Text style={styles.gridTextOnlyAuthor} numberOfLines={1}>
+              {item.profiles?.nickname || profile.nickname || '스토리'}
+            </Text>
+          </View>
         )}
 
-        {item.image_urls?.[0] && (
-          <AutoHeightImage
-            uri={item.image_urls[0]}
-            onPress={() =>
-              setViewingImage({
-                uri: item.image_urls[0],
-                title: item.profiles?.nickname || profile.nickname || '게시글 사진',
-                caption: item.content || '',
-                date: new Date(item.created_at).toLocaleString('ko-KR'),
-              })
-            }
-          />
+        {reactionCount > 0 && (
+          <View style={styles.gridHeartBadge}>
+            <Text style={styles.gridHeartText}>❤️ {reactionCount}</Text>
+          </View>
         )}
-
-        <View style={styles.reactionRow}>
-          {REACTIONS.map((r) => {
-            const count = item.reactions?.filter((x) => x.type === r.type).length || 0;
-            return (
-              <TouchableOpacity key={r.type} style={styles.reactionBtn} onPress={() => toggleReaction(item.id, r.type)}>
-                <Text style={styles.reactionText}>{r.label} {count > 0 ? count : ''}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
+      </TouchableOpacity>
     );
   };
+
+  const selectedPostObj = posts.find((p) => p.id === selectedPostId) || null;
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={{ flex: 1 }}>
+        {mainTab === 'home' && (
+          <FlatList
+            style={{ backgroundColor: '#FFFFFF' }}
+            data={posts}
+            keyExtractor={(item) => String(item.id)}
+            ListHeaderComponent={renderHomeFeedHeader}
+            renderItem={renderHomeFeedPostItem}
+            ListEmptyComponent={
+              <View style={styles.emptyBox}>
+                <Text style={[styles.emptyText, { color: '#777' }]}>
+                  아직 올라온 스토리가 없습니다.{'\n'}하단 가운데 [+] 버튼을 눌러 첫 사진을 올려 보세요!
+                </Text>
+              </View>
+            }
+          />
+        )}
         {mainTab === 'friends' && renderFriendsTabScreen()}
         {mainTab === 'chats' && renderChatsTabScreen()}
         {mainTab === 'story' && (
           <FlatList
-            key={activeTab}
-            data={activeTab === 'album' ? albumPosts : posts}
-            numColumns={activeTab === 'album' ? 3 : 1}
+            data={posts}
+            numColumns={3}
             keyExtractor={(item) => String(item.id)}
             ListHeaderComponent={renderProfileHeader}
-            renderItem={activeTab === 'album' ? renderAlbumGridItem : renderPostCardItem}
+            renderItem={renderGridItem}
             ListEmptyComponent={
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyText}>
-                  {activeTab === 'album'
-                    ? '아직 앨범에 올린 사진이 없습니다.\n상단의 [새 게시물 쓰기]를 눌러 첫 사진을 등록해 보세요!'
-                    : '아직 작성된 게시글이 없습니다.\n상단의 [새 게시물 쓰기]를 눌러 첫 글을 남겨 보세요!'}
+                  아직 등록된 게시물이 없습니다.{'\n'}상단의 [⊞ 새 게시물]을 눌러 첫 스토리를 올려 보세요!
                 </Text>
               </View>
             }
@@ -1406,40 +1602,69 @@ export default function App() {
         )}
       </View>
 
-      {/* 하단 탭 바 (친구 / 채팅 / 내 스토리) */}
-      <View style={styles.bottomNav}>
+      {/* 인스타그램 스타일 5단 하단 메뉴바: [홈] [친구검색] [+글쓰기] [DM채팅] [내프로필] */}
+      <View style={styles.igBottomNav}>
         <TouchableOpacity
-          style={styles.bottomNavItem}
+          style={styles.igNavItem}
+          onPress={() => {
+            fetchPosts();
+            fetchFriendsAndFavorites();
+            setMainTab('home');
+          }}
+        >
+          <Text style={[styles.igNavIcon, mainTab === 'home' && styles.igNavIconActive]}>🏠</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.igNavItem}
           onPress={() => {
             fetchFriendsAndFavorites();
             setMainTab('friends');
           }}
         >
-          <Text style={[styles.bottomNavIcon, mainTab === 'friends' && styles.bottomNavActive]}>👤</Text>
-          <Text style={[styles.bottomNavLabel, mainTab === 'friends' && styles.bottomNavActive]}>친구</Text>
+          <Text style={[styles.igNavIcon, mainTab === 'friends' && styles.igNavIconActive]}>🔍</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.bottomNavItem}
+          style={styles.igNavItem}
+          onPress={() => {
+            setImageUri(null);
+            setContent('');
+            setWriteModalVisible(true);
+          }}
+        >
+          <View style={styles.igNavPlusBox}>
+            <Text style={styles.igNavPlusText}>+</Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.igNavItem}
           onPress={() => {
             fetchFriendsAndFavorites();
             setMainTab('chats');
           }}
         >
-          <Text style={[styles.bottomNavIcon, mainTab === 'chats' && styles.bottomNavActive]}>💬</Text>
-          <Text style={[styles.bottomNavLabel, mainTab === 'chats' && styles.bottomNavActive]}>채팅</Text>
+          <Text style={[styles.igNavIcon, mainTab === 'chats' && styles.igNavIconActive]}>✈️</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.bottomNavItem}
+          style={styles.igNavItem}
           onPress={() => setMainTab('story')}
         >
-          <Text style={[styles.bottomNavIcon, mainTab === 'story' && styles.bottomNavActive]}>🏡</Text>
-          <Text style={[styles.bottomNavLabel, mainTab === 'story' && styles.bottomNavActive]}>내 스토리</Text>
+          <View style={[styles.igNavAvatarRing, mainTab === 'story' && styles.igNavAvatarRingActive]}>
+            {profile.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={styles.igNavAvatar} />
+            ) : (
+              <View style={[styles.igNavAvatar, styles.ktDefaultAvatar]}>
+                <Text style={{ fontSize: 13 }}>👤</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
-      {/* 오버레이 1: 친구 미니 프로필 팝업 (배경/프로필 사진 터치 시 원본 팝업 연결) */}
+      {/* 오버레이 1: 친구 미니 프로필 팝업 */}
       {selectedFriend && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.friendCardModal}>
@@ -1772,7 +1997,7 @@ export default function App() {
       {writeModalVisible && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>새 스토리 올리기</Text>
+            <Text style={styles.modalTitle}>새 게시물 올리기</Text>
             <TextInput
               style={[styles.modalInput, { height: 110, textAlignVertical: 'top' }]}
               placeholder="오늘 어떤 일이 있었나요?"
@@ -1812,7 +2037,19 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 5: 프로필 사진 / 배경사진 / 게시글 사진 원본 크기 비율 팝업 */}
+      {/* 오버레이 5: 3열 그리드 게시물 터치 시 상세 보기 */}
+      <PostDetailPopup
+        post={selectedPostObj}
+        currentUserId={session.user.id}
+        defaultNickname={profile.nickname}
+        onClose={() => setSelectedPostId(null)}
+        onToggleReaction={toggleReaction}
+        onSaveEdit={saveEditPost}
+        onDeletePost={confirmDeletePost}
+        onOpenFullImage={(info) => setViewingImage(info)}
+      />
+
+      {/* 오버레이 6: 프로필 사진 / 배경사진 / 게시글 사진 원본 크기 비율 팝업 */}
       <OriginalImagePopup
         imageInfo={viewingImage}
         onClose={() => setViewingImage(null)}
@@ -1832,6 +2069,195 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
+  // --- 인스타그램 스타일 홈 피드 & 스토리 바 ---
+  igHeaderContainer: {
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEFEF',
+  },
+  igTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  igLogoText: {
+    fontSize: 23,
+    fontWeight: 'bold',
+    color: '#111111',
+    letterSpacing: -0.5,
+  },
+  igStoryBarContent: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    gap: 14,
+  },
+  igStoryItem: {
+    alignItems: 'center',
+    width: 68,
+  },
+  igStoryAvatarWrap: {
+    position: 'relative',
+    marginBottom: 5,
+  },
+  igStoryRing: {
+    padding: 2.5,
+    borderRadius: 36,
+    borderWidth: 2,
+    borderColor: '#E1306C',
+    marginBottom: 5,
+  },
+  igStoryAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  igStoryPlusBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#111111',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  igStoryPlusText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    lineHeight: 16,
+  },
+  igStoryName: {
+    fontSize: 11,
+    color: '#222222',
+    textAlign: 'center',
+  },
+
+  igPostCard: {
+    backgroundColor: '#FFFFFF',
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEFEF',
+  },
+  igPostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  igPostAuthorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  igPostAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  igPostAuthorName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#111111',
+  },
+  igPostDate: {
+    fontSize: 11,
+    color: '#8E8E8E',
+  },
+  feedImage: {
+    width: '100%',
+    backgroundColor: '#FAFAFA',
+  },
+  igPostFooter: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  igReactionBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  igReactionPill: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  igReactionText: {
+    fontSize: 12,
+    color: '#222222',
+  },
+  igLikeSummary: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#111111',
+    marginBottom: 4,
+  },
+  igPostCaption: {
+    fontSize: 14,
+    color: '#222222',
+    lineHeight: 20,
+  },
+
+  // --- 인스타그램 스타일 5단 하단 메뉴바 ---
+  igBottomNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+    paddingVertical: 9,
+  },
+  igNavItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  igNavIcon: {
+    fontSize: 22,
+    opacity: 0.45,
+  },
+  igNavIconActive: {
+    opacity: 1,
+  },
+  igNavPlusBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#111111',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  igNavPlusText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111111',
+    lineHeight: 20,
+  },
+  igNavAvatarRing: {
+    padding: 1.5,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  igNavAvatarRingActive: {
+    borderColor: '#111111',
+  },
+  igNavAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+
+  // --- 친구 검색 & 채팅 목록 스타일 ---
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
   ktHeader: {
     flexDirection: 'row',
@@ -1842,42 +2268,16 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     backgroundColor: '#FFFFFF',
   },
-  ktPageTitle: { fontSize: 22, fontWeight: 'bold', color: '#191919' },
-  ktMyMiniProfile: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  ktMyMiniAvatar: { width: 42, height: 42, borderRadius: 16 },
-  ktMyMiniName: { fontSize: 19, fontWeight: 'bold', color: '#191919' },
+  ktPageTitle: { fontSize: 21, fontWeight: 'bold', color: '#191919' },
   ktDefaultAvatar: { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
-  ktHeaderIcons: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   ktIconBtn: { padding: 6 },
-
-  ktPillBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-  },
-  ktPillActive: {
-    backgroundColor: '#191919',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 18,
-  },
-  ktPillActiveText: { color: '#FFFFFF', fontSize: 13, fontWeight: 'bold' },
-  ktPillInactive: {
-    backgroundColor: '#F2F2F2',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 18,
-  },
-  ktPillInactiveText: { color: '#666666', fontSize: 13, fontWeight: '600' },
 
   ktSearchBox: { paddingHorizontal: 16, paddingBottom: 10 },
   ktSearchInput: {
     backgroundColor: '#F4F4F4',
     borderRadius: 10,
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingVertical: 10,
     fontSize: 14,
   },
 
@@ -1925,18 +2325,6 @@ const styles = StyleSheet.create({
   ktFriendBio: { fontSize: 12, color: '#888888', marginTop: 2 },
   ktFavStarBtn: { padding: 6 },
 
-  bottomNav: {
-    flexDirection: 'row',
-    backgroundColor: '#F9F9F9',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
-    paddingVertical: 8,
-  },
-  bottomNavItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  bottomNavIcon: { fontSize: 20, color: '#999999', marginBottom: 2 },
-  bottomNavLabel: { fontSize: 11, color: '#888888', fontWeight: '600' },
-  bottomNavActive: { color: '#191919', fontWeight: 'bold' },
-
   friendCardModal: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -1981,13 +2369,14 @@ const styles = StyleSheet.create({
   friendCardChatBtn: { backgroundColor: '#FEE500' },
   friendCardActionLabel: { fontSize: 13, color: '#333' },
 
+  // --- 내 스토리 탭 스타일 ---
   coverBackground: { width: '100%', height: COVER_HEIGHT, backgroundColor: '#4A5568' },
   coverOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.22)',
     justifyContent: 'space-between',
     paddingTop: 14,
-    paddingBottom: 18,
+    paddingBottom: 16,
     paddingHorizontal: 16,
   },
   topBar: {
@@ -1995,29 +2384,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  topHomeBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.38)',
-    paddingHorizontal: 12,
+  topCircleBtn: {
+    backgroundColor: 'rgba(0, 0, 0, 0.36)',
+    paddingHorizontal: 11,
     paddingVertical: 7,
-    borderRadius: 16,
+    borderRadius: 18,
   },
-  topHomeText: { color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' },
+  topCircleBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: 'bold' },
+  topPillBtn: {
+    backgroundColor: 'rgba(0, 0, 0, 0.36)',
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 18,
+  },
+  topPillBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
   visitorBadge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
+    backgroundColor: 'rgba(0, 0, 0, 0.32)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
   },
-  visitorText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600', letterSpacing: 0.4 },
-  topLogoutBtn: {
-    backgroundColor: 'rgba(0, 0, 0, 0.38)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
-  },
-  topLogoutText: { color: '#F5F5F5', fontSize: 11, fontWeight: '600' },
+  visitorText: { color: '#FFFFFF', fontSize: 11, fontWeight: '600', letterSpacing: 0.4 },
 
   profileBottomSection: { alignItems: 'flex-start' },
   circularAvatar: {
@@ -2067,23 +2454,6 @@ const styles = StyleSheet.create({
   glassDividerVertical: { width: 1, height: '100%', backgroundColor: 'rgba(255, 255, 255, 0.35)' },
   glassBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
 
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: '#252525',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  tabItem: {
-    flex: 1,
-    paddingVertical: 13,
-    alignItems: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  tabItemActive: { borderBottomColor: '#FEE500' },
-  tabText: { color: '#999', fontSize: 14, fontWeight: '600' },
-  tabTextActive: { color: '#FEE500', fontWeight: 'bold' },
-
   gridItem: { width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, margin: 0.6, backgroundColor: '#2D2D2D' },
   gridImage: { width: '100%', height: '100%' },
   gridCaptionOverlay: {
@@ -2092,35 +2462,66 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 5,
-    paddingVertical: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
   },
-  gridCaptionText: { color: '#FFF', fontSize: 10 },
+  gridCaptionText: { color: '#FFF', fontSize: 11 },
+  gridTextOnlyBox: {
+    flex: 1,
+    padding: 10,
+    backgroundColor: '#2B2D31',
+    justifyContent: 'space-between',
+  },
+  gridTextOnlyContent: { color: '#F2F3F5', fontSize: 12, lineHeight: 17 },
+  gridTextOnlyAuthor: { color: '#949BA4', fontSize: 10 },
+  gridHeartBadge: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  gridHeartText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
 
-  card: { backgroundColor: '#FFFFFF', padding: 16, marginBottom: 8 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  cardAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  smallAvatar: { width: 36, height: 36, borderRadius: 18 },
+  popupSmallAvatar: { width: 32, height: 32, borderRadius: 16 },
   defaultSmallAvatar: { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
-  author: { fontWeight: 'bold', fontSize: 15, color: '#222' },
-  date: { fontSize: 11, color: '#999', marginTop: 1 },
-  ownerActions: { flexDirection: 'row', gap: 6 },
-  editBtn: { backgroundColor: '#F0F0F0', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4 },
-  editBtnText: { fontSize: 12, color: '#333' },
-  deleteBtn: { backgroundColor: '#FFEBEE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4 },
-  deleteBtnText: { fontSize: 12, color: '#D32F2F' },
-  editBox: { marginBottom: 10 },
-  editInput: { borderWidth: 1, borderColor: '#CCC', borderRadius: 6, padding: 10, fontSize: 15, minHeight: 60, textAlignVertical: 'top' },
-  editActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
-  cancelEditBtn: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#EEE', borderRadius: 4 },
-  cancelEditText: { fontSize: 13, color: '#555' },
-  saveEditBtn: { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#3C1E1E', borderRadius: 4 },
-  saveEditText: { fontSize: 13, color: '#fff', fontWeight: 'bold' },
-  postText: { fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 10 },
-  postImage: { width: '100%', borderRadius: 8, marginBottom: 10, backgroundColor: '#F5F5F5' },
-  reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 10 },
-  reactionBtn: { backgroundColor: '#F8F8F8', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 14 },
-  reactionText: { fontSize: 12, color: '#444' },
+  popupMiniBtn: {
+    backgroundColor: '#333',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  popupMiniBtnText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
+  detailBodyBox: { padding: 18 },
+  detailContentText: { color: '#FFFFFF', fontSize: 15, lineHeight: 23, marginBottom: 16 },
+  detailEditInput: {
+    backgroundColor: '#222',
+    color: '#FFF',
+    borderWidth: 1,
+    borderColor: '#555',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  detailReactionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#2A2A2A',
+    paddingTop: 14,
+  },
+  detailReactionBtn: {
+    backgroundColor: '#242424',
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  detailReactionText: { color: '#EEE', fontSize: 12 },
 
   emptyBox: { padding: 48, alignItems: 'center' },
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
@@ -2331,7 +2732,6 @@ const styles = StyleSheet.create({
   removePhotoBtn: { alignSelf: 'flex-end', marginTop: 6, padding: 6, backgroundColor: '#EEE', borderRadius: 4 },
   attachPhotoBtn: { padding: 14, borderRadius: 8, backgroundColor: '#F5F5F5', alignItems: 'center', borderWidth: 1, borderColor: '#DDD' },
 
-  // 원본 크기 비율 사진 팝업 뷰어 스타일
   fullImageBackdrop: {
     position: 'absolute',
     top: 0,
@@ -2347,7 +2747,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(0,0,0,0.85)',
     borderBottomWidth: 1,
     borderBottomColor: '#222',
   },
