@@ -3,14 +3,15 @@ import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   FlatList, Image, ImageBackground, Alert, SafeAreaView,
   ActivityIndicator, ScrollView, Dimensions, KeyboardAvoidingView,
-  Platform, BackHandler, ToastAndroid, Linking
+  Platform, BackHandler, ToastAndroid, Linking, PanResponder
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+const getWindowWidth = () => Dimensions.get('window').width;
+const SCREEN_WIDTH = getWindowWidth();
 const COVER_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3;
 
@@ -37,6 +38,160 @@ try {
   initError = e?.message || String(e);
 }
 
+// 핀치 줌(두 손가락) + 더블 탭 확대/축소 + 드래그 이동이 가능한 확대 이미지 뷰어
+const ZoomableImage = ({ uri, aspectRatio, containerWidth, onSingleTap }) => {
+  const [scale, setScale] = useState(1);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
+
+  const scaleRef = useRef(1);
+  const baseScaleRef = useRef(1);
+  const pinchStartDistRef = useRef(null);
+  const translateRef = useRef({ x: 0, y: 0 });
+  const panStartRef = useRef({ x: 0, y: 0 });
+  const lastTapRef = useRef(0);
+  const onSingleTapRef = useRef(onSingleTap);
+
+  useEffect(() => {
+    onSingleTapRef.current = onSingleTap;
+  }, [onSingleTap]);
+
+  useEffect(() => {
+    scaleRef.current = 1;
+    baseScaleRef.current = 1;
+    pinchStartDistRef.current = null;
+    translateRef.current = { x: 0, y: 0 };
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, [uri]);
+
+  const resetZoom = () => {
+    scaleRef.current = 1;
+    baseScaleRef.current = 1;
+    pinchStartDistRef.current = null;
+    translateRef.current = { x: 0, y: 0 };
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  };
+
+  const toggleDoubleTapZoom = () => {
+    if (scaleRef.current > 1.05) {
+      resetZoom();
+    } else {
+      scaleRef.current = 2.2;
+      baseScaleRef.current = 2.2;
+      setScale(2.2);
+    }
+  };
+
+  const getTouchDistance = (touches) => {
+    if (!touches || touches.length < 2) return null;
+    const dx = touches[0].pageX - touches[1].pageX;
+    const dy = touches[0].pageY - touches[1].pageY;
+    return Math.hypot(dx, dy);
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches && touches.length >= 2) return true;
+        return scaleRef.current > 1.05 || Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4;
+      },
+      onPanResponderGrant: (evt, gestureState) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches && touches.length >= 2) {
+          pinchStartDistRef.current = getTouchDistance(touches);
+          baseScaleRef.current = scaleRef.current;
+        } else {
+          pinchStartDistRef.current = null;
+          panStartRef.current = {
+            x: gestureState.x0 - translateRef.current.x,
+            y: gestureState.y0 - translateRef.current.y,
+          };
+        }
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches && touches.length >= 2) {
+          const dist = getTouchDistance(touches);
+          if (!pinchStartDistRef.current && dist) {
+            pinchStartDistRef.current = dist;
+            baseScaleRef.current = scaleRef.current;
+          }
+          if (pinchStartDistRef.current && dist) {
+            const nextScale = Math.min(3.5, Math.max(1, baseScaleRef.current * (dist / pinchStartDistRef.current)));
+            scaleRef.current = nextScale;
+            setScale(nextScale);
+            if (nextScale <= 1.02) {
+              translateRef.current = { x: 0, y: 0 };
+              setTranslate({ x: 0, y: 0 });
+            }
+          }
+        } else if (scaleRef.current > 1.05) {
+          const nextX = gestureState.moveX - panStartRef.current.x;
+          const nextY = gestureState.moveY - panStartRef.current.y;
+          translateRef.current = { x: nextX, y: nextY };
+          setTranslate({ x: nextX, y: nextY });
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        pinchStartDistRef.current = null;
+        if (scaleRef.current < 1.05) {
+          resetZoom();
+        }
+        const moved = Math.hypot(gestureState.dx, gestureState.dy);
+        if (moved < 8) {
+          const now = Date.now();
+          if (now - lastTapRef.current < 280) {
+            lastTapRef.current = 0;
+            toggleDoubleTapZoom();
+          } else {
+            lastTapRef.current = now;
+            setTimeout(() => {
+              if (lastTapRef.current !== 0 && Date.now() - lastTapRef.current >= 270) {
+                lastTapRef.current = 0;
+                if (onSingleTapRef.current) onSingleTapRef.current();
+              }
+            }, 280);
+          }
+        }
+      },
+    })
+  ).current;
+
+  const width = containerWidth || getWindowWidth();
+
+  return (
+    <View
+      style={{
+        width,
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        backgroundColor: '#FFFFFF',
+      }}
+      {...panResponder.panHandlers}
+    >
+      <Image
+        source={{ uri }}
+        style={{
+          width,
+          aspectRatio: aspectRatio || 1,
+          backgroundColor: '#FFFFFF',
+          transform: [
+            { translateX: translate.x },
+            { translateY: translate.y },
+            { scale },
+          ],
+        }}
+        resizeMode="contain"
+      />
+    </View>
+  );
+};
+
+// 피드(홈)에서 사진의 원본 가로·세로 비율을 유지해 잘림 없이 보여주는 컴포넌트
 const AutoHeightImage = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
 
@@ -54,7 +209,7 @@ const AutoHeightImage = ({ uri, onPress }) => {
   }, [uri]);
 
   return (
-    <TouchableOpacity activeOpacity={0.95} onPress={onPress}>
+    <TouchableOpacity activeOpacity={0.95} onPress={onPress} style={{ width: '100%', alignItems: 'center' }}>
       <Image
         source={{ uri }}
         style={[styles.feedImage, { aspectRatio }]}
@@ -64,9 +219,11 @@ const AutoHeightImage = ({ uri, onPress }) => {
   );
 };
 
+// 터치 시 사진의 원본 비율 크기 + 확대/축소 지원 흰색 바탕 팝업 컴포넌트
 const OriginalImagePopup = ({ imageInfo, onClose }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
   const [loadingSize, setLoadingSize] = useState(true);
+  const winWidth = getWindowWidth();
 
   useEffect(() => {
     if (!imageInfo?.uri) return;
@@ -89,9 +246,9 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
   if (!imageInfo) return null;
 
   return (
-    <View style={styles.fullImageBackdrop}>
-      <View style={styles.popupTopBar}>
-        <Text style={styles.popupTitleText} numberOfLines={1}>
+    <View style={styles.whitePopupBackdrop}>
+      <View style={styles.whitePopupTopBar}>
+        <Text style={styles.whitePopupTitle} numberOfLines={1}>
           {imageInfo.title || '사진 원본 보기'}
         </Text>
         <TouchableOpacity style={styles.popupCloseIconBtn} onPress={onClose}>
@@ -101,29 +258,28 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
 
       <ScrollView
         style={{ width: '100%' }}
-        contentContainerStyle={styles.popupScrollContent}
+        contentContainerStyle={styles.whitePopupScrollContent}
         showsVerticalScrollIndicator={false}
       >
         {loadingSize && (
-          <ActivityIndicator size="large" color="#FEE500" style={{ marginVertical: 40 }} />
+          <ActivityIndicator size="large" color="#3C1E1E" style={{ marginVertical: 40 }} />
         )}
-        <Image
-          source={{ uri: imageInfo.uri }}
-          style={{
-            width: SCREEN_WIDTH,
-            aspectRatio,
-            backgroundColor: '#000',
-          }}
-          resizeMode="contain"
+
+        <ZoomableImage
+          uri={imageInfo.uri}
+          aspectRatio={aspectRatio}
+          containerWidth={winWidth}
         />
 
+        <Text style={styles.zoomHintText}>두 손가락으로 확대·축소하거나 사진을 두 번 탭하세요</Text>
+
         {(imageInfo.caption || imageInfo.date) && (
-          <View style={styles.popupCaptionBox}>
+          <View style={styles.whitePopupCaptionBox}>
             {imageInfo.caption ? (
-              <Text style={styles.fullImageCaption}>{imageInfo.caption}</Text>
+              <Text style={styles.whitePopupCaption}>{imageInfo.caption}</Text>
             ) : null}
             {imageInfo.date ? (
-              <Text style={styles.fullImageDate}>{imageInfo.date}</Text>
+              <Text style={styles.whitePopupDate}>{imageInfo.date}</Text>
             ) : null}
           </View>
         )}
@@ -132,6 +288,7 @@ const OriginalImagePopup = ({ imageInfo, onClose }) => {
   );
 };
 
+// 3열 그리드 게시물 터치 시 가운데 정렬 + 흰색 바탕 + 사진 확대 + 글/반응/수정/삭제 팝업
 const PostDetailPopup = ({
   post,
   currentUserId,
@@ -145,6 +302,7 @@ const PostDetailPopup = ({
   const [aspectRatio, setAspectRatio] = useState(1);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const winWidth = getWindowWidth();
 
   useEffect(() => {
     setIsEditing(false);
@@ -166,8 +324,8 @@ const PostDetailPopup = ({
   const imgUri = post.image_urls?.[0];
 
   return (
-    <View style={styles.fullImageBackdrop}>
-      <View style={styles.popupTopBar}>
+    <View style={styles.whitePopupBackdrop}>
+      <View style={styles.whitePopupTopBar}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
           {post.profiles?.avatar_url ? (
             <Image source={{ uri: post.profiles.avatar_url }} style={styles.popupSmallAvatar} />
@@ -177,10 +335,10 @@ const PostDetailPopup = ({
             </View>
           )}
           <View style={{ flex: 1 }}>
-            <Text style={styles.popupTitleText} numberOfLines={1}>
+            <Text style={styles.whitePopupTitle} numberOfLines={1}>
               {post.profiles?.nickname || defaultNickname || '내 스토리'}
             </Text>
-            <Text style={{ color: '#AAA', fontSize: 11 }}>
+            <Text style={{ color: '#777777', fontSize: 11 }}>
               {new Date(post.created_at).toLocaleString('ko-KR')}
             </Text>
           </View>
@@ -189,19 +347,19 @@ const PostDetailPopup = ({
         {isMyPost && !isEditing && (
           <View style={{ flexDirection: 'row', gap: 6, marginRight: 8 }}>
             <TouchableOpacity
-              style={styles.popupMiniBtn}
+              style={styles.whitePopupMiniBtn}
               onPress={() => {
                 setEditValue(post.content || '');
                 setIsEditing(true);
               }}
             >
-              <Text style={styles.popupMiniBtnText}>수정</Text>
+              <Text style={styles.whitePopupMiniBtnText}>수정</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.popupMiniBtn, { backgroundColor: '#E53E3E' }]}
+              style={[styles.whitePopupMiniBtn, { backgroundColor: '#FFE5E5' }]}
               onPress={() => onDeletePost(post.id)}
             >
-              <Text style={styles.popupMiniBtnText}>삭제</Text>
+              <Text style={[styles.whitePopupMiniBtnText, { color: '#C53030' }]}>삭제</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -213,34 +371,40 @@ const PostDetailPopup = ({
 
       <ScrollView
         style={{ width: '100%' }}
-        contentContainerStyle={{ paddingBottom: 36 }}
+        contentContainerStyle={{ alignItems: 'center', paddingBottom: 36 }}
         showsVerticalScrollIndicator={false}
       >
         {imgUri && (
-          <TouchableOpacity
-            activeOpacity={0.95}
-            onPress={() =>
-              onOpenFullImage({
-                uri: imgUri,
-                title: post.profiles?.nickname || defaultNickname || '사진 원본 보기',
-                caption: post.content || '',
-                date: new Date(post.created_at).toLocaleString('ko-KR'),
-              })
-            }
-          >
-            <Image
-              source={{ uri: imgUri }}
-              style={{ width: SCREEN_WIDTH, aspectRatio, backgroundColor: '#000' }}
-              resizeMode="contain"
+          <View style={{ width: '100%', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+            <ZoomableImage
+              uri={imgUri}
+              aspectRatio={aspectRatio}
+              containerWidth={winWidth}
             />
-          </TouchableOpacity>
+            <View style={styles.imageToolbarRow}>
+              <Text style={styles.zoomHintText}>핀치 줌 / 더블 탭 확대 가능</Text>
+              <TouchableOpacity
+                style={styles.fullViewChipBtn}
+                onPress={() =>
+                  onOpenFullImage({
+                    uri: imgUri,
+                    title: post.profiles?.nickname || defaultNickname || '사진 원본 보기',
+                    caption: post.content || '',
+                    date: new Date(post.created_at).toLocaleString('ko-KR'),
+                  })
+                }
+              >
+                <Text style={styles.fullViewChipText}>전체화면</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
 
-        <View style={styles.detailBodyBox}>
+        <View style={styles.whiteDetailBodyBox}>
           {isEditing ? (
             <View style={{ marginBottom: 12 }}>
               <TextInput
-                style={styles.detailEditInput}
+                style={styles.whiteDetailEditInput}
                 value={editValue}
                 onChangeText={setEditValue}
                 multiline
@@ -248,36 +412,36 @@ const PostDetailPopup = ({
               />
               <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
                 <TouchableOpacity
-                  style={styles.popupMiniBtn}
+                  style={styles.whitePopupMiniBtn}
                   onPress={() => setIsEditing(false)}
                 >
-                  <Text style={styles.popupMiniBtnText}>취소</Text>
+                  <Text style={styles.whitePopupMiniBtnText}>취소</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.popupMiniBtn, { backgroundColor: '#FEE500' }]}
+                  style={[styles.whitePopupMiniBtn, { backgroundColor: '#FEE500' }]}
                   onPress={async () => {
                     await onSaveEdit(post.id, editValue);
                     setIsEditing(false);
                   }}
                 >
-                  <Text style={[styles.popupMiniBtnText, { color: '#3C1E1E' }]}>저장</Text>
+                  <Text style={[styles.whitePopupMiniBtnText, { color: '#3C1E1E' }]}>저장</Text>
                 </TouchableOpacity>
               </View>
             </View>
           ) : (
-            post.content ? <Text style={styles.detailContentText}>{post.content}</Text> : null
+            post.content ? <Text style={styles.whiteDetailContentText}>{post.content}</Text> : null
           )}
 
-          <View style={styles.detailReactionRow}>
+          <View style={styles.whiteDetailReactionRow}>
             {REACTIONS.map((r) => {
               const count = post.reactions?.filter((x) => x.type === r.type).length || 0;
               return (
                 <TouchableOpacity
                   key={r.type}
-                  style={styles.detailReactionBtn}
+                  style={styles.whiteDetailReactionBtn}
                   onPress={() => onToggleReaction(post.id, r.type)}
                 >
-                  <Text style={styles.detailReactionText}>
+                  <Text style={styles.whiteDetailReactionText}>
                     {r.label} {count > 0 ? count : ''}
                   </Text>
                 </TouchableOpacity>
@@ -797,7 +961,6 @@ export default function App() {
     }
   };
 
-  // ActivityResultLauncher 미등록 오류 회피를 위해 DocumentPicker로 갤러리 이미지 선택 후 원본 비율 유지 압축
   const selectFromGallery = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -2134,7 +2297,7 @@ const styles = StyleSheet.create({
   },
   feedImage: {
     width: '100%',
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#FFFFFF',
   },
   igPostFooter: {
     paddingHorizontal: 14,
@@ -2444,43 +2607,131 @@ const styles = StyleSheet.create({
   },
   gridHeartText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
 
-  popupSmallAvatar: { width: 32, height: 32, borderRadius: 16 },
+  // --- 흰색 바탕 상세 보기 & 원본 사진 확대 팝업 스타일 ---
+  whitePopupBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    zIndex: 1100,
+  },
+  whitePopupTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EAEAEA',
+  },
+  whitePopupTitle: {
+    color: '#191919',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  popupSmallAvatar: { width: 34, height: 34, borderRadius: 17 },
   defaultSmallAvatar: { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
-  popupMiniBtn: {
-    backgroundColor: '#333',
+  whitePopupMiniBtn: {
+    backgroundColor: '#F2F2F2',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
   },
-  popupMiniBtnText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
-  detailBodyBox: { padding: 18 },
-  detailContentText: { color: '#FFFFFF', fontSize: 15, lineHeight: 23, marginBottom: 16 },
-  detailEditInput: {
-    backgroundColor: '#222',
-    color: '#FFF',
+  whitePopupMiniBtnText: { color: '#333333', fontSize: 11, fontWeight: 'bold' },
+  popupCloseIconBtn: {
+    backgroundColor: '#FEE500',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  popupCloseIconText: {
+    color: '#3C1E1E',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  whitePopupScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  imageToolbarRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#FAFAFA',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  zoomHintText: {
+    color: '#777777',
+    fontSize: 11,
+    marginVertical: 4,
+  },
+  fullViewChipBtn: {
+    backgroundColor: '#EFEFEF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  fullViewChipText: {
+    color: '#222222',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  whitePopupCaptionBox: {
+    width: '100%',
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    alignItems: 'center',
+  },
+  whitePopupCaption: { color: '#222222', fontSize: 15, textAlign: 'center', lineHeight: 22 },
+  whitePopupDate: { color: '#888888', fontSize: 12, marginTop: 6 },
+  whiteDetailBodyBox: {
+    width: '100%',
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+  },
+  whiteDetailContentText: {
+    color: '#222222',
+    fontSize: 15,
+    lineHeight: 23,
+    marginBottom: 14,
+  },
+  whiteDetailEditInput: {
+    backgroundColor: '#FAFAFA',
+    color: '#222222',
     borderWidth: 1,
-    borderColor: '#555',
+    borderColor: '#CCCCCC',
     borderRadius: 8,
     padding: 12,
     fontSize: 15,
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  detailReactionRow: {
+  whiteDetailReactionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     borderTopWidth: 1,
-    borderTopColor: '#2A2A2A',
-    paddingTop: 14,
+    borderTopColor: '#F0F0F0',
+    paddingTop: 12,
   },
-  detailReactionBtn: {
-    backgroundColor: '#242424',
+  whiteDetailReactionBtn: {
+    backgroundColor: '#F6F6F6',
     paddingHorizontal: 11,
     paddingVertical: 7,
     borderRadius: 16,
   },
-  detailReactionText: { color: '#EEE', fontSize: 12 },
+  whiteDetailReactionText: { color: '#333333', fontSize: 12 },
 
   emptyBox: { padding: 48, alignItems: 'center' },
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
@@ -2690,56 +2941,4 @@ const styles = StyleSheet.create({
   writePreviewImg: { width: '100%', height: 220, borderRadius: 8, backgroundColor: '#F5F5F5' },
   removePhotoBtn: { alignSelf: 'flex-end', marginTop: 6, padding: 6, backgroundColor: '#EEE', borderRadius: 4 },
   attachPhotoBtn: { padding: 14, borderRadius: 8, backgroundColor: '#F5F5F5', alignItems: 'center', borderWidth: 1, borderColor: '#DDD' },
-
-  fullImageBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.96)',
-    zIndex: 1100,
-  },
-  popupTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    borderBottomWidth: 1,
-    borderBottomColor: '#222',
-  },
-  popupTitleText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-    flex: 1,
-    marginRight: 12,
-  },
-  popupCloseIconBtn: {
-    backgroundColor: '#FEE500',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 16,
-  },
-  popupCloseIconText: {
-    color: '#3C1E1E',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  popupScrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  popupCaptionBox: {
-    width: '100%',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    alignItems: 'center',
-  },
-  fullImageCaption: { color: '#FFF', fontSize: 15, textAlign: 'center', lineHeight: 22 },
-  fullImageDate: { color: '#AAA', fontSize: 12, marginTop: 6 },
 });
