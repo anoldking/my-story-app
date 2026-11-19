@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   FlatList, Image, ImageBackground, Alert, SafeAreaView,
-  ActivityIndicator, ScrollView, Dimensions
+  ActivityIndicator, ScrollView, Dimensions, KeyboardAvoidingView, Platform
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
@@ -10,7 +10,6 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-// 상단 프로필 배경 높이: 가로 너비 기준 세로 4:3 비율 (더 길게 3:2로 하려면 4 / 3 대신 3 / 2 입력)
 const COVER_HEIGHT = Math.round(SCREEN_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (SCREEN_WIDTH - 4) / 3;
 
@@ -37,7 +36,6 @@ try {
   initError = e?.message || String(e);
 }
 
-// 사진의 원본 가로·세로 비율을 자동으로 계산해 위아래 잘림 없이 전체를 보여주는 컴포넌트
 const AutoHeightImage = ({ uri, onPress }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
 
@@ -126,17 +124,17 @@ export default function App() {
     total_visits: 1,
   });
 
-  // 프로필 꾸미기 화면 표시 상태
+  // 프로필 꾸미기 상태
   const [editProfileModal, setEditProfileModal] = useState(false);
   const [tempNickname, setTempNickname] = useState('');
   const [tempBio, setTempBio] = useState('');
   const [tempAvatarUri, setTempAvatarUri] = useState(null);
   const [tempCoverUri, setTempCoverUri] = useState(null);
 
-  // 탭 전환 ('album': 3열 앨범 격자, 'posts': 게시글 목록)
+  // 탭 전환 ('album' | 'posts')
   const [activeTab, setActiveTab] = useState('album');
 
-  // 게시글 및 글쓰기 화면 표시 상태
+  // 게시글 상태
   const [posts, setPosts] = useState([]);
   const [writeModalVisible, setWriteModalVisible] = useState(false);
   const [content, setContent] = useState('');
@@ -147,8 +145,17 @@ export default function App() {
   const [editingPostId, setEditingPostId] = useState(null);
   const [editingContent, setEditingContent] = useState('');
 
-  // 앨범 및 게시글 사진 크게 보기 상태
+  // 사진 크게 보기 상태
   const [selectedAlbumPost, setSelectedAlbumPost] = useState(null);
+
+  // --- 메신저(1:1 채팅) 관련 상태 ---
+  const [messengerVisible, setMessengerVisible] = useState(false);
+  const [members, setMembers] = useState([]);
+  const [chatPartner, setChatPartner] = useState(null); // null이면 회원 목록, 객체면 1:1 대화방
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [sendingMsg, setSendingMsg] = useState(false);
+  const chatListRef = useRef(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -166,6 +173,41 @@ export default function App() {
     }
   }, [session]);
 
+  // 1:1 채팅방이 열려 있을 때 실시간(Realtime) 새 메시지 수신 구독
+  useEffect(() => {
+    if (!supabase || !session || !chatPartner) return;
+
+    fetchChatMessages(chatPartner.id);
+
+    const myId = session.user.id;
+    const partnerId = chatPartner.id;
+
+    const channel = supabase
+      .channel(`chat_${myId}_${partnerId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const newMsg = payload.new;
+          const isRelevant =
+            (newMsg.sender_id === myId && newMsg.receiver_id === partnerId) ||
+            (newMsg.sender_id === partnerId && newMsg.receiver_id === myId);
+
+          if (isRelevant) {
+            setChatMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [chatPartner, session]);
+
   if (!supabase) {
     return (
       <SafeAreaView style={styles.authContainer}>
@@ -177,7 +219,65 @@ export default function App() {
     );
   }
 
-  // 프로필 불러오기 + 방문자 수 자동 증가
+  // 메신저 열기 및 전체 회원 목록 조회
+  const openMessenger = async () => {
+    setChatPartner(null);
+    setMessengerVisible(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, nickname, bio, avatar_url')
+      .order('nickname', { ascending: true });
+
+    if (!error && data) {
+      setMembers(data);
+    }
+  };
+
+  // 선택한 상대방과의 이전 대화 내역 불러오기
+  const fetchChatMessages = async (partnerId) => {
+    const myId = session.user.id;
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`and(sender_id.eq.${myId},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${myId})`)
+      .order('created_at', { ascending: true });
+
+    if (!error && data) {
+      setChatMessages(data);
+    }
+  };
+
+  // 메시지 전송하기
+  const sendChatMessage = async () => {
+    const text = chatInput.trim();
+    if (!text || !chatPartner || sendingMsg) return;
+
+    setSendingMsg(true);
+    setChatInput('');
+
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        sender_id: session.user.id,
+        receiver_id: chatPartner.id,
+        content: text,
+      })
+      .select()
+      .single();
+
+    setSendingMsg(false);
+
+    if (error) {
+      showAlert('전송 실패', getKoreanErrorMessage(error));
+      setChatInput(text);
+    } else if (data) {
+      setChatMessages((prev) => {
+        if (prev.some((m) => m.id === data.id)) return prev;
+        return [...prev, data];
+      });
+    }
+  };
+
   const loadAndCountProfile = async (user) => {
     const todayStr = new Date().toISOString().split('T')[0];
     const defaultNick = user.email ? user.email.split('@')[0] : '내 스토리';
@@ -224,7 +324,6 @@ export default function App() {
     }
   };
 
-  // 갤러리 사진 선택 함수 (원본 비율 유지)
   const selectFromGallery = async () => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -254,7 +353,6 @@ export default function App() {
     }
   };
 
-  // Supabase 스토리지 업로드 공통 함수
   const uploadImageFile = async (uri, prefix) => {
     if (!uri) return null;
     if (uri.startsWith('http')) return uri;
@@ -272,7 +370,6 @@ export default function App() {
     return data.publicUrl;
   };
 
-  // 프로필 꾸미기 열기
   const openProfileEditor = () => {
     setTempNickname(profile.nickname || '');
     setTempBio(profile.bio || '');
@@ -281,7 +378,6 @@ export default function App() {
     setEditProfileModal(true);
   };
 
-  // 프로필 꾸미기 저장
   const saveProfileSettings = async () => {
     if (!tempNickname.trim()) {
       showAlert('알림', '이름(닉네임)을 입력해 주세요.');
@@ -489,7 +585,6 @@ export default function App() {
         resizeMode="cover"
       >
         <View style={styles.coverOverlay}>
-          {/* 맨 위 방문자 카운터 & 우측 상단 로그아웃 버튼 */}
           <View style={styles.topBar}>
             <View style={{ width: 65 }} />
             <View style={styles.visitorBadge}>
@@ -502,7 +597,6 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          {/* 하단 프로필 배치: 좌측 원형 프로필 사진 + 이름 + 소개글 + 반투명 버튼 박스 */}
           <View style={styles.profileBottomSection}>
             <TouchableOpacity onPress={openProfileEditor} activeOpacity={0.85}>
               {profile.avatar_url ? (
@@ -517,12 +611,17 @@ export default function App() {
             <Text style={styles.profileName}>-{profile.nickname || '내 스토리'}-</Text>
             <Text style={styles.profileBio}>{profile.bio}</Text>
 
+            {/* 반투명 액션 박스: 상단(프로필 꾸미기) / 하단(메신저 채팅 & 새 게시물) */}
             <View style={styles.glassActionBox}>
               <TouchableOpacity style={styles.glassTopBtn} onPress={openProfileEditor}>
                 <Text style={styles.glassBtnText}>✧ 내 프로필 꾸미기</Text>
               </TouchableOpacity>
               <View style={styles.glassDividerHorizontal} />
               <View style={styles.glassBottomRow}>
+                <TouchableOpacity style={styles.glassHalfBtn} onPress={openMessenger}>
+                  <Text style={styles.glassBtnText}>💬 메신저 (채팅)</Text>
+                </TouchableOpacity>
+                <View style={styles.glassDividerVertical} />
                 <TouchableOpacity
                   style={styles.glassHalfBtn}
                   onPress={() => {
@@ -531,21 +630,7 @@ export default function App() {
                     setWriteModalVisible(true);
                   }}
                 >
-                  <Text style={styles.glassBtnText}>💬 스토리 쓰기</Text>
-                </TouchableOpacity>
-                <View style={styles.glassDividerVertical} />
-                <TouchableOpacity
-                  style={styles.glassHalfBtn}
-                  onPress={async () => {
-                    const uri = await selectFromGallery();
-                    if (uri) {
-                      setImageUri(uri);
-                      setContent('');
-                      setWriteModalVisible(true);
-                    }
-                  }}
-                >
-                  <Text style={styles.glassBtnText}>⊞ 새 게시물(사진)</Text>
+                  <Text style={styles.glassBtnText}>⊞ 새 게시물 쓰기</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -652,7 +737,6 @@ export default function App() {
           item.content ? <Text style={styles.postText}>{item.content}</Text> : null
         )}
 
-        {/* 원본 비율 그대로 잘림 없이 보여주는 게시글 이미지 */}
         {item.image_urls?.[0] && (
           <AutoHeightImage
             uri={item.image_urls[0]}
@@ -687,14 +771,153 @@ export default function App() {
           <View style={styles.emptyBox}>
             <Text style={styles.emptyText}>
               {activeTab === 'album'
-                ? '아직 앨범에 올린 사진이 없습니다.\n상단의 [새 게시물(사진)]을 눌러 첫 사진을 등록해 보세요!'
-                : '아직 작성된 게시글이 없습니다.\n상단의 [스토리 쓰기]를 눌러 첫 글을 남겨 보세요!'}
+                ? '아직 앨범에 올린 사진이 없습니다.\n상단의 [새 게시물 쓰기]를 눌러 첫 사진을 등록해 보세요!'
+                : '아직 작성된 게시글이 없습니다.\n상단의 [새 게시물 쓰기]를 눌러 첫 글을 남겨 보세요!'}
             </Text>
           </View>
         }
       />
 
-      {/* 오버레이 1: 내 프로필 꾸미기 (세로 4:3 비율 미리보기 지원) */}
+      {/* 오버레이 1: 회원 간 메신저 (회원 목록 & 실시간 1:1 채팅방) */}
+      {messengerVisible && (
+        <KeyboardAvoidingView
+          style={styles.messengerFullScreen}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {!chatPartner ? (
+            // 1-A. 회원 목록 화면
+            <View style={{ flex: 1 }}>
+              <View style={styles.msgHeader}>
+                <Text style={styles.msgHeaderTitle}>💬 메신저 - 대화 상대 선택</Text>
+                <TouchableOpacity onPress={() => setMessengerVisible(false)} style={styles.msgCloseBtn}>
+                  <Text style={styles.msgCloseText}>닫기</Text>
+                </TouchableOpacity>
+              </View>
+
+              <FlatList
+                data={members}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={{ padding: 12 }}
+                renderItem={({ item }) => {
+                  const isMe = item.id === session.user.id;
+                  return (
+                    <TouchableOpacity
+                      style={styles.memberRow}
+                      onPress={() => setChatPartner(item)}
+                    >
+                      {item.avatar_url ? (
+                        <Image source={{ uri: item.avatar_url }} style={styles.memberAvatar} />
+                      ) : (
+                        <View style={[styles.memberAvatar, styles.defaultSmallAvatar]}>
+                          <Text style={{ fontSize: 18 }}>👤</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.memberName}>{item.nickname || '이름 없음'}</Text>
+                          {isMe && (
+                            <View style={styles.meBadge}>
+                              <Text style={styles.meBadgeText}>나와의 채팅</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.memberBio} numberOfLines={1}>
+                          {item.bio || '상태 메시지가 없습니다.'}
+                        </Text>
+                      </View>
+                      <Text style={styles.chatStartArrow}>채팅 ›</Text>
+                    </TouchableOpacity>
+                  );
+                }}
+                ListEmptyComponent={
+                  <Text style={styles.emptyMemberText}>등록된 회원이 없습니다.</Text>
+                }
+              />
+            </View>
+          ) : (
+            // 1-B. 1:1 실시간 채팅방 화면
+            <View style={{ flex: 1, backgroundColor: '#BACEE0' }}>
+              <View style={styles.msgHeader}>
+                <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.msgBackBtn}>
+                  <Text style={styles.msgBackText}>← 목록</Text>
+                </TouchableOpacity>
+                <Text style={styles.msgHeaderTitle} numberOfLines={1}>
+                  {chatPartner.id === session.user.id
+                    ? `${chatPartner.nickname || '나'} (나와의 채팅)`
+                    : chatPartner.nickname || '대화방'}
+                </Text>
+                <TouchableOpacity onPress={() => setMessengerVisible(false)} style={styles.msgCloseBtn}>
+                  <Text style={styles.msgCloseText}>닫기</Text>
+                </TouchableOpacity>
+              </View>
+
+              <FlatList
+                ref={chatListRef}
+                data={chatMessages}
+                keyExtractor={(item) => String(item.id)}
+                contentContainerStyle={{ padding: 14, paddingBottom: 20 }}
+                onContentSizeChange={() => chatListRef.current?.scrollToEnd({ animated: true })}
+                renderItem={({ item }) => {
+                  const isMine = item.sender_id === session.user.id;
+                  const timeStr = new Date(item.created_at).toLocaleTimeString('ko-KR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+
+                  return (
+                    <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
+                      {!isMine && (
+                        chatPartner.avatar_url ? (
+                          <Image source={{ uri: chatPartner.avatar_url }} style={styles.chatAvatar} />
+                        ) : (
+                          <View style={[styles.chatAvatar, styles.defaultSmallAvatar]}>
+                            <Text style={{ fontSize: 13 }}>👤</Text>
+                          </View>
+                        )
+                      )}
+                      <View style={{ maxWidth: '75%' }}>
+                        {!isMine && (
+                          <Text style={styles.chatSenderName}>{chatPartner.nickname || '상대방'}</Text>
+                        )}
+                        <View style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                          <Text style={styles.bubbleText}>{item.content}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.bubbleTime}>{timeStr}</Text>
+                    </View>
+                  );
+                }}
+                ListEmptyComponent={
+                  <View style={{ padding: 40, alignItems: 'center' }}>
+                    <Text style={{ color: '#4A5568', fontSize: 13 }}>
+                      첫 메시지를 보내 대화를 시작해 보세요!
+                    </Text>
+                  </View>
+                }
+              />
+
+              <View style={styles.chatInputBar}>
+                <TextInput
+                  style={styles.chatTextInput}
+                  placeholder="메시지를 입력하세요..."
+                  value={chatInput}
+                  onChangeText={setChatInput}
+                  multiline
+                />
+                <TouchableOpacity
+                  style={[styles.chatSendBtn, !chatInput.trim() && { opacity: 0.5 }]}
+                  onPress={sendChatMessage}
+                  disabled={!chatInput.trim() || sendingMsg}
+                >
+                  <Text style={styles.chatSendText}>전송</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </KeyboardAvoidingView>
+      )}
+
+      {/* 오버레이 2: 내 프로필 꾸미기 */}
       {editProfileModal && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
@@ -763,7 +986,7 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 2: 스토리(게시글) 작성 화면 */}
+      {/* 오버레이 3: 새 게시물(스토리 + 사진) 작성 화면 */}
       {writeModalVisible && (
         <View style={styles.overlayBackdrop}>
           <View style={styles.modalCard}>
@@ -807,7 +1030,7 @@ export default function App() {
         </View>
       )}
 
-      {/* 오버레이 3: 앨범 및 게시글 사진 터치 시 전체 화면 크게 보기 */}
+      {/* 오버레이 4: 사진 크게 보기 */}
       {Boolean(selectedAlbumPost) && selectedAlbumPost && (
         <View style={styles.fullImageBackdrop}>
           <View style={styles.fullImageContainer}>
@@ -843,7 +1066,6 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: '#1E1E1E' },
 
-  // 세로 4:3 비율로 길게 확장된 상단 프로필 배경 영역
   coverBackground: { width: '100%', height: COVER_HEIGHT, backgroundColor: '#4A5568' },
   coverOverlay: {
     flex: 1,
@@ -997,7 +1219,6 @@ const styles = StyleSheet.create({
   saveEditBtn: { paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#3C1E1E', borderRadius: 4 },
   saveEditText: { fontSize: 13, color: '#fff', fontWeight: 'bold' },
   postText: { fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 10 },
-  // 원본 비율(aspectRatio)에 맞춰 자동으로 높이가 결정되는 게시글 이미지 스타일
   postImage: { width: '100%', borderRadius: 8, marginBottom: 10, backgroundColor: '#F5F5F5' },
   reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 10 },
   reactionBtn: { backgroundColor: '#F8F8F8', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 14 },
@@ -1005,6 +1226,89 @@ const styles = StyleSheet.create({
 
   emptyBox: { padding: 48, alignItems: 'center' },
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 14 },
+
+  // --- 메신저(회원 목록 & 1:1 채팅방) 스타일 ---
+  messengerFullScreen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    zIndex: 950,
+  },
+  msgHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEE500',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E6CF00',
+  },
+  msgHeaderTitle: { fontSize: 16, fontWeight: 'bold', color: '#3C1E1E', flex: 1, textAlign: 'center' },
+  msgBackBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+  msgBackText: { fontSize: 14, fontWeight: 'bold', color: '#3C1E1E' },
+  msgCloseBtn: { backgroundColor: 'rgba(0,0,0,0.1)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  msgCloseText: { fontSize: 12, fontWeight: 'bold', color: '#3C1E1E' },
+
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    gap: 12,
+  },
+  memberAvatar: { width: 48, height: 48, borderRadius: 24 },
+  memberName: { fontSize: 15, fontWeight: 'bold', color: '#222' },
+  memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
+  meBadge: { backgroundColor: '#3C1E1E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  meBadgeText: { color: '#FEE500', fontSize: 10, fontWeight: 'bold' },
+  chatStartArrow: { fontSize: 13, color: '#2B6CB0', fontWeight: 'bold' },
+  emptyMemberText: { textAlign: 'center', color: '#888', marginTop: 40 },
+
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12, gap: 6 },
+  bubbleRowMine: { justifyContent: 'flex-end' },
+  bubbleRowOther: { justifyContent: 'flex-start' },
+  chatAvatar: { width: 34, height: 34, borderRadius: 17, marginBottom: 2 },
+  chatSenderName: { fontSize: 11, color: '#333', marginBottom: 3, marginLeft: 2 },
+  bubbleBox: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14 },
+  bubbleMine: { backgroundColor: '#FEE500', borderBottomRightRadius: 2 },
+  bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 2 },
+  bubbleText: { fontSize: 14, color: '#222', lineHeight: 20 },
+  bubbleTime: { fontSize: 10, color: '#555', marginBottom: 2 },
+
+  chatInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#DDD',
+    gap: 8,
+  },
+  chatTextInput: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 14,
+    maxHeight: 90,
+  },
+  chatSendBtn: {
+    backgroundColor: '#FEE500',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 18,
+  },
+  chatSendText: { color: '#3C1E1E', fontWeight: 'bold', fontSize: 14 },
 
   overlayBackdrop: {
     position: 'absolute',
