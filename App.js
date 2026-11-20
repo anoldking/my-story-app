@@ -1552,7 +1552,6 @@ export default function App() {
                                                                   Linking.openSettings();
                                                                       }
                                                                         };
-  }
   const handleLogout = async () => {
     setAccountMenuOpen(false);
     setLoading(true);
