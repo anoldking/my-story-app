@@ -1399,6 +1399,12 @@ export default function App() {
           vibrationPattern: [0, 250, 250, 250],
           sound: 'default',
         });
+                await Notifications.setNotificationChannelAsync('messages_custom', {
+                            name: '새 메시지 알림 (전용음)',
+                                      importance: Notifications.AndroidImportance.MAX,
+                                                vibrationPattern: [0, 250, 250, 250],
+                                                          sound: 'mimi_clear.wav',
+                                                                  });
       }
 
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -1546,7 +1552,7 @@ export default function App() {
                             try {
                                   await Linking.sendIntent('android.settings.CHANNEL_NOTIFICATION_SETTINGS', [
                                           { key: 'android.provider.extra.APP_PACKAGE', value: 'com.anoldking.mystoryapp' },
-                                                  { key: 'android.provider.extra.CHANNEL_ID', value: 'messages' },
+                                                  { key: 'android.provider.extra.CHANNEL_ID', value: 'messages_custom' },
                                                         ]);
                                                             } catch (e) {
                                                                   Linking.openSettings();

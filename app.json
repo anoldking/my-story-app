@@ -2,6 +2,9 @@
   "expo": {
     "name": "me",
     "slug": "my-story-app",
+        "plugins": [
+                ["expo-notifications", { "sounds": ["./mimi_clear_up.wav", "./mimi_clear.wav", "./mimi_down.wav", "./mimi_quick.wav", "./mimi_up.wav"] }]
+                    ],
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./icon.png",
