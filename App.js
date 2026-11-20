@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import GroupChat from './GroupChat';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Notifications from 'expo-notifications';
@@ -1044,7 +1045,9 @@ const showAlert = (title, message, onConfirm) => {
   Alert.alert(title, message, [{ text: '확인', onPress: onConfirm }]);
 };
 
+
 export default function App() {
+  const [showGroupChat, setShowGroupChat] = useState(false);
   const [session, setSession] = useState(null);
   const [isSignUpScreen, setIsSignUpScreen] = useState(false);
   const [email, setEmail] = useState('');
@@ -2782,7 +2785,22 @@ export default function App() {
                                                                                                         >
                                                                                                                     <Ionicons name="musical-notes-outline" size={16} color="#18181B" />
                                                                                                                                 <Text style={styles.accountPopoverActionText}>알림음 변경</Text>
-                                                                                                                                          </TouchableOpacity>
+          
+          <View style={styles.igDropdownDivider} />
+          <TouchableOpacity
+            style={styles.accountPopoverActionRow}
+              onPress={() => setShowGroupChat(true)}
+              >
+                <Ionicons name="people-outline" size={16} color="#111" />
+                  <Text style={styles.accountPopoverActionText}>단체방</Text>
+                  </TouchableOpacity>
+                  {showGroupChat && session ? (
+                    <GroupChat
+                        supabase={supabase}
+                            me={session.user.id}
+                                onClose={() => { setShowGroupChat(false); setAccountMenuOpen(false); }}
+                                  />
+                                  ) : null}                                                                                                                                </TouchableOpacity>
           <View style={styles.igDropdownDivider} />                                                                                                                               <View style={styles.igDropdownDivider} />
           <TouchableOpacity
             style={styles.accountPopoverActionRow}
