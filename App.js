@@ -1419,14 +1419,18 @@ export default function App() {
         : await Notifications.getExpoPushTokenAsync();
 
       const expoToken = tokenResult?.data;
+
       if (expoToken) {
-        await supabase
+        const { error: updateErr } = await supabase
           .from('profiles')
           .update({ push_token: expoToken })
           .eq('id', userId);
+        if (updateErr) {
+          showAlert('토큰 DB 저장 실패', updateErr.message);
+        }
       }
-    } catch {
-      // 에뮬레이터나 EAS projectId 미설정 환경에서는 조용히 건너뜀
+    } catch (e) {
+      showAlert('푸시 토큰 등록 실패', e?.message || String(e));
     }
   };
 
