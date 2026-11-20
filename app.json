@@ -13,6 +13,11 @@
     "android": {
       "package": "com.anoldking.mystoryapp",
       "googleServicesFile": "./google-services.json"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "여기에-EAS-프로젝트-ID-입력"
+      }
     }
   }
 }
