@@ -1254,7 +1254,7 @@ export default function App() {
   useEffect(() => {
     if (!supabase || !session) return;
     const reqChannel = supabase
-      .channel(`realtime_friend_requests_${session.user.id}`)
+      .channel(`realtime_friend_requests_${session.user.id}_${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'friend_requests' },
