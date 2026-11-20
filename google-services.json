@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "393258938641",
+    "project_id": "me-story-da2d3",
+    "storage_bucket": "me-story-da2d3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:393258938641:android:a0dd6f7c6bb41a2a5b9cb0",
+        "android_client_info": {
+          "package_name": "com.anoldking.mystoryapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPFMXIGPWjistKwt49E_d9xPDAfL7G7Y4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
