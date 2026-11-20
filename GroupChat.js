@@ -1,10 +1,33 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, TextInput,
-    Modal,ActivityIndicator, Alert, SafeAreaView, StyleSheet,
+    Linking, Platform,Modal,ActivityIndicator, Alert, SafeAreaView, StyleSheet,
     } from 'react-native';
+    import * as Notifications from 'expo-notifications';
     import GroupRoom from './GroupRoom';
 
+    export async function ensureGroupChannel() {
+      if (Platform.OS !== 'android') return;
+        try {
+            await Notifications.setNotificationChannelAsync('messages_group', {
+                  name: '단체방 새 메시지 알림 (전용음)',
+                        importance: Notifications.AndroidImportance.HIGH,
+                              sound: 'mimi_up.wav',
+                                    vibrationPattern: [0, 250, 250, 250],
+                                        });
+                                          } catch (e) {}
+                                          }
+
+                                          async function openGroupSound() {
+                                            if (Platform.OS !== 'android') { Linking.openSettings(); return; }
+                                              try {
+                                                  await ensureGroupChannel();
+                                                      await Linking.sendIntent('android.settings.CHANNEL_NOTIFICATION_SETTINGS', [
+                                                            { key: 'android.provider.extra.APP_PACKAGE', value: 'com.anoldking.mystoryapp' },
+                                                                  { key: 'android.provider.extra.CHANNEL_ID', value: 'messages_group' },
+                                                                      ]);
+                                                                        } catch (e) { Linking.openSettings(); }
+                                                                        }
     function makeId() {
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
           const r = (Math.random() * 16) | 0;
@@ -151,6 +174,7 @@ import {
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           <FlatList
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     data={rooms}
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               keyExtractor={(r) => r.id}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ListHeaderComponent={<TouchableOpacity style={{ padding: 14 }} onPress={openGroupSound}><Text style={s.link}>🔔 단체방 알림음 변경</Text></TouchableOpacity>}
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         ListEmptyComponent={<Text style={s.empty}>아직 단체방이 없어요.{'\n'}오른쪽 위 ＋새 방을 눌러 보세요.</Text>}
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   renderItem={({ item }) => (
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               <TouchableOpacity

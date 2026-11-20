@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import GroupChat from './GroupChat';
+import GroupChat, { ensureGroupChannel } from './GroupChat';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Notifications from 'expo-notifications';
@@ -1247,6 +1247,7 @@ export default function App() {
     if (session && supabase) {
       loadAndCountProfile(session.user);
       registerPushTokenForUser(session.user.id);
+      ensureGroupChannel();
       fetchFriendsAndRequests();
       fetchUnreadCountsBySender(session.user.id);
       fetchPosts();
