@@ -1265,7 +1265,7 @@ export default function App() {
       .subscribe();
 
     const unreadChannel = supabase
-      .channel(`realtime_unread_badge_${session.user.id}`)
+      .channel(`realtime_unread_badge_${session.user.id}_${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'messages' },
