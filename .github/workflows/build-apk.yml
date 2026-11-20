@@ -146,7 +146,7 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug
       - name: Rename APK
-        run: mv android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/원하는이름.apk
+        run: mv android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Heony-me.apk
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
         with:
