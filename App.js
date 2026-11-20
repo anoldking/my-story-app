@@ -1538,7 +1538,21 @@ export default function App() {
     if (vis === 'private') return false;
     return true;
   };
-
+  const openNotificationSoundSettings = async () => {
+        if (Platform.OS !== 'android') {
+              Linking.openSettings();
+                    return;
+                        }
+                            try {
+                                  await Linking.sendIntent('android.settings.CHANNEL_NOTIFICATION_SETTINGS', [
+                                          { key: 'android.provider.extra.APP_PACKAGE', value: 'com.anoldking.mystoryapp' },
+                                                  { key: 'android.provider.extra.CHANNEL_ID', value: 'messages' },
+                                                        ]);
+                                                            } catch (e) {
+                                                                  Linking.openSettings();
+                                                                      }
+                                                                        };
+  }
   const handleLogout = async () => {
     setAccountMenuOpen(false);
     setLoading(true);
@@ -2752,9 +2766,19 @@ export default function App() {
             <Ionicons name="log-out-outline" size={16} color="#18181B" />
             <Text style={styles.accountPopoverActionText}>로그아웃</Text>
           </TouchableOpacity>
+                    <View style={styles.igDropdownDivider} />
 
-          <View style={styles.igDropdownDivider} />
-
+                              <TouchableOpacity
+                                          style={styles.accountPopoverActionRow}
+                                                      onPress={() => {
+                                                                    setAccountMenuOpen(false);
+                                                                                  openNotificationSoundSettings();
+                                                                                              }}
+                                                                                                        >
+                                                                                                                    <Ionicons name="musical-notes-outline" size={16} color="#18181B" />
+                                                                                                                                <Text style={styles.accountPopoverActionText}>알림음 변경</Text>
+                                                                                                                                          </TouchableOpacity>
+          <View style={styles.igDropdownDivider} />                                                                                                                               <View style={styles.igDropdownDivider} />
           <TouchableOpacity
             style={styles.accountPopoverActionRow}
             onPress={handleWithdrawAccount}
