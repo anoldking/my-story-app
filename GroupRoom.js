@@ -8,7 +8,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 import GalleryPicker from './GalleryPicker';
-import StickerPanel, { isSticker, stickerUrlOf, stickerMessage, StickerBubbleImage } from './StickerPanel';
+import StickerPanel, { getSticker, STICKER_LABEL, StickerBubbleImage } from './StickerPanel';
 
 function hhmm(iso) {
   const d = new Date(iso);
@@ -115,7 +115,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
       .upload(path, buf, { contentType: 'image/jpeg', upsert: true });
     if (up.error) throw up.error;
     const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
-    const { error } = await postMessage({ image_url: urlData.publicUrl });
+    const { error } = await postMessage({ content: '(사진)', image_url: urlData.publicUrl });
     if (error) throw error;
   };
 
@@ -152,7 +152,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
 
   const sendSticker = async (url) => {
     if (sending) return;
-    const { error } = await postMessage({ content: stickerMessage(url) });
+    const { error } = await postMessage({ content: STICKER_LABEL, sticker_url: url });
     if (error) Alert.alert('이모티콘 전송 실패', error.message);
   };
 
@@ -176,7 +176,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         .upload(path, buf, { contentType: mimeType, upsert: true });
       if (up.error) throw up.error;
       const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
-      const { error } = await postMessage({ file_url: urlData.publicUrl, file_name: originalName });
+      const { error } = await postMessage({ content: '(파일) ' + originalName, file_url: urlData.publicUrl, file_name: originalName });
       setSending(false);
       if (error) Alert.alert('파일 전송 실패', error.message);
     } catch (e) {
@@ -210,8 +210,8 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   };
 
   const renderBody = (item, mine) => {
-    if (isSticker(item.content)) {
-      return <StickerBubbleImage url={stickerUrlOf(item.content)} />;
+    if (getSticker(item)) {
+      return <StickerBubbleImage url={getSticker(item)} />;
     }
     if (item.image_url) {
       return (

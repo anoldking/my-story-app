@@ -8,7 +8,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import GroupChat, { ensureGroupChannel } from './GroupChat';
-import StickerPanel, { isSticker, stickerUrlOf, stickerMessage, StickerBubbleImage } from './StickerPanel';
+import StickerPanel, { getSticker, STICKER_LABEL, StickerBubbleImage } from './StickerPanel';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Notifications from 'expo-notifications';
@@ -2108,7 +2108,8 @@ export default function App() {
       .insert({
         sender_id: session.user.id,
         receiver_id: chatPartner.id,
-        content: stickerMessage(url),
+        content: STICKER_LABEL,
+        sticker_url: url,
         is_read: isSelfChat,
       })
       .select()
@@ -3411,13 +3412,13 @@ export default function App() {
                       <Text style={styles.chatSenderName}>{partner.nickname || '상대방'}</Text>
                     )}
 
-                    {isSticker(item.content) ? (
+                    {getSticker(item) ? (
                       <TouchableOpacity
                         activeOpacity={0.9}
                         onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
                         delayLongPress={400}
                       >
-                        <StickerBubbleImage url={stickerUrlOf(item.content)} />
+                        <StickerBubbleImage url={getSticker(item)} />
                       </TouchableOpacity>
                     ) : item.image_url ? (
                       <TouchableOpacity

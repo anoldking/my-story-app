@@ -4,7 +4,10 @@ import { View, Text, TouchableOpacity, FlatList, Image, ActivityIndicator, Style
 export const STICKER_PREFIX = '[sticker]';
 export const isSticker = (content) => typeof content === 'string' && content.startsWith(STICKER_PREFIX);
 export const stickerUrlOf = (content) => (isSticker(content) ? content.slice(STICKER_PREFIX.length).trim() : '');
-export const stickerMessage = (url) => `${STICKER_PREFIX}${url}`;
+// 새 방식: sticker_url 칸에 주소 저장 (content는 알림용 "(이모티콘)")
+export const STICKER_LABEL = '(이모티콘)';
+// 메시지 한 건에서 이모티콘 주소 꺼내기 (옛 방식 [sticker]주소 도 지원)
+export const getSticker = (msg) => (msg && (msg.sticker_url || stickerUrlOf(msg.content))) || '';
 
 const BUCKET = 'stickers';
 const IMG_RE = /\.(png|webp|gif|jpg|jpeg)$/i;
