@@ -435,7 +435,8 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, fillHeight
 };
 
 // 피드 화면용: 한 화면 안에 깔끔하게 들어오는 사이즈로 표시
-const CompactFeedImage = ({ uri, onPress }) => {
+const CompactFeedImage = ({ uri, onPress, width: widthProp }) => {
+  const FEED_W = widthProp || FEED_MEDIA_WIDTH;
   const [aspectRatio, setAspectRatio] = useState(1);
 
   useEffect(() => {
@@ -453,14 +454,14 @@ const CompactFeedImage = ({ uri, onPress }) => {
 
   const targetHeight = Math.min(
     FEED_MEDIA_MAX_HEIGHT,
-    Math.max(170, Math.round(FEED_MEDIA_WIDTH / (aspectRatio || 1)))
+    Math.max(170, Math.round(FEED_W / (aspectRatio || 1)))
   );
 
   return (
     <TouchableOpacity activeOpacity={0.94} onPress={onPress} style={styles.compactImageWrap}>
       <Image
         source={{ uri }}
-        style={[styles.compactFeedImage, { width: FEED_MEDIA_WIDTH, height: targetHeight }]}
+        style={[styles.compactFeedImage, { width: FEED_W, height: targetHeight }]}
         resizeMode="cover"
       />
     </TouchableOpacity>
@@ -3134,6 +3135,7 @@ export default function App() {
         {hasImage && (
           <View style={{ position: 'relative', minHeight: isPanelOpen ? 300 : undefined }}>
             <CompactFeedImage
+              width={homeListWidth > 0 ? homeListWidth : undefined}
               uri={item.image_urls[0]}
               onPress={() =>
                 setViewingImage({
@@ -3814,7 +3816,7 @@ export default function App() {
   // 격자 한 칸 크기: 실제 목록 너비를 재서 3칸으로 나눔 (기기마다 잘리지 않게)
   const gridCell = homeListWidth > 0
     ? Math.floor(((homeListWidth - 4) / 3) * 100) / 100
-    : (CONTENT_WIDTH - RIGHT_RAIL_WIDTH - 4) / 3;
+    : (CONTENT_WIDTH - 4) / 3;
 
   const renderGridItem = ({ item }) => {
     const hasImage = item.image_urls && item.image_urls.length > 0;
@@ -4089,7 +4091,8 @@ export default function App() {
           )}
         </View>
 
-        {/* 오른쪽 여백 세로 레일 */}
+        {/* 오른쪽 세로 레일: 안 읽은 메시지가 있을 때만 표시 (없으면 화면을 넓게 사용) */}
+        {unreadSendersSorted.length > 0 && (
         <View style={styles.rightUnreadRailBar}>
           <ScrollView
             style={{ width: '100%' }}
@@ -4132,6 +4135,7 @@ export default function App() {
             })}
           </ScrollView>
         </View>
+        )}
       </View>
 
       {selectedFriend && (
