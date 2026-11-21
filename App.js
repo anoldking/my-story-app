@@ -1511,7 +1511,6 @@ export default function App() {
                                                                                                                                                                                                                                                                           ]
                                                                                                                                                                                                                                                                               );
                                                                                                                                                                                                                                                                                 };
-  }
   const handleDeleteSentMessage = (msgItem) => {
     if (!msgItem || msgItem.sender_id !== session?.user?.id) return;
 
