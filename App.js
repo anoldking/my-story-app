@@ -1644,11 +1644,23 @@ export default function App() {
   const [friendsSectionOpen, setFriendsSectionOpen] = useState(true);
   const [selectedFriend, setSelectedFriend] = useState(null);
 
-  // 친구 프로필을 열었을 때, 이미 음악을 듣는 중이면 그 친구 노래로 바꿔서 재생
+  // 친구 프로필을 열면 그 친구의 노래가 자동으로 재생되고, 닫으면 원래 듣던 상태로 돌아감
+  const profilePrevRef = useRef(null);
   useEffect(() => {
-    if (selectedFriend && selectedFriend.bgm_url && bgmPlayingRef.current) {
-      if (!bgmTrack || bgmTrack.url !== selectedFriend.bgm_url) bgmPlay(bgmToTrack(selectedFriend));
-    }
+    const f = selectedFriend;
+    if (!f || !f.bgm_url) return undefined;
+    profilePrevRef.current = { track: bgmTrack, playing: bgmPlayingRef.current };
+    bgmPlay(bgmToTrack(f));
+    return () => {
+      const prev = profilePrevRef.current;
+      profilePrevRef.current = null;
+      if (prev && prev.playing && prev.track && prev.track.url !== f.bgm_url) {
+        bgmPlay(prev.track);
+      } else if (soundRef.current) {
+        soundRef.current.pauseAsync().catch(() => {});
+        setBgmPlaying(false);
+      }
+    };
   }, [selectedFriend && selectedFriend.id]);
 
   const [posts, setPosts] = useState([]);
