@@ -2659,7 +2659,13 @@ export default function App() {
   }
 
   const visiblePosts = posts.filter(isPostVisibleToMe);
-  const otherMembers = members.filter((m) => m.id !== session.user.id);
+  const otherMembers = members
+    .filter((m) => m.id !== session.user.id)
+    .sort((x, y) => {
+      const fx = acceptedFriendIds.includes(x.id) ? 0 : 1;
+      const fy = acceptedFriendIds.includes(y.id) ? 0 : 1;
+      return fx - fy;
+    });
   const feedPosts = onlyFavoritesFeed
     ? visiblePosts.filter((p) => p.author_id === session.user.id || acceptedFriendIds.includes(p.author_id))
     : visiblePosts;
@@ -2898,7 +2904,9 @@ export default function App() {
           <Text style={styles.igStoryName} numberOfLines={1}>내 스토리</Text>
         </TouchableOpacity>
 
-        {otherMembers.map((member) => (
+        {otherMembers.map((member) => {
+          const isFriendMember = acceptedFriendIds.includes(member.id);
+          return (
           <TouchableOpacity
             key={member.id}
             style={styles.igStoryItem}
@@ -2908,20 +2916,28 @@ export default function App() {
               setSelectedFriend(member);
             }}
           >
-            <View style={styles.igStoryRing}>
-              {member.avatar_url ? (
-                <Image source={{ uri: member.avatar_url }} style={styles.igStoryAvatar} />
-              ) : (
-                <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
-                  <Ionicons name="person" size={22} color="#64748B" />
+            <View style={styles.igStoryAvatarWrap}>
+              <View style={[styles.igStoryRing, { marginBottom: 0 }, !isFriendMember && styles.igStoryRingOff]}>
+                {member.avatar_url ? (
+                  <Image source={{ uri: member.avatar_url }} style={[styles.igStoryAvatar, !isFriendMember && { opacity: 0.75 }]} />
+                ) : (
+                  <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
+                    <Ionicons name="person" size={22} color="#64748B" />
+                  </View>
+                )}
+              </View>
+              {isFriendMember && (
+                <View style={styles.igStoryFriendBadge}>
+                  <Ionicons name="checkmark" size={11} color="#FFFFFF" />
                 </View>
               )}
             </View>
-            <Text style={styles.igStoryName} numberOfLines={1}>
+            <Text style={[styles.igStoryName, !isFriendMember && { color: '#A1A1AA' }]} numberOfLines={1}>
               {member.nickname || '친구'}
             </Text>
           </TouchableOpacity>
-        ))}
+          );
+        })}
       </ScrollView>
 
       <View style={{ flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#EEEEEE', marginTop: 8 }}>
@@ -4720,6 +4736,22 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#18181B',
     marginBottom: 5,
+  },
+  igStoryRingOff: {
+    borderColor: '#D4D4D8',
+  },
+  igStoryFriendBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   igStoryAvatar: {
     width: 50,
