@@ -8,6 +8,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import GroupChat, { ensureGroupChannel } from './GroupChat';
+import StickerPanel, { isSticker, stickerUrlOf, stickerMessage, StickerBubbleImage } from './StickerPanel';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Notifications from 'expo-notifications';
@@ -1097,6 +1098,7 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
   const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
+  const [chatStickerOpen, setChatStickerOpen] = useState(false);
   const inlineChatScrollRef = useRef(null);
 
   const lastBackPressRef = useRef(0);
@@ -2095,6 +2097,26 @@ export default function App() {
         if (prev.some((m) => m.id === data.id)) return prev;
         return [...prev, data];
       });
+    }
+  };
+
+  const sendChatSticker = async (url) => {
+    if (!chatPartner || sendingMsg) return;
+    const isSelfChat = chatPartner.id === session.user.id;
+    const { data, error } = await supabase
+      .from('messages')
+      .insert({
+        sender_id: session.user.id,
+        receiver_id: chatPartner.id,
+        content: stickerMessage(url),
+        is_read: isSelfChat,
+      })
+      .select()
+      .single();
+    if (error) {
+      showAlert('이모티콘 전송 실패', getKoreanErrorMessage(error));
+    } else if (data) {
+      setChatMessages((prev) => (prev.some((m) => m.id === data.id) ? prev : [...prev, data]));
     }
   };
 
@@ -3389,7 +3411,15 @@ export default function App() {
                       <Text style={styles.chatSenderName}>{partner.nickname || '상대방'}</Text>
                     )}
 
-                    {item.image_url ? (
+                    {isSticker(item.content) ? (
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
+                        delayLongPress={400}
+                      >
+                        <StickerBubbleImage url={stickerUrlOf(item.content)} />
+                      </TouchableOpacity>
+                    ) : item.image_url ? (
                       <TouchableOpacity
                         activeOpacity={0.9}
                         onPress={() =>
@@ -3477,7 +3507,7 @@ export default function App() {
             placeholder="메시지나 링크 주소를 입력하세요..."
             value={chatInput}
             onChangeText={setChatInput}
-            onFocus={() => setChatAttachMenuOpen(false)}
+            onFocus={() => { setChatAttachMenuOpen(false); setChatStickerOpen(false); }}
             multiline
           />
 
@@ -3510,6 +3540,16 @@ export default function App() {
               <Text style={styles.attachDrawerLabel}>사진 올리기</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              style={styles.attachDrawerItem}
+              onPress={() => { setChatAttachMenuOpen(false); setChatStickerOpen(true); }}
+            >
+              <View style={[styles.attachDrawerIconBox, { backgroundColor: '#F6AD55' }]}>
+                <Ionicons name="happy-outline" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.attachDrawerLabel}>이모티콘</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.attachDrawerItem} onPress={handleSendChatFile}>
               <View style={[styles.attachDrawerIconBox, { backgroundColor: '#4299E1' }]}>
                 <Ionicons name="document-attach-outline" size={22} color="#FFFFFF" />
@@ -3517,6 +3557,14 @@ export default function App() {
               <Text style={styles.attachDrawerLabel}>파일 첨부</Text>
             </TouchableOpacity>
           </View>
+        )}
+
+        {chatStickerOpen && (
+          <StickerPanel
+            supabase={supabase}
+            onPick={sendChatSticker}
+            onClose={() => setChatStickerOpen(false)}
+          />
         )}
       </View>
     );
@@ -3549,6 +3597,7 @@ export default function App() {
           chatInput,
           sendingMsg,
           chatAttachMenuOpen,
+          chatStickerOpen,
           unreadCountBySender,
         }}
         contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 40 }}

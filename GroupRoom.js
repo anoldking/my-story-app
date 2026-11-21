@@ -8,6 +8,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 import GalleryPicker from './GalleryPicker';
+import StickerPanel, { isSticker, stickerUrlOf, stickerMessage, StickerBubbleImage } from './StickerPanel';
 
 function hhmm(iso) {
   const d = new Date(iso);
@@ -22,6 +23,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [stickerOpen, setStickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [viewingImage, setViewingImage] = useState(null);
   const listRef = useRef(null);
@@ -148,6 +150,12 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     if (fail > 0) Alert.alert('사진 전송 오류', `${fail}장을 보내지 못했습니다.\n(${lastMsg})`);
   };
 
+  const sendSticker = async (url) => {
+    if (sending) return;
+    const { error } = await postMessage({ content: stickerMessage(url) });
+    if (error) Alert.alert('이모티콘 전송 실패', error.message);
+  };
+
   const sendFile = async () => {
     if (sending) return;
     setMenuOpen(false);
@@ -202,6 +210,9 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   };
 
   const renderBody = (item, mine) => {
+    if (isSticker(item.content)) {
+      return <StickerBubbleImage url={stickerUrlOf(item.content)} />;
+    }
     if (item.image_url) {
       return (
         <TouchableOpacity activeOpacity={0.85} onPress={() => setViewingImage(item.image_url)}>
@@ -284,7 +295,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
             style={s.input}
             value={text}
             onChangeText={setText}
-            onFocus={() => setMenuOpen(false)}
+            onFocus={() => { setMenuOpen(false); setStickerOpen(false); }}
             placeholder="메시지 입력"
             multiline
           />
@@ -300,6 +311,12 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
               </View>
               <Text style={s.menuLabel}>사진 올리기</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={s.menuItem} onPress={() => { setMenuOpen(false); setStickerOpen(true); }}>
+              <View style={[s.menuIcon, { backgroundColor: '#F6AD55' }]}>
+                <Ionicons name="happy-outline" size={22} color="#fff" />
+              </View>
+              <Text style={s.menuLabel}>이모티콘</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={s.menuItem} onPress={sendFile}>
               <View style={[s.menuIcon, { backgroundColor: '#4299E1' }]}>
                 <Ionicons name="document-attach-outline" size={22} color="#fff" />
@@ -307,6 +324,9 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
               <Text style={s.menuLabel}>파일 첨부</Text>
             </TouchableOpacity>
           </View>
+        ) : null}
+        {stickerOpen ? (
+          <StickerPanel supabase={supabase} onPick={sendSticker} onClose={() => setStickerOpen(false)} />
         ) : null}
       </KeyboardAvoidingView>
 
