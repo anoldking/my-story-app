@@ -1,17 +1,17 @@
-// 앱 전체 글꼴 (Gothic A1 - 네이버 앱과 비슷한 깔끔한 고딕체)
+// 앱 전체 글꼴 (IBM Plex Sans KR - 단정하고 현대적인 고딕체)
 import React, { useContext } from 'react';
 import { Text as RNText, TextInput as RNTextInput, StyleSheet } from 'react-native';
 import { useFonts } from 'expo-font';
-import * as F400 from '@expo-google-fonts/gothic-a1/400Regular';
-import * as F700 from '@expo-google-fonts/gothic-a1/700Bold';
-import * as F800 from '@expo-google-fonts/gothic-a1/800ExtraBold';
+import * as F400 from '@expo-google-fonts/ibm-plex-sans-kr/400Regular';
+import * as F600 from '@expo-google-fonts/ibm-plex-sans-kr/600SemiBold';
+import * as F700 from '@expo-google-fonts/ibm-plex-sans-kr/700Bold';
 
 const pickSrc = (m, name) => (m && (m[name] || m.default)) || null;
 
 const FONT_MAP = {
-  GothicA1_400Regular: pickSrc(F400, 'GothicA1_400Regular'),
-  GothicA1_700Bold: pickSrc(F700, 'GothicA1_700Bold'),
-  GothicA1_800ExtraBold: pickSrc(F800, 'GothicA1_800ExtraBold'),
+  IBMPlexSansKR_400Regular: pickSrc(F400, 'IBMPlexSansKR_400Regular'),
+  IBMPlexSansKR_600SemiBold: pickSrc(F600, 'IBMPlexSansKR_600SemiBold'),
+  IBMPlexSansKR_700Bold: pickSrc(F700, 'IBMPlexSansKR_700Bold'),
 };
 
 export const useAppFonts = () => {
@@ -19,14 +19,14 @@ export const useAppFonts = () => {
   return loaded || !!error;
 };
 
-const REGULAR = 'GothicA1_400Regular';
-const BOLD = 'GothicA1_700Bold';
-const HEAVY = 'GothicA1_800ExtraBold';
+const REGULAR = 'IBMPlexSansKR_400Regular';
+const SEMI = 'IBMPlexSansKR_600SemiBold';
+const BOLD = 'IBMPlexSansKR_700Bold';
 
 const familyFor = (w) => {
   const n = w === 'bold' ? 700 : w === 'normal' ? 400 : parseInt(w, 10) || 400;
-  if (n >= 800) return HEAVY;
-  if (n >= 600) return BOLD;
+  if (n >= 700) return BOLD;
+  if (n >= 600) return SEMI;
   return REGULAR;
 };
 

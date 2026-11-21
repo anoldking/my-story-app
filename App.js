@@ -712,6 +712,17 @@ const PostPhotoViewer = ({
   const [sending, setSending] = useState(false);
   const [singleRatio, setSingleRatio] = useState(1);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [zoomIdx, setZoomIdx] = useState(null);
+  const [zoomRatio, setZoomRatio] = useState(1);
+
+  const openZoom = (i) => {
+    setReactOpen(false);
+    Image.getSize(
+      uris[i],
+      (w, h) => { setZoomRatio(w && h ? w / h : 1); setZoomIdx(i); },
+      () => { setZoomRatio(1); setZoomIdx(i); }
+    );
+  };
 
   useEffect(() => {
     if (uris.length > 1 && idx > 0) {
@@ -769,7 +780,7 @@ const PostPhotoViewer = ({
             <TouchableOpacity
               key={u + i}
               activeOpacity={1}
-              onPress={() => { setReactOpen(false); }}
+              onPress={() => openZoom(i)}
               style={{ width: winWidth, height: winHeight }}
             >
               <Image source={{ uri: u }} style={{ width: winWidth, height: winHeight }} resizeMode="contain" />
@@ -790,6 +801,25 @@ const PostPhotoViewer = ({
       <TouchableOpacity style={styles.fullscreenBackBtn} onPress={onClose} activeOpacity={0.8}>
         <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
       </TouchableOpacity>
+
+      {zoomIdx !== null && (
+        <View style={styles.viewerZoomLayer}>
+          <ZoomableImage
+            uri={uris[zoomIdx]}
+            aspectRatio={zoomRatio}
+            containerWidth={winWidth}
+            maxHeight={winHeight}
+            fillHeight
+            onZoomStateChange={setIsZoomed}
+          />
+          <TouchableOpacity style={[styles.fullscreenBackBtn, { zIndex: 1260 }]} onPress={() => setZoomIdx(null)} activeOpacity={0.8}>
+            <Ionicons name="close" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.viewerZoomHint}>
+            <Text style={styles.viewerCounterText}>두 손가락으로 확대 · 두 번 탭 · 드래그</Text>
+          </View>
+        </View>
+      )}
 
       {uris.length > 1 ? (
         <View style={styles.viewerCounter}>
@@ -5649,6 +5679,8 @@ const styles = StyleSheet.create({
     color: '#18181B',
   },
 
+  viewerZoomLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000', zIndex: 1250 },
+  viewerZoomHint: { position: 'absolute', bottom: 40, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1260 },
   viewerCounter: { position: 'absolute', top: 24, right: 16, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1220 },
   viewerCounterText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   viewerDotsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
