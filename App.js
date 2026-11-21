@@ -8,6 +8,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import GroupChat, { ensureGroupChannel } from './GroupChat';
+import GalleryPicker from './GalleryPicker';
+import * as MediaLibrary from 'expo-media-library';
 import StickerPanel, { getSticker, STICKER_LABEL, StickerBubbleImage } from './StickerPanel';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
@@ -1099,6 +1101,7 @@ export default function App() {
   const [sendingMsg, setSendingMsg] = useState(false);
   const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
   const [chatStickerOpen, setChatStickerOpen] = useState(false);
+  const [chatGalleryOpen, setChatGalleryOpen] = useState(false);
   const inlineChatScrollRef = useRef(null);
 
   const lastBackPressRef = useRef(0);
@@ -2121,53 +2124,65 @@ export default function App() {
     }
   };
 
-  const handleSendChatPhoto = async () => {
+  // "사진 올리기" → 갤러리 선택 화면 열기 (단체방과 같은 방식)
+  const handleSendChatPhoto = () => {
     if (!chatPartner || sendingMsg) return;
     setChatAttachMenuOpen(false);
+    setChatStickerOpen(false);
+    setChatGalleryOpen(true);
+  };
 
-    const uri = await selectFromGallery();
-    if (!uri) return;
-
+  // 갤러리에서 고른 사진들을 한 장씩 전송
+  const sendChatPhotos = async (assets) => {
+    setChatGalleryOpen(false);
+    if (!chatPartner || !assets || !assets.length) return;
+    const partnerId = chatPartner.id;
+    const isSelfChat = partnerId === session.user.id;
     setSendingMsg(true);
-    try {
-      const storagePath = `${session.user.id}/photo_${Date.now()}.jpg`;
-      const response = await fetch(uri);
-      const arrayBuffer = await response.arrayBuffer();
-
-      const { error: uploadErr } = await supabase.storage
-        .from('chat-files')
-        .upload(storagePath, arrayBuffer, { contentType: 'image/jpeg', upsert: true });
-
-      if (uploadErr) throw uploadErr;
-
-      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(storagePath);
-      const isSelfChat = chatPartner.id === session.user.id;
-
-      const { data: msgData, error: msgErr } = await supabase
-        .from('messages')
-        .insert({
-          sender_id: session.user.id,
-          receiver_id: chatPartner.id,
-          content: '',
-          image_url: urlData.publicUrl,
-          is_read: isSelfChat,
-        })
-        .select()
-        .single();
-
-      setSendingMsg(false);
-      if (msgErr) {
-        showAlert('사진 전송 실패', getKoreanErrorMessage(msgErr));
-      } else if (msgData) {
-        setChatMessages((prev) => {
-          if (prev.some((m) => m.id === msgData.id)) return prev;
-          return [...prev, msgData];
-        });
+    let fail = 0;
+    let lastMsg = '';
+    for (const a of assets) {
+      try {
+        let src = a.uri;
+        try {
+          const info = await MediaLibrary.getAssetInfoAsync(a);
+          if (info && info.localUri) src = info.localUri;
+        } catch (e) { /* 원래 uri 사용 */ }
+        const manipulated = await ImageManipulator.manipulateAsync(
+          src,
+          [{ resize: { width: 1080 } }],
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        const storagePath = `${session.user.id}/photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
+        const response = await fetch(manipulated.uri);
+        const arrayBuffer = await response.arrayBuffer();
+        const { error: uploadErr } = await supabase.storage
+          .from('chat-files')
+          .upload(storagePath, arrayBuffer, { contentType: 'image/jpeg', upsert: true });
+        if (uploadErr) throw uploadErr;
+        const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(storagePath);
+        const { data: msgData, error: msgErr } = await supabase
+          .from('messages')
+          .insert({
+            sender_id: session.user.id,
+            receiver_id: partnerId,
+            content: '',
+            image_url: urlData.publicUrl,
+            is_read: isSelfChat,
+          })
+          .select()
+          .single();
+        if (msgErr) throw msgErr;
+        if (msgData) {
+          setChatMessages((prev) => (prev.some((m) => m.id === msgData.id) ? prev : [...prev, msgData]));
+        }
+      } catch (e) {
+        fail += 1;
+        lastMsg = e?.message || String(e);
       }
-    } catch (e) {
-      setSendingMsg(false);
-      showAlert('사진 전송 오류', `채팅 사진을 올리지 못했습니다.\n(${e?.message || e})`);
     }
+    setSendingMsg(false);
+    if (fail > 0) showAlert('사진 전송 오류', `${fail}장을 보내지 못했습니다.\n(${lastMsg})`);
   };
 
   const handleSendChatFile = async () => {
@@ -3560,6 +3575,12 @@ export default function App() {
             </TouchableOpacity>
           </View>
         )}
+
+        <GalleryPicker
+          visible={chatGalleryOpen}
+          onClose={() => setChatGalleryOpen(false)}
+          onSend={sendChatPhotos}
+        />
 
         {chatStickerOpen && (
           <StickerPanel
