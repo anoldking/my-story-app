@@ -3176,7 +3176,7 @@ export default function App() {
 
         <ScrollView
           ref={inlineChatScrollRef}
-          style={[styles.inlineChatHistoryScroll, { flex: 1 }
+          style={[styles.inlineChatHistoryScroll, { flex: 1 }]}
           contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
           nestedScrollEnabled
           showsVerticalScrollIndicator={true}
