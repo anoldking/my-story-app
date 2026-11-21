@@ -276,12 +276,12 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
           ref={listRef}
-          data={messages}
+          data={[...messages].reverse()}
+          inverted
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 12 }}
-          onContentSizeChange={() => listRef.current && listRef.current.scrollToEnd({ animated: false })}
-          ListEmptyComponent={<Text style={s.empty}>첫 메시지를 보내 보세요.</Text>}
+          ListEmptyComponent={<Text style={[s.empty, { transform: [{ scaleY: -1 }] }]}>첫 메시지를 보내 보세요.</Text>}
         />
         <View style={s.inputBar}>
           <TouchableOpacity

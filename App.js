@@ -3354,7 +3354,8 @@ export default function App() {
           contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
           nestedScrollEnabled
           showsVerticalScrollIndicator={true}
-          onContentSizeChange={() => inlineChatScrollRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={() => inlineChatScrollRef.current?.scrollToEnd({ animated: false })}
+          onLayout={() => inlineChatScrollRef.current?.scrollToEnd({ animated: false })}
         >
           {chatMessages.length === 0 ? (
             <View style={styles.inlineChatEmpty}>
