@@ -19,6 +19,7 @@ import {
   Linking,
   PanResponder,
   Pressable,
+  AppState,
 } from 'react-native';
 import { Text, TextInput, useAppFonts } from './fonts';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -29,6 +30,7 @@ import * as MediaLibrary from 'expo-media-library';
 import StickerPanel, { getSticker, STICKER_LABEL, StickerBubbleImage } from './StickerPanel';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
+import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons, themedStyles, useTheme, bgc, cycleThemeMode, getMode, modeLabel, hapticTap, hapticSelect } from './theme';
@@ -693,6 +695,25 @@ const FullscreenPhotoPopup = ({
     </View>
   );
 };
+
+// 홈 위쪽 배경음악 바
+const MusicBar = ({ track, playing, onToggle, onNext, hasNext }) => (
+  <View style={styles.musicBar}>
+    <Ionicons name="musical-notes" size={17} color={playing ? '#2563EB' : '#71717A'} />
+    <View style={{ flex: 1, marginHorizontal: 10 }}>
+      <Text style={styles.musicTitle} numberOfLines={1}>{track.title || '제목 없음'}</Text>
+      <Text style={styles.musicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
+    </View>
+    <TouchableOpacity onPress={onToggle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.musicBtn}>
+      <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#18181B" />
+    </TouchableOpacity>
+    {hasNext ? (
+      <TouchableOpacity onPress={onNext} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.musicBtn}>
+        <Ionicons name="play-skip-forward" size={18} color="#18181B" />
+      </TouchableOpacity>
+    ) : null}
+  </View>
+);
 
 // 글자만 있는 간단한 버튼: 누르는 동안 색이 바뀜
 const TextBtn = ({ label, onPress, color = '#374151', pressedColor = '#2563EB' }) => (
@@ -1485,6 +1506,109 @@ const showAlert = (title, message, onConfirm) => {
 export default function App() {
   const fontsReady = useAppFonts();
   useTheme();
+
+  // ---- 배경음악 ----
+  const soundRef = useRef(null);
+  const bgmPlayingRef = useRef(false);
+  const bgmListRef = useRef([]);
+  const [bgmTrack, setBgmTrack] = useState(null);
+  const [bgmPlaying, setBgmPlayingState] = useState(false);
+  const [tempBgmUri, setTempBgmUri] = useState(null);
+  const [tempBgmName, setTempBgmName] = useState('');
+  const [tempBgmTitle, setTempBgmTitle] = useState('');
+  const [tempBgmMime, setTempBgmMime] = useState('audio/mpeg');
+  const [bgmChanged, setBgmChanged] = useState(false);
+
+  const setBgmPlaying = (v) => {
+    bgmPlayingRef.current = v;
+    setBgmPlayingState(v);
+  };
+
+  const bgmUnload = async () => {
+    const snd = soundRef.current;
+    soundRef.current = null;
+    if (snd) {
+      try { snd.setOnPlaybackStatusUpdate(null); await snd.unloadAsync(); } catch (e) { /* 무시 */ }
+    }
+  };
+
+  const bgmNext = async (current) => {
+    const list = bgmListRef.current || [];
+    if (!list.length) return;
+    const i = list.findIndex((m) => m.bgm_url === (current && current.url));
+    const nextM = list[(i + 1) % list.length];
+    if (nextM) await bgmPlay(bgmToTrack(nextM));
+  };
+
+  const bgmPlay = async (track) => {
+    try {
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+      });
+      await bgmUnload();
+      setBgmTrack(track);
+      const { sound } = await Audio.Sound.createAsync({ uri: track.url }, { shouldPlay: true });
+      soundRef.current = sound;
+      setBgmPlaying(true);
+      sound.setOnPlaybackStatusUpdate((st) => {
+        if (st && st.didJustFinish) bgmNext(track);
+      });
+    } catch (e) {
+      setBgmPlaying(false);
+      showAlert('음악 재생 오류', `음악을 재생하지 못했습니다.\n(${e?.message || e})`);
+    }
+  };
+
+  const bgmToggle = async (fallbackTrack) => {
+    const snd = soundRef.current;
+    if (!snd) {
+      const t = bgmTrack || fallbackTrack;
+      if (t) await bgmPlay(t);
+      return;
+    }
+    try {
+      const st = await snd.getStatusAsync();
+      if (st && st.isLoaded && st.isPlaying) {
+        await snd.pauseAsync();
+        setBgmPlaying(false);
+      } else {
+        await snd.playAsync();
+        setBgmPlaying(true);
+      }
+    } catch (e) {
+      setBgmPlaying(false);
+    }
+  };
+
+  const bgmToTrack = (m) => ({
+    url: m.bgm_url,
+    title: m.bgm_title,
+    ownerId: m.id,
+    ownerLabel: m.id === session?.user?.id ? '내 노래' : `${m.nickname || '회원'}님의 노래`,
+  });
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active' && soundRef.current && bgmPlayingRef.current) {
+        soundRef.current.pauseAsync().catch(() => {});
+        setBgmPlaying(false);
+      }
+    });
+    return () => {
+      sub.remove();
+      bgmUnload();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session) {
+      bgmUnload();
+      setBgmPlaying(false);
+      setBgmTrack(null);
+    }
+  }, [session]);
   const [showGroupChat, setShowGroupChat] = useState(false);
   const [session, setSession] = useState(null);
   const [isSignUpScreen, setIsSignUpScreen] = useState(false);
@@ -1519,6 +1643,13 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [friendsSectionOpen, setFriendsSectionOpen] = useState(true);
   const [selectedFriend, setSelectedFriend] = useState(null);
+
+  // 친구 프로필을 열었을 때, 이미 음악을 듣는 중이면 그 친구 노래로 바꿔서 재생
+  useEffect(() => {
+    if (selectedFriend && selectedFriend.bgm_url && bgmPlayingRef.current) {
+      if (!bgmTrack || bgmTrack.url !== selectedFriend.bgm_url) bgmPlay(bgmToTrack(selectedFriend));
+    }
+  }, [selectedFriend && selectedFriend.id]);
 
   const [posts, setPosts] = useState([]);
   const [writeModalVisible, setWriteModalVisible] = useState(false);
@@ -2290,10 +2421,17 @@ export default function App() {
 
   const fetchFriendsAndRequests = async () => {
     const myId = session.user.id;
-    const { data: memberData } = await supabase
+    let { data: memberData, error: memberErr } = await supabase
       .from('profiles')
-      .select('id, nickname, bio, avatar_url, cover_url')
+      .select('id, nickname, bio, avatar_url, cover_url, bgm_url, bgm_title')
       .order('nickname', { ascending: true });
+    if (memberErr) {
+      const retry = await supabase
+        .from('profiles')
+        .select('id, nickname, bio, avatar_url, cover_url')
+        .order('nickname', { ascending: true });
+      memberData = retry.data;
+    }
 
     const list = memberData || [];
     setMembers(list);
@@ -2838,7 +2976,30 @@ export default function App() {
     setTempBio(profile.bio || '');
     setTempAvatarUri(profile.avatar_url || null);
     setTempCoverUri(profile.cover_url || null);
+    setTempBgmUri(null);
+    setTempBgmName('');
+    setTempBgmTitle(profile.bgm_title || '');
+    setBgmChanged(false);
     setEditProfileModal(true);
+  };
+
+  const pickBgmFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      const a = result.assets[0];
+      if (a.size && a.size > 15 * 1024 * 1024) {
+        showAlert('파일이 너무 커요', '15MB 이하의 음악 파일을 골라 주세요.');
+        return;
+      }
+      setTempBgmUri(a.uri);
+      setTempBgmName(a.name || 'song.mp3');
+      setTempBgmTitle((a.name || '내 노래').replace(/\.[^.]+$/, ''));
+      setTempBgmMime(a.mimeType || 'audio/mpeg');
+      setBgmChanged(true);
+    } catch (e) {
+      showAlert('음악 선택 오류', `파일을 불러오지 못했습니다.\n(${e?.message || e})`);
+    }
   };
 
   const saveProfileSettings = async () => {
@@ -2859,6 +3020,22 @@ export default function App() {
         avatar_url: finalAvatarUrl,
         cover_url: finalCoverUrl,
       };
+
+      if (bgmChanged) {
+        if (tempBgmUri) {
+          const ext = ((tempBgmName.match(/\.([a-zA-Z0-9]+)$/) || [])[1] || 'mp3').toLowerCase();
+          const path = `${session.user.id}/bgm_${Date.now()}.${ext}`;
+          const resp = await fetch(tempBgmUri);
+          const buf = await resp.arrayBuffer();
+          const up = await supabase.storage.from('bgm').upload(path, buf, { contentType: tempBgmMime || 'audio/mpeg', upsert: true });
+          if (up.error) throw up.error;
+          updates.bgm_url = supabase.storage.from('bgm').getPublicUrl(path).data.publicUrl;
+          updates.bgm_title = tempBgmTitle.trim() || '내 노래';
+        } else {
+          updates.bgm_url = null;
+          updates.bgm_title = null;
+        }
+      }
 
       const { error } = await supabase.from('profiles').upsert(updates);
       setLoading(false);
@@ -3277,6 +3454,12 @@ export default function App() {
     );
   }
 
+  const bgmList = members
+    .filter((m) => m.bgm_url)
+    .sort((a, b) => (a.id === session.user.id ? -1 : 0) - (b.id === session.user.id ? -1 : 0));
+  bgmListRef.current = bgmList;
+  const shownBgmTrack = bgmTrack || (bgmList[0] ? bgmToTrack(bgmList[0]) : null);
+
   const visiblePosts = posts.filter(isPostVisibleToMe).filter((p) => !blockedIds.includes(p.author_id));
   const otherMembers = members
     .filter((m) => m.id !== session.user.id)
@@ -3521,6 +3704,16 @@ export default function App() {
           </TouchableOpacity>
         </View>
       )}
+
+      {shownBgmTrack ? (
+        <MusicBar
+          track={shownBgmTrack}
+          playing={bgmPlaying}
+          hasNext={bgmList.length > 1}
+          onToggle={() => bgmToggle(shownBgmTrack)}
+          onNext={() => bgmNext(shownBgmTrack)}
+        />
+      ) : null}
 
       <ScrollView
         horizontal
@@ -4777,6 +4970,24 @@ export default function App() {
               <Text style={styles.friendCardName}>-{selectedFriend.nickname || '친구'}-</Text>
               <Text style={styles.friendCardBio}>{selectedFriend.bio || '상태 메시지가 없습니다.'}</Text>
 
+              {selectedFriend.bgm_url ? (
+                <TouchableOpacity
+                  style={styles.friendBgmRow}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    if (bgmTrack && bgmTrack.url === selectedFriend.bgm_url && soundRef.current) bgmToggle();
+                    else bgmPlay(bgmToTrack(selectedFriend));
+                  }}
+                >
+                  <Ionicons
+                    name={bgmPlaying && bgmTrack && bgmTrack.url === selectedFriend.bgm_url ? 'pause-circle' : 'play-circle'}
+                    size={24}
+                    color="#2563EB"
+                  />
+                  <Text style={styles.friendBgmText} numberOfLines={1}>♪ {selectedFriend.bgm_title || '배경음악'}</Text>
+                </TouchableOpacity>
+              ) : null}
+
               <View style={styles.friendCardActions}>
                 <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
                   {renderFriendStatusActionButton(selectedFriend.id, false)}
@@ -4858,6 +5069,31 @@ export default function App() {
                 placeholder="소개글이나 상태 메시지를 입력하세요"
                 multiline
               />
+
+              <Text style={styles.fieldLabel}>배경음악 (내 프로필을 열면 나오는 노래)</Text>
+              <View style={styles.bgmPickRow}>
+                <Text style={styles.bgmPickTitle} numberOfLines={1}>
+                  {bgmChanged && !tempBgmUri
+                    ? '선택 안 함'
+                    : (tempBgmUri ? tempBgmTitle : (profile.bgm_url ? (profile.bgm_title || '설정됨') : '선택 안 함'))}
+                </Text>
+                <TextBtn label="곡 고르기" onPress={pickBgmFile} />
+                {(tempBgmUri || profile.bgm_url) && !(bgmChanged && !tempBgmUri) ? (
+                  <TextBtn
+                    label="지우기"
+                    pressedColor="#DC2626"
+                    onPress={() => { setTempBgmUri(null); setTempBgmName(''); setTempBgmTitle(''); setBgmChanged(true); }}
+                  />
+                ) : null}
+              </View>
+              {tempBgmUri ? (
+                <TextInput
+                  style={styles.modalInput}
+                  value={tempBgmTitle}
+                  onChangeText={setTempBgmTitle}
+                  placeholder="곡 제목"
+                />
+              ) : null}
             </ScrollView>
 
             <View style={styles.modalBtnRow}>
@@ -5717,6 +5953,14 @@ const styles = themedStyles({
 
   viewerZoomLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000', zIndex: 1250 },
   viewerZoomHint: { position: 'absolute', bottom: 40, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1260 },
+  musicBar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 6, marginBottom: 2, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: '#F4F4F5' },
+  musicTitle: { fontSize: 13, fontWeight: '700', color: '#18181B' },
+  musicOwner: { fontSize: 11, color: '#71717A', marginTop: 1 },
+  musicBtn: { padding: 6, marginLeft: 2 },
+  friendBgmRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginBottom: 14, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#F4F4F5', maxWidth: '92%' },
+  friendBgmText: { fontSize: 13, color: '#3F3F46', marginLeft: 6, flexShrink: 1 },
+  bgmPickRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
+  bgmPickTitle: { flex: 1, fontSize: 14, color: '#3F3F46', marginRight: 8 },
   viewerCounter: { position: 'absolute', top: 24, right: 16, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1220 },
   viewerCounterText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   viewerDotsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
