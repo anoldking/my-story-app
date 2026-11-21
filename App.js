@@ -455,8 +455,9 @@ const CompactFeedImage = ({ uri, onPress, width: widthProp }) => {
 
   // 사진 원래 비율 그대로 보여줌 (얼굴 등이 잘리지 않게). 너무 길거나 넓을 때만 contain
   const naturalHeight = Math.round(FEED_W / (aspectRatio || 1));
-  const targetHeight = Math.min(FEED_MEDIA_MAX_HEIGHT, Math.max(120, naturalHeight));
-  const photoResizeMode = naturalHeight === targetHeight ? 'cover' : 'contain';
+  // 폭은 항상 꽉 채우고, 높이는 사진 비율대로 하되 정사각형 정도(폭의 1.03배)까지만 (더 긴 사진은 가운데 기준으로 잘림)
+  const targetHeight = Math.min(Math.round(FEED_W * 1.03), Math.max(80, naturalHeight));
+  const photoResizeMode = 'cover';
 
   return (
     <TouchableOpacity activeOpacity={0.94} onPress={onPress} style={styles.compactImageWrap}>
