@@ -16,7 +16,7 @@ import { Text, TextInput } from './fonts';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, themedStyles, hapticTap } from './theme';
 import GalleryPicker from './GalleryPicker';
 import StickerPanel, { getSticker, STICKER_LABEL, StickerBubbleImage } from './StickerPanel';
 
@@ -104,6 +104,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   };
 
   const send = async () => {
+    hapticTap();
     const t = text.trim();
     if (!t || sending) return;
     setSending(true);
@@ -377,7 +378,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles({
   wrap: { flex: 1, backgroundColor: '#fff', paddingTop: 30 },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

@@ -9,6 +9,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Text } from './fonts';
+import { themedStyles } from './theme';
 
 export const STICKER_PREFIX = '[sticker]';
 export const isSticker = (content) => typeof content === 'string' && content.startsWith(STICKER_PREFIX);
@@ -90,7 +91,7 @@ export function StickerBubbleImage({ url }) {
   return <Image source={{ uri: url }} style={s.bubbleImg} resizeMode="contain" />;
 }
 
-const s = StyleSheet.create({
+const s = themedStyles({
   wrap: { height: 230, backgroundColor: '#F9FAFB', borderTopWidth: 1, borderColor: '#eee' },
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
   title: { fontSize: 14, fontWeight: '700', color: '#333' },

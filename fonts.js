@@ -2,6 +2,7 @@
 import React, { useContext } from 'react';
 import { Text as RNText, TextInput as RNTextInput, StyleSheet } from 'react-native';
 import { useFonts } from 'expo-font';
+import { isDark, mapTextColor } from './theme';
 import * as F400 from '@expo-google-fonts/ibm-plex-sans-kr/400Regular';
 import * as F600 from '@expo-google-fonts/ibm-plex-sans-kr/600SemiBold';
 import * as F700 from '@expo-google-fonts/ibm-plex-sans-kr/700Bold';
@@ -37,9 +38,11 @@ export const Text = React.forwardRef(function AppText({ style, ...rest }, ref) {
   const flat = StyleSheet.flatten(style) || {};
   if (flat.fontFamily) return <RNText ref={ref} style={style} {...rest} />;
   const fam = flat.fontWeight != null ? familyFor(flat.fontWeight) : (parent || REGULAR);
+  const extra = { fontFamily: fam, fontWeight: 'normal' };
+  if (isDark() && typeof flat.color === 'string') extra.color = mapTextColor(flat.color);
   return (
     <FamilyCtx.Provider value={fam}>
-      <RNText ref={ref} {...rest} style={[style, { fontFamily: fam, fontWeight: 'normal' }]} />
+      <RNText ref={ref} {...rest} style={[style, extra]} />
     </FamilyCtx.Provider>
   );
 });
@@ -47,11 +50,16 @@ export const Text = React.forwardRef(function AppText({ style, ...rest }, ref) {
 export const TextInput = React.forwardRef(function AppTextInput({ style, ...rest }, ref) {
   const flat = StyleSheet.flatten(style) || {};
   if (flat.fontFamily) return <RNTextInput ref={ref} style={style} {...rest} />;
+  const extra = { fontFamily: familyFor(flat.fontWeight), fontWeight: 'normal' };
+  if (isDark()) {
+    extra.color = typeof flat.color === 'string' ? mapTextColor(flat.color) : '#F2F2F4';
+  }
   return (
     <RNTextInput
       ref={ref}
+      keyboardAppearance={isDark() ? 'dark' : 'light'}
       {...rest}
-      style={[style, { fontFamily: familyFor(flat.fontWeight), fontWeight: 'normal' }]}
+      style={[style, extra]}
     />
   );
 });

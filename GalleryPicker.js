@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Text } from './fonts';
 import * as MediaLibrary from 'expo-media-library';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, themedStyles, bgc } from './theme';
 
 const COLS = 3;
 const GAP = 2;
@@ -119,7 +119,7 @@ export default function GalleryPicker({ visible, onClose, onSend, maxSelect, sen
         onPress={() => toggle(item)}
         style={{ width: size, height: size, marginRight: GAP, marginBottom: GAP }}
       >
-        <Image source={{ uri: item.uri }} style={{ width: size, height: size, backgroundColor: '#eee' }} />
+        <Image source={{ uri: item.uri }} style={{ width: size, height: size, backgroundColor: bgc('#eee') }} />
         {on ? <View style={s.dim} /> : null}
         <View style={[s.circle, on && s.circleOn]}>
           {on ? <Text style={s.circleNum}>{idx + 1}</Text> : null}
@@ -203,7 +203,7 @@ export default function GalleryPicker({ visible, onClose, onSend, maxSelect, sen
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles({
   wrap: { flex: 1, backgroundColor: '#fff', paddingTop: 36 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

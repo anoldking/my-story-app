@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Text, TextInput } from './fonts';
 import * as Notifications from 'expo-notifications';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, themedStyles } from './theme';
 import GroupRoom from './GroupRoomPlus';
 
 export async function ensureGroupChannel() {
@@ -249,7 +249,7 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles({
     wrap: { flex: 1, backgroundColor: '#fff', paddingTop: 30 },
     header: {
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

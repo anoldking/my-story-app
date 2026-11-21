@@ -31,7 +31,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, themedStyles, useTheme, bgc, cycleThemeMode, getMode, modeLabel, hapticTap, hapticSelect } from './theme';
+import { BounceView, HeartPop, useDoubleTap } from './anim';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -453,10 +454,15 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, fillHeight
 };
 
 // 여러 장 사진: 옆으로 넘기며 보기 + 아래 점 표시 (첫 사진 비율 기준)
-const FeedImageCarousel = ({ uris, width: widthProp, onPressIndex }) => {
+const FeedImageCarousel = ({ uris, width: widthProp, onPressIndex, onDoubleLike }) => {
   const W = widthProp || FEED_MEDIA_WIDTH;
   const [ratio, setRatio] = useState(1);
   const [idx, setIdx] = useState(0);
+  const [pops, setPops] = useState(0);
+  const handleTap = useDoubleTap(
+    (i) => onPressIndex && onPressIndex(i),
+    () => { setPops((p) => p + 1); onDoubleLike && onDoubleLike(); }
+  );
 
   useEffect(() => {
     if (!uris || !uris[0]) return;
@@ -486,6 +492,7 @@ const FeedImageCarousel = ({ uris, width: widthProp, onPressIndex }) => {
 
   return (
     <View style={{ width: W }}>
+      <View style={{ width: W, height: H }}>
       <ScrollView
         horizontal
         pagingEnabled
@@ -499,13 +506,15 @@ const FeedImageCarousel = ({ uris, width: widthProp, onPressIndex }) => {
           <TouchableOpacity
             key={u + i}
             activeOpacity={0.94}
-            onPress={() => onPressIndex && onPressIndex(i)}
+            onPress={() => handleTap(i)}
             style={{ width: W, height: H }}
           >
-            <Image source={{ uri: u }} style={{ width: W, height: H, backgroundColor: '#FAFAFA' }} resizeMode="cover" />
+            <Image source={{ uri: u }} style={{ width: W, height: H, backgroundColor: bgc('#FAFAFA') }} resizeMode="cover" />
           </TouchableOpacity>
         ))}
       </ScrollView>
+      <HeartPop count={pops} />
+      </View>
       <View style={styles.feedDotsRow}>
         {uris.map((u, i) => (
           <View
@@ -522,9 +531,14 @@ const FeedImageCarousel = ({ uris, width: widthProp, onPressIndex }) => {
 };
 
 // 피드 화면용: 한 화면 안에 깔끔하게 들어오는 사이즈로 표시
-const CompactFeedImage = ({ uri, onPress, width: widthProp }) => {
+const CompactFeedImage = ({ uri, onPress, onDoubleLike, width: widthProp }) => {
   const FEED_W = (widthProp || FEED_MEDIA_WIDTH);
   const [aspectRatio, setAspectRatio] = useState(1);
+  const [pops, setPops] = useState(0);
+  const handleTap = useDoubleTap(
+    () => onPress && onPress(),
+    () => { setPops((p) => p + 1); onDoubleLike && onDoubleLike(); }
+  );
 
   useEffect(() => {
     if (!uri) return;
@@ -546,12 +560,13 @@ const CompactFeedImage = ({ uri, onPress, width: widthProp }) => {
   const photoResizeMode = 'cover';
 
   return (
-    <TouchableOpacity activeOpacity={0.94} onPress={onPress} style={styles.compactImageWrap}>
+    <TouchableOpacity activeOpacity={0.94} onPress={() => handleTap()} style={styles.compactImageWrap}>
       <Image
         source={{ uri }}
         style={[styles.compactFeedImage, { width: FEED_W, height: targetHeight }]}
         resizeMode={photoResizeMode}
       />
+      <HeartPop count={pops} />
     </TouchableOpacity>
   );
 };
@@ -890,13 +905,15 @@ const PostPhotoViewer = ({
               <TouchableOpacity
                 style={styles.fullscreenActionBtn}
                 activeOpacity={0.8}
-                onPress={() => setReactOpen((v) => !v)}
+                onPress={() => { hapticSelect(); setReactOpen((v) => !v); }}
               >
-                <Ionicons
-                  name={myDef ? myDef.icon.replace('-outline', '') : 'thumbs-up-outline'}
-                  size={27}
-                  color={myDef ? myDef.color : '#FFFFFF'}
-                />
+                <BounceView trigger={myReaction ? myReaction.type : 'none'}>
+                  <Ionicons
+                    name={myDef ? myDef.icon.replace('-outline', '') : 'thumbs-up-outline'}
+                    size={27}
+                    color={myDef ? myDef.color : '#FFFFFF'}
+                  />
+                </BounceView>
                 <Text style={styles.fullscreenActionCount}>{reactionCount}</Text>
               </TouchableOpacity>
             </View>
@@ -1212,7 +1229,7 @@ const PostDetailPopup = ({
         showsVerticalScrollIndicator={false}
       >
         {imgUri && (
-          <View style={{ width: '100%', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+          <View style={{ width: '100%', alignItems: 'center', backgroundColor: bgc('#FFFFFF') }}>
             {popUris.length > 1 ? (
               <>
                 <ScrollView
@@ -1229,7 +1246,7 @@ const PostDetailPopup = ({
                     <Image
                       key={u + i}
                       source={{ uri: u }}
-                      style={{ width: winWidth, height: popH, backgroundColor: '#FAFAFA' }}
+                      style={{ width: winWidth, height: popH, backgroundColor: bgc('#FAFAFA') }}
                       resizeMode="contain"
                     />
                   ))}
@@ -1467,6 +1484,7 @@ const showAlert = (title, message, onConfirm) => {
 
 export default function App() {
   const fontsReady = useAppFonts();
+  useTheme();
   const [showGroupChat, setShowGroupChat] = useState(false);
   const [session, setSession] = useState(null);
   const [isSignUpScreen, setIsSignUpScreen] = useState(false);
@@ -2527,6 +2545,7 @@ export default function App() {
   const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text || !chatPartner || sendingMsg) return;
+    hapticTap();
 
     setSendingMsg(true);
     setChatInput('');
@@ -3151,6 +3170,7 @@ export default function App() {
   };
 
   const toggleReaction = async (postId, type) => {
+    hapticTap();
     const target = posts.find((p) => String(p.id) === String(postId));
     const mine = target && (target.reactions || []).find((x) => x.user_id === session.user.id);
     if (mine && mine.type === type) {
@@ -3410,6 +3430,18 @@ export default function App() {
             </View>
           )}
 
+          <View style={styles.igDropdownDivider} />
+
+          <TouchableOpacity
+            style={styles.accountPopoverActionRow}
+            onPress={() => { hapticSelect(); cycleThemeMode(); }}
+          >
+            <Ionicons name="moon-outline" size={16} color="#18181B" />
+            <Text style={styles.accountPopoverActionText}>화면 모드</Text>
+            <View style={styles.applicantCountPill}>
+              <Text style={styles.applicantCountPillText}>{modeLabel(getMode())}</Text>
+            </View>
+          </TouchableOpacity>
           <View style={styles.igDropdownDivider} />
 
           <TouchableOpacity
@@ -3708,12 +3740,14 @@ export default function App() {
                   width={homeListWidth > 0 ? homeListWidth : undefined}
                   uris={item.image_urls}
                   onPressIndex={openViewer}
+                  onDoubleLike={() => { if (!isLikedByMe) toggleReaction(item.id, 'like'); }}
                 />
               ) : (
                 <CompactFeedImage
                   width={homeListWidth > 0 ? homeListWidth : undefined}
                   uri={item.image_urls[0]}
                   onPress={() => openViewer(0)}
+                  onDoubleLike={() => { if (!isLikedByMe) toggleReaction(item.id, 'like'); }}
                 />
               );
             })()}
@@ -3730,11 +3764,13 @@ export default function App() {
               activeOpacity={0.75}
               onPress={() => toggleReaction(item.id, 'like')}
             >
-              <Ionicons
-                name={isLikedByMe ? 'heart' : 'heart-outline'}
-                size={20}
-                color={isLikedByMe ? '#E11D48' : '#18181B'}
-              />
+              <BounceView trigger={isLikedByMe}>
+                <Ionicons
+                  name={isLikedByMe ? 'heart' : 'heart-outline'}
+                  size={20}
+                  color={isLikedByMe ? '#E11D48' : '#18181B'}
+                />
+              </BounceView>
               <Text style={[styles.minimalStatCount, isLikedByMe && { color: '#E11D48', fontWeight: '700' }]}>
                 {totalReactions}
               </Text>
@@ -4249,7 +4285,7 @@ export default function App() {
 
             {isExpanded && (
               <Modal visible animationType="slide" onRequestClose={() => setChatPartner(null)}>
-                <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: 36 }}>
+                <View style={{ flex: 1, backgroundColor: bgc('#fff'), paddingTop: 36 }}>
                   <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
                     {renderInlineChatDrawer(item)}
                   </KeyboardAvoidingView>
@@ -4630,7 +4666,7 @@ export default function App() {
           {mainTab === 'home' && (
             <FlatList
               key={homeGrid ? 'home-grid' : 'home-feed'}
-              style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+              style={{ flex: 1, backgroundColor: bgc('#FFFFFF') }}
               onLayout={(e) => {
                 const w = Math.floor(e.nativeEvent.layout.width);
                 if (w > 0 && w !== homeListWidth) setHomeListWidth(w);
@@ -5026,7 +5062,7 @@ export default function App() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles({
   authContainer: {
     flex: 1,
     justifyContent: 'center',
