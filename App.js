@@ -948,6 +948,8 @@ const PostDetailPopup = ({
   onSaveEdit,
   onDeletePost,
   onOpenFullImage,
+  onReportPost,
+  onBlockUser,
 }) => {
   const [aspectRatio, setAspectRatio] = useState(1);
   const [isEditing, setIsEditing] = useState(false);
@@ -1156,6 +1158,17 @@ const PostDetailPopup = ({
               }}
             />
             <TextBtn label="삭제" pressedColor="#DC2626" onPress={() => onDeletePost(post.id)} />
+          </View>
+        )}
+
+        {!isMyPost && (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TextBtn label="신고" pressedColor="#DC2626" onPress={() => onReportPost && onReportPost(post)} />
+            <TextBtn
+              label="차단"
+              pressedColor="#DC2626"
+              onPress={() => onBlockUser && onBlockUser(post.author_id, post.profiles?.nickname)}
+            />
           </View>
         )}
 
@@ -1468,7 +1481,18 @@ export default function App() {
   const [postPhotoBusy, setPostPhotoBusy] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [commentsByPost, setCommentsByPost] = useState({});
+  const [commentsByPostRaw, setCommentsByPost] = useState({});
+  const [blockedIds, setBlockedIds] = useState([]);
+  const [blockListOpen, setBlockListOpen] = useState(false);
+  // 차단한 사람의 댓글은 보이지 않게 걸러냄
+  const commentsByPost = blockedIds.length
+    ? Object.fromEntries(
+        Object.entries(commentsByPostRaw).map(([k, v]) => [
+          k,
+          (v || []).filter((c) => !blockedIds.includes(c.user_id)),
+        ])
+      )
+    : commentsByPostRaw;
 
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [viewingImage, setViewingImage] = useState(null);
@@ -1556,6 +1580,11 @@ export default function App() {
         return true;
       }
 
+      if (blockListOpen) {
+        setBlockListOpen(false);
+        return true;
+      }
+
       if (accountMenuOpen) {
         setAccountMenuOpen(false);
         return true;
@@ -1621,6 +1650,7 @@ export default function App() {
     viewingImage,
     selectedPostId,
     accountMenuOpen,
+    blockListOpen,
     brandMenuOpen,
     editProfileModal,
     writeModalVisible,
@@ -1647,6 +1677,16 @@ export default function App() {
       ensureGroupChannel();
       fetchFriendsAndRequests();
       fetchUnreadCountsBySender(session.user.id);
+      AsyncStorage.getItem(`posts_cache_v1_${session.user.id}`)
+        .then((raw) => {
+          if (!raw) return;
+          try {
+            const cached = JSON.parse(raw);
+            if (Array.isArray(cached)) setPosts((prev) => (prev.length ? prev : cached));
+          } catch (e) { /* 무시 */ }
+        })
+        .catch(() => {});
+      fetchBlocks();
       fetchPosts();
       fetchAllComments();
     }
@@ -2924,7 +2964,81 @@ export default function App() {
       .from('posts')
       .select('*, profiles(nickname, avatar_url), reactions(type, user_id)')
       .order('created_at', { ascending: false });
-    if (!error && data) setPosts(data);
+    if (!error && data) {
+      setPosts(data);
+      if (session?.user?.id) {
+        AsyncStorage.setItem(`posts_cache_v1_${session.user.id}`, JSON.stringify(data.slice(0, 40))).catch(() => {});
+      }
+    }
+  };
+
+  // ---- 차단 / 신고 ----
+  const fetchBlocks = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('user_blocks')
+        .select('blocked_id')
+        .eq('blocker_id', session.user.id);
+      if (!error && Array.isArray(data)) setBlockedIds(data.map((r) => r.blocked_id));
+    } catch (e) { /* 무시 */ }
+  };
+
+  const blockUser = (userId, name) => {
+    Alert.alert(
+      '차단',
+      `${name || '이 사람'}님을 차단할까요?\n이 사람의 글과 댓글이 보이지 않아요. (차단 관리에서 해제할 수 있어요)`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '차단',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase
+              .from('user_blocks')
+              .insert({ blocker_id: session.user.id, blocked_id: userId });
+            if (error && error.code !== '23505') {
+              showAlert('차단 실패', getKoreanErrorMessage(error));
+              return;
+            }
+            setBlockedIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+            setSelectedPostId(null);
+            showAlert('차단했어요', '더 이상 이 사람의 글과 댓글이 보이지 않아요.');
+          },
+        },
+      ]
+    );
+  };
+
+  const unblockUser = async (userId) => {
+    const { error } = await supabase
+      .from('user_blocks')
+      .delete()
+      .eq('blocker_id', session.user.id)
+      .eq('blocked_id', userId);
+    if (error) {
+      showAlert('해제 실패', getKoreanErrorMessage(error));
+      return;
+    }
+    setBlockedIds((prev) => prev.filter((id) => id !== userId));
+  };
+
+  const reportPost = (post) => {
+    const send = async (reason) => {
+      const { error } = await supabase.from('reports').insert({
+        reporter_id: session.user.id,
+        target_type: 'post',
+        target_id: String(post.id),
+        target_user_id: post.author_id,
+        reason,
+      });
+      if (error) showAlert('신고 실패', getKoreanErrorMessage(error));
+      else showAlert('신고했어요', '확인 후 조치할게요. 불편하시면 차단도 할 수 있어요.');
+    };
+    Alert.alert('신고 사유', '이 글을 신고하는 이유를 골라 주세요.', [
+      { text: '스팸·광고', onPress: () => send('스팸·광고') },
+      { text: '욕설·불쾌한 내용', onPress: () => send('욕설·불쾌한 내용') },
+      { text: '취소', style: 'cancel' },
+    ]);
   };
 
   const createPost = async () => {
@@ -3113,7 +3227,7 @@ export default function App() {
     );
   }
 
-  const visiblePosts = posts.filter(isPostVisibleToMe);
+  const visiblePosts = posts.filter(isPostVisibleToMe).filter((p) => !blockedIds.includes(p.author_id));
   const otherMembers = members
     .filter((m) => m.id !== session.user.id)
     .sort((x, y) => {
@@ -3266,6 +3380,21 @@ export default function App() {
             </View>
           )}
 
+          <View style={styles.igDropdownDivider} />
+
+          <TouchableOpacity
+            style={styles.accountPopoverActionRow}
+            onPress={() => {
+              setAccountMenuOpen(false);
+              setBlockListOpen(true);
+            }}
+          >
+            <Ionicons name="ban-outline" size={16} color="#18181B" />
+            <Text style={styles.accountPopoverActionText}>차단 관리</Text>
+            <View style={styles.applicantCountPill}>
+              <Text style={styles.applicantCountPillText}>{blockedIds.length}명</Text>
+            </View>
+          </TouchableOpacity>
           <View style={styles.igDropdownDivider} />
 
           <TouchableOpacity
@@ -4777,6 +4906,36 @@ export default function App() {
         sendLabel="선택"
       />
 
+      {blockListOpen && (
+        <View style={styles.overlayBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>차단 관리</Text>
+            {blockedIds.length === 0 ? (
+              <Text style={{ textAlign: 'center', color: '#64748B', marginVertical: 18 }}>
+                차단한 사람이 없어요.
+              </Text>
+            ) : (
+              <ScrollView style={{ maxHeight: 320 }}>
+                {blockedIds.map((id) => (
+                  <View
+                    key={id}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 }}
+                  >
+                    <Text style={{ fontSize: 15, color: '#18181B', flex: 1 }} numberOfLines={1}>
+                      {resolveAuthorName(id)}
+                    </Text>
+                    <TextBtn label="차단 해제" onPress={() => unblockUser(id)} />
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+            <View style={{ alignItems: 'center', marginTop: 8 }}>
+              <TextBtn label="닫기" onPress={() => setBlockListOpen(false)} />
+            </View>
+          </View>
+        </View>
+      )}
+
       <PostDetailPopup
         post={selectedPostObj}
         currentUserId={session.user.id}
@@ -4789,6 +4948,8 @@ export default function App() {
         onToggleReaction={toggleReaction}
         onSaveEdit={saveEditPost}
         onDeletePost={confirmDeletePost}
+        onReportPost={reportPost}
+        onBlockUser={blockUser}
         onOpenFullImage={(info) => {
           setSelectedPostId(null);
           setViewingImage(info);
