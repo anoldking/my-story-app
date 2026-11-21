@@ -3161,7 +3161,7 @@ export default function App() {
     const isSelfChat = partner.id === session.user.id;
 
     return (
-      <View style={styles.inlineChatDrawer}>
+      <View style={[styles.inlineChatDrawer, { flex: 1 }]}>
         <View style={styles.inlineChatDrawerTop}>
           <Text style={styles.inlineChatDrawerLabel} numberOfLines={1}>
             {isSelfChat
@@ -3176,7 +3176,7 @@ export default function App() {
 
         <ScrollView
           ref={inlineChatScrollRef}
-          style={[styles.inlineChatHistoryScroll, { height: EXPANDED_CHAT_HEIGHT }]}
+          style={[styles.inlineChatHistoryScroll, { flex: 1 }
           contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
           nestedScrollEnabled
           showsVerticalScrollIndicator={true}
@@ -3448,7 +3448,16 @@ export default function App() {
                 </View>
               </TouchableOpacity>
 
-              {isExpanded && renderInlineChatDrawer(item)}
+            {isExpanded && (
+                <Modal visible animationType="slide" onRequestClose={() => setChatPartner(null)}>
+                    <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: 36 }}>
+                          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                                  {renderInlineChatDrawer(item)}
+                                        </KeyboardAvoidingView>
+                                            </View>
+                                              </Modal>
+                                              )}
+            )}
             </View>
           );
         }}
