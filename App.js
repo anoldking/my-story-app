@@ -38,7 +38,7 @@ const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
 const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (CONTENT_WIDTH - RIGHT_MARGIN - 4) / 3;
 const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - RIGHT_MARGIN);
-const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.44)
+const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.72)
 const EXPANDED_CHAT_HEIGHT = Math.max(200, Math.round(SCREEN_HEIGHT * 0.32));
 
 const VISIBILITY_OPTIONS = [
@@ -453,17 +453,17 @@ const CompactFeedImage = ({ uri, onPress, width: widthProp }) => {
     );
   }, [uri]);
 
-  const targetHeight = Math.min(
-    FEED_MEDIA_MAX_HEIGHT,
-    Math.max(170, Math.round(FEED_W / (aspectRatio || 1)))
-  );
+  // 사진 원래 비율 그대로 보여줌 (얼굴 등이 잘리지 않게). 너무 길거나 넓을 때만 contain
+  const naturalHeight = Math.round(FEED_W / (aspectRatio || 1));
+  const targetHeight = Math.min(FEED_MEDIA_MAX_HEIGHT, Math.max(120, naturalHeight));
+  const photoResizeMode = naturalHeight === targetHeight ? 'cover' : 'contain';
 
   return (
     <TouchableOpacity activeOpacity={0.94} onPress={onPress} style={styles.compactImageWrap}>
       <Image
         source={{ uri }}
         style={[styles.compactFeedImage, { width: FEED_W, height: targetHeight }]}
-        resizeMode="cover"
+        resizeMode={photoResizeMode}
       />
     </TouchableOpacity>
   );
