@@ -38,6 +38,7 @@ const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
 const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (CONTENT_WIDTH - RIGHT_MARGIN - 4) / 3;
 const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - RIGHT_MARGIN);
+const MAX_POST_PHOTOS = 10;
 const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.72)
 const EXPANDED_CHAT_HEIGHT = Math.max(200, Math.round(SCREEN_HEIGHT * 0.32));
 
@@ -431,6 +432,75 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, fillHeight
         }}
         resizeMode="contain"
       />
+    </View>
+  );
+};
+
+// 여러 장 사진: 옆으로 넘기며 보기 + 아래 점 표시 (첫 사진 비율 기준)
+const FeedImageCarousel = ({ uris, width: widthProp, onPressIndex }) => {
+  const W = widthProp || FEED_MEDIA_WIDTH;
+  const [ratio, setRatio] = useState(1);
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (!uris || !uris[0]) return;
+    Image.getSize(
+      uris[0],
+      (w, h) => { if (w && h) setRatio(w / h); },
+      () => setRatio(1)
+    );
+  }, [uris && uris[0]]);
+
+  const natural = Math.round(W / (ratio || 1));
+  const H = Math.min(Math.round(W * 1.03), Math.max(80, natural));
+
+  const onEnd = (e) => {
+    const x = e.nativeEvent.contentOffset.x;
+    setIdx(Math.max(0, Math.min(uris.length - 1, Math.round(x / W))));
+  };
+
+  // 점 크기: 현재 점은 크게, 멀어질수록 작게
+  const dotSize = (i) => {
+    const d = Math.abs(i - idx);
+    if (d === 0) return 7;
+    if (d === 1) return 6;
+    if (d === 2) return 5;
+    return 4;
+  };
+
+  return (
+    <View style={{ width: W }}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={onEnd}
+        scrollEventThrottle={16}
+        style={{ width: W, height: H }}
+      >
+        {uris.map((u, i) => (
+          <TouchableOpacity
+            key={u + i}
+            activeOpacity={0.94}
+            onPress={() => onPressIndex && onPressIndex(i)}
+            style={{ width: W, height: H }}
+          >
+            <Image source={{ uri: u }} style={{ width: W, height: H, backgroundColor: '#FAFAFA' }} resizeMode="cover" />
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <View style={styles.feedDotsRow}>
+        {uris.map((u, i) => (
+          <View
+            key={'d' + i}
+            style={[
+              styles.feedDot,
+              { width: dotSize(i), height: dotSize(i), backgroundColor: i === idx ? '#18181B' : '#CBD5E1' },
+            ]}
+          />
+        ))}
+      </View>
     </View>
   );
 };
@@ -1087,6 +1157,8 @@ export default function App() {
   const [content, setContent] = useState('');
   const [visibility, setVisibility] = useState('public');
   const [imageUri, setImageUri] = useState(null);
+  const [postImages, setPostImages] = useState([]); // 새 게시물 사진 (최대 10장)
+  const [postPhotoBusy, setPostPhotoBusy] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [commentsByPost, setCommentsByPost] = useState({});
@@ -1105,6 +1177,7 @@ export default function App() {
   const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
   const [chatStickerOpen, setChatStickerOpen] = useState(false);
   const [chatGalleryOpen, setChatGalleryOpen] = useState(false);
+  const [postGalleryOpen, setPostGalleryOpen] = useState(false);
   const [homeListWidth, setHomeListWidth] = useState(0);
   const inlineChatScrollRef = useRef(null);
 
@@ -2317,6 +2390,36 @@ export default function App() {
     }
   };
 
+  // 새 게시물: 갤러리에서 고른 사진들을 미리보기에 추가 (최대 10장)
+  const pickPostPhoto = async (assets) => {
+    setPostGalleryOpen(false);
+    if (!assets || !assets.length) return;
+    setPostPhotoBusy(true);
+    const added = [];
+    try {
+      for (const a of assets) {
+        try {
+          let src = a.uri;
+          try {
+            const info = await MediaLibrary.getAssetInfoAsync(a);
+            if (info && info.localUri) src = info.localUri;
+          } catch (e) { /* 원래 uri 사용 */ }
+          const manipulated = await ImageManipulator.manipulateAsync(
+            src,
+            [{ resize: { width: 1080 } }],
+            { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+          );
+          added.push(manipulated.uri);
+        } catch (e) {
+          showAlert('사진 선택 오류', `사진 한 장을 불러오지 못했습니다.\n(${e?.message || e})`);
+        }
+      }
+      setPostImages((prev) => [...prev, ...added].slice(0, MAX_POST_PHOTOS));
+    } finally {
+      setPostPhotoBusy(false);
+    }
+  };
+
   const uploadImageFile = async (uri, prefix) => {
     if (!uri) return null;
     if (uri.startsWith('http')) return uri;
@@ -2518,7 +2621,7 @@ export default function App() {
   };
 
   const createPost = async () => {
-    if (!content.trim() && !imageUri) {
+    if (!content.trim() && postImages.length === 0) {
       showAlert('알림', '내용을 입력하거나 사진을 첨부해 주세요.');
       return;
     }
@@ -2526,8 +2629,8 @@ export default function App() {
     setLoading(true);
     try {
       let uploadedUrls = [];
-      if (imageUri) {
-        const publicUrl = await uploadImageFile(imageUri, 'post');
+      for (let i = 0; i < postImages.length; i++) {
+        const publicUrl = await uploadImageFile(postImages[i], `post${i}`);
         if (publicUrl) uploadedUrls.push(publicUrl);
       }
 
@@ -2543,7 +2646,7 @@ export default function App() {
         showAlert('등록 실패', getKoreanErrorMessage(error));
       } else {
         setContent('');
-        setImageUri(null);
+        setImageUri(null); setPostImages([]);
         setVisibility('public');
         setWriteModalVisible(false);
         fetchPosts();
@@ -2922,7 +3025,7 @@ export default function App() {
           onPress={() => {
             setBrandMenuOpen(false);
             setAccountMenuOpen(false);
-            setImageUri(null);
+            setImageUri(null); setPostImages([]);
             setContent('');
             setVisibility('public');
             setWriteModalVisible(true);
@@ -3149,12 +3252,10 @@ export default function App() {
 
         {hasImage && (
           <View style={{ position: 'relative', minHeight: isPanelOpen ? 300 : undefined }}>
-            <CompactFeedImage
-              width={homeListWidth > 0 ? homeListWidth : undefined}
-              uri={item.image_urls[0]}
-              onPress={() =>
+            {(() => {
+              const openViewer = (i) =>
                 setViewingImage({
-                  uri: item.image_urls[0],
+                  uri: item.image_urls[i] || item.image_urls[0],
                   postId: item.id,
                   authorId: item.author_id,
                   authorName,
@@ -3163,9 +3264,21 @@ export default function App() {
                   caption: item.content || '',
                   likeCount: totalReactions,
                   isLikedByMe,
-                })
-              }
-            />
+                });
+              return item.image_urls.length > 1 ? (
+                <FeedImageCarousel
+                  width={homeListWidth > 0 ? homeListWidth : undefined}
+                  uris={item.image_urls}
+                  onPressIndex={openViewer}
+                />
+              ) : (
+                <CompactFeedImage
+                  width={homeListWidth > 0 ? homeListWidth : undefined}
+                  uri={item.image_urls[0]}
+                  onPress={() => openViewer(0)}
+                />
+              );
+            })()}
             {isPanelOpen ? renderFeedCommentPanel(item, true) : null}
           </View>
         )}
@@ -3812,7 +3925,7 @@ export default function App() {
               <TouchableOpacity
                 style={styles.glassHalfBtn}
                 onPress={() => {
-                  setImageUri(null);
+                  setImageUri(null); setPostImages([]);
                   setContent('');
                   setVisibility('public');
                   setWriteModalVisible(true);
@@ -3846,6 +3959,11 @@ export default function App() {
         {hasImage ? (
           <>
             <Image source={{ uri: item.image_urls[0] }} style={styles.gridImage} />
+            {item.image_urls.length > 1 ? (
+              <View style={{ position: 'absolute', top: 5, right: 5 }}>
+                <Ionicons name="albums" size={16} color="#FFFFFF" />
+              </View>
+            ) : null}
             <View style={styles.gridVisBadge}>
               <Text style={styles.gridVisBadgeText}>{getVisibilityLabel(item.visibility)}</Text>
             </View>
@@ -4028,7 +4146,7 @@ export default function App() {
             onPress={() => {
               setBrandMenuOpen(false);
               setAccountMenuOpen(false);
-              setImageUri(null);
+              setImageUri(null); setPostImages([]);
               setContent('');
               setVisibility('public');
               setWriteModalVisible(true);
@@ -4304,25 +4422,48 @@ export default function App() {
               multiline
             />
 
-            {imageUri ? (
-              <View style={{ marginBottom: 12 }}>
-                <Image source={{ uri: imageUri }} style={styles.writePreviewImg} resizeMode="contain" />
-                <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setImageUri(null)}>
-                  <Ionicons name="close" size={14} color="#555555" />
-                  <Text style={{ fontSize: 12, color: '#555' }}>사진 지우기</Text>
-                </TouchableOpacity>
+            {postImages.length > 0 ? (
+              <View style={{ marginBottom: 10 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
+                  {postImages.map((u, idx) => (
+                    <View key={u + idx} style={styles.postThumbWrap}>
+                      <Image source={{ uri: u }} style={styles.postThumb} />
+                      <View style={styles.postThumbNum}>
+                        <Text style={styles.postThumbNumText}>{idx + 1}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.postThumbDel}
+                        onPress={() => setPostImages((prev) => prev.filter((_, k) => k !== idx))}
+                      >
+                        <Ionicons name="close" size={14} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
               </View>
-            ) : (
+            ) : null}
+
+            {postImages.length < MAX_POST_PHOTOS ? (
               <TouchableOpacity
                 style={styles.attachPhotoBtn}
-                onPress={async () => {
-                  const uri = await selectFromGallery();
-                  if (uri) setImageUri(uri);
-                }}
+                onPress={() => setPostGalleryOpen(true)}
+                disabled={postPhotoBusy}
               >
-                <Ionicons name="image-outline" size={18} color="#333333" />
-                <Text style={{ color: '#333', fontWeight: 'bold' }}>갤러리에서 사진 첨부</Text>
+                {postPhotoBusy ? (
+                  <ActivityIndicator color="#333333" />
+                ) : (
+                  <>
+                    <Ionicons name="image-outline" size={18} color="#333333" />
+                    <Text style={{ color: '#333', fontWeight: 'bold' }}>
+                      갤러리에서 사진 첨부 ({postImages.length}/{MAX_POST_PHOTOS})
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
+            ) : (
+              <Text style={{ textAlign: 'center', color: '#64748B', fontSize: 13 }}>
+                사진은 최대 {MAX_POST_PHOTOS}장까지 올릴 수 있어요
+              </Text>
             )}
 
             <View style={styles.modalBtnRow}>
@@ -4336,6 +4477,14 @@ export default function App() {
           </View>
         </View>
       )}
+
+      <GalleryPicker
+        visible={postGalleryOpen}
+        onClose={() => setPostGalleryOpen(false)}
+        onSend={pickPostPhoto}
+        maxSelect={Math.max(1, MAX_POST_PHOTOS - postImages.length)}
+        sendLabel="선택"
+      />
 
       <PostDetailPopup
         post={selectedPostObj}
@@ -5988,6 +6137,13 @@ const styles = StyleSheet.create({
   modalSaveBtn: { flex: 1, padding: 13, borderRadius: 8, backgroundColor: '#0288D1', alignItems: 'center' },
   modalSaveText: { color: '#FFFFFF', fontWeight: 'bold' },
 
+  postThumbWrap: { width: 78, height: 78, marginRight: 8 },
+  postThumb: { width: 78, height: 78, borderRadius: 8, backgroundColor: '#EEE' },
+  postThumbNum: { position: 'absolute', left: 4, bottom: 4, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  postThumbNumText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
+  postThumbDel: { position: 'absolute', top: 3, right: 3, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
+  feedDotsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 20 },
+  feedDot: { borderRadius: 5, marginHorizontal: 2.5 },
   writePreviewImg: { width: '100%', height: 220, borderRadius: 8, backgroundColor: '#F5F5F5' },
   removePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginTop: 6, padding: 6, backgroundColor: '#EEE', borderRadius: 4 },
   attachPhotoBtn: { flexDirection: 'row', gap: 6, padding: 14, borderRadius: 8, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#DDD' },
