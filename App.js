@@ -35,7 +35,7 @@ const SCREEN_WIDTH = getWindowWidth();
 const SCREEN_HEIGHT = getWindowHeight();
 const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
 const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
-const GRID_ITEM_SIZE = (CONTENT_WIDTH - 4) / 3;
+const GRID_ITEM_SIZE = (CONTENT_WIDTH - RIGHT_RAIL_WIDTH - 4) / 3;
 const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - RIGHT_RAIL_WIDTH);
 const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.44)
 const EXPANDED_CHAT_HEIGHT = Math.max(200, Math.round(SCREEN_HEIGHT * 0.32));
@@ -1102,6 +1102,7 @@ export default function App() {
   const [chatAttachMenuOpen, setChatAttachMenuOpen] = useState(false);
   const [chatStickerOpen, setChatStickerOpen] = useState(false);
   const [chatGalleryOpen, setChatGalleryOpen] = useState(false);
+  const [homeListWidth, setHomeListWidth] = useState(0);
   const inlineChatScrollRef = useRef(null);
 
   const lastBackPressRef = useRef(0);
@@ -3810,13 +3811,18 @@ export default function App() {
     </ImageBackground>
   );
 
+  // 격자 한 칸 크기: 실제 목록 너비를 재서 3칸으로 나눔 (기기마다 잘리지 않게)
+  const gridCell = homeListWidth > 0
+    ? Math.floor(((homeListWidth - 4) / 3) * 100) / 100
+    : (CONTENT_WIDTH - RIGHT_RAIL_WIDTH - 4) / 3;
+
   const renderGridItem = ({ item }) => {
     const hasImage = item.image_urls && item.image_urls.length > 0;
     const reactionCount = item.reactions?.length || 0;
 
     return (
       <TouchableOpacity
-        style={styles.gridItem}
+        style={[styles.gridItem, { width: gridCell, height: gridCell }]}
         activeOpacity={0.85}
         onPress={() => setSelectedPostId(item.id)}
       >
@@ -4040,9 +4046,14 @@ export default function App() {
             <FlatList
               key={homeGrid ? 'home-grid' : 'home-feed'}
               style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+              onLayout={(e) => {
+                const w = Math.floor(e.nativeEvent.layout.width);
+                if (w > 0 && w !== homeListWidth) setHomeListWidth(w);
+              }}
               contentContainerStyle={{ paddingBottom: 28 }}
               data={feedPosts}
               numColumns={homeGrid ? 3 : 1}
+              extraData={homeListWidth}
               keyExtractor={(item) => String(item.id)}
               ListHeaderComponent={renderHomeFeedHeader}
               renderItem={homeGrid ? renderGridItem : renderHomeFeedPostItem}
