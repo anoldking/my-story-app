@@ -1,10 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  StyleSheet, Text, View, TextInput, TouchableOpacity,
-  FlatList, Image, ImageBackground, Alert, SafeAreaView,
-  ActivityIndicator, ScrollView, Dimensions, KeyboardAvoidingView, Modal,
-  Platform, BackHandler, ToastAndroid, Linking, PanResponder
+  StyleSheet,
+  View,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  ImageBackground,
+  Alert,
+  SafeAreaView,
+  ActivityIndicator,
+  ScrollView,
+  Dimensions,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  BackHandler,
+  ToastAndroid,
+  Linking,
+  PanResponder,
+  Pressable,
 } from 'react-native';
+import { Text, TextInput, useAppFonts } from './fonts';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import GroupChat, { ensureGroupChannel } from './GroupChat';
@@ -663,6 +679,261 @@ const FullscreenPhotoPopup = ({
   );
 };
 
+// 글자만 있는 간단한 버튼: 누르는 동안 색이 바뀜
+const TextBtn = ({ label, onPress, color = '#374151', pressedColor = '#2563EB' }) => (
+  <Pressable onPress={onPress} hitSlop={8} style={{ paddingHorizontal: 8, paddingVertical: 6 }}>
+    {({ pressed }) => (
+      <Text style={{ fontSize: 14, fontWeight: '700', color: pressed ? pressedColor : color }}>{label}</Text>
+    )}
+  </Pressable>
+);
+
+// 게시물 사진 보기 (검은 배경): 여러 장 넘겨보기 + 반응(따봉) 선택 + 댓글 작성
+const PostPhotoViewer = ({
+  post,
+  startIndex,
+  currentUserId,
+  defaultNickname,
+  comments,
+  onClose,
+  onToggleReaction,
+  onAddComment,
+  onOpenMore,
+  onOpenAuthorChat,
+}) => {
+  const winWidth = getWindowWidth();
+  const winHeight = getWindowHeight();
+  const uris = post.image_urls || [];
+  const scrollRef = useRef(null);
+  const [idx, setIdx] = useState(Math.min(startIndex || 0, Math.max(0, uris.length - 1)));
+  const [reactOpen, setReactOpen] = useState(false);
+  const [cmtOpen, setCmtOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [singleRatio, setSingleRatio] = useState(1);
+  const [isZoomed, setIsZoomed] = useState(false);
+
+  useEffect(() => {
+    if (uris.length > 1 && idx > 0) {
+      const t = setTimeout(() => {
+        if (scrollRef.current) scrollRef.current.scrollTo({ x: idx * winWidth, y: 0, animated: false });
+      }, 30);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (uris.length === 1) {
+      Image.getSize(
+        uris[0],
+        (w, h) => { if (w && h) setSingleRatio(w / h); },
+        () => setSingleRatio(1)
+      );
+    }
+  }, [uris[0]]);
+
+  const myReaction = (post.reactions || []).find((x) => x.user_id === currentUserId);
+  const myDef = myReaction ? REACTIONS.find((r) => r.type === myReaction.type) : null;
+  const reactionCount = (post.reactions || []).length;
+  const authorName = post.profiles?.nickname || defaultNickname || '회원';
+  const avatarUrl = post.profiles?.avatar_url || null;
+  const dateText = new Date(post.created_at).toLocaleString('ko-KR');
+  const tops = (comments || []).filter((c) => !c.parent_id);
+
+  const submit = async () => {
+    const t = text.trim();
+    if (!t || sending) return;
+    setSending(true);
+    const ok = await onAddComment(post.id, t, null);
+    setSending(false);
+    if (ok !== false) setText('');
+  };
+
+  const onPageEnd = (e) => {
+    const x = e.nativeEvent.contentOffset.x;
+    setIdx(Math.max(0, Math.min(uris.length - 1, Math.round(x / winWidth))));
+  };
+
+  return (
+    <View style={styles.fullscreenViewerRoot}>
+      {uris.length > 1 ? (
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={onPageEnd}
+          style={{ width: winWidth, height: winHeight }}
+        >
+          {uris.map((u, i) => (
+            <TouchableOpacity
+              key={u + i}
+              activeOpacity={1}
+              onPress={() => { setReactOpen(false); }}
+              style={{ width: winWidth, height: winHeight }}
+            >
+              <Image source={{ uri: u }} style={{ width: winWidth, height: winHeight }} resizeMode="contain" />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      ) : uris[0] ? (
+        <ZoomableImage
+          uri={uris[0]}
+          aspectRatio={singleRatio}
+          containerWidth={winWidth}
+          maxHeight={winHeight}
+          fillHeight
+          onZoomStateChange={setIsZoomed}
+        />
+      ) : null}
+
+      <TouchableOpacity style={styles.fullscreenBackBtn} onPress={onClose} activeOpacity={0.8}>
+        <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {uris.length > 1 ? (
+        <View style={styles.viewerCounter}>
+          <Text style={styles.viewerCounterText}>{idx + 1} / {uris.length}</Text>
+        </View>
+      ) : null}
+
+      {!cmtOpen && (
+        <View style={styles.fullscreenBottomOverlay} pointerEvents="box-none">
+          <View style={styles.fullscreenAuthorMeta}>
+            {uris.length > 1 ? (
+              <View style={styles.viewerDotsRow}>
+                {uris.map((u, i) => (
+                  <View
+                    key={'vd' + i}
+                    style={[styles.viewerDot, i === idx && styles.viewerDotOn]}
+                  />
+                ))}
+              </View>
+            ) : null}
+            <TouchableOpacity
+              style={styles.fullscreenAuthorHeader}
+              activeOpacity={0.8}
+              disabled={!onOpenAuthorChat || post.author_id === currentUserId}
+              onPress={() =>
+                onOpenAuthorChat({ id: post.author_id, nickname: authorName, avatar_url: avatarUrl })
+              }
+            >
+              {avatarUrl ? (
+                <Image source={{ uri: avatarUrl }} style={styles.fullscreenAuthorAvatar} />
+              ) : (
+                <View style={[styles.fullscreenAuthorAvatar, styles.fullscreenDefaultAvatar]}>
+                  <Ionicons name="person" size={16} color="#FFFFFF" />
+                </View>
+              )}
+              <Text style={styles.fullscreenAuthorName} numberOfLines={1}>{authorName}</Text>
+            </TouchableOpacity>
+            <Text style={styles.fullscreenSubMeta} numberOfLines={1}>{dateText}</Text>
+            {post.content ? (
+              <Text style={styles.fullscreenCaptionText} numberOfLines={2}>{post.content}</Text>
+            ) : null}
+          </View>
+
+          <View style={styles.fullscreenRightActions}>
+            {/* 따봉 버튼: 누르면 반응이 옆으로 펼쳐짐 */}
+            <View style={{ alignItems: 'center' }}>
+              {reactOpen && (
+                <View style={styles.reactPickRow}>
+                  {REACTIONS.map((r) => {
+                    const on = myReaction && myReaction.type === r.type;
+                    return (
+                      <TouchableOpacity
+                        key={r.type}
+                        style={[styles.reactPickItem, on && styles.reactPickItemOn]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          onToggleReaction(post.id, r.type);
+                          setReactOpen(false);
+                        }}
+                      >
+                        <Ionicons name={r.icon.replace('-outline', '')} size={24} color={r.color} />
+                        <Text style={styles.reactPickLabel}>{r.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+              <TouchableOpacity
+                style={styles.fullscreenActionBtn}
+                activeOpacity={0.8}
+                onPress={() => setReactOpen((v) => !v)}
+              >
+                <Ionicons
+                  name={myDef ? myDef.icon.replace('-outline', '') : 'thumbs-up-outline'}
+                  size={27}
+                  color={myDef ? myDef.color : '#FFFFFF'}
+                />
+                <Text style={styles.fullscreenActionCount}>{reactionCount}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.fullscreenActionBtn}
+              activeOpacity={0.8}
+              onPress={() => { setReactOpen(false); setCmtOpen(true); }}
+            >
+              <Ionicons name="chatbubble-outline" size={25} color="#FFFFFF" />
+              <Text style={styles.fullscreenActionCount}>{tops.length}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.fullscreenActionBtn}
+              activeOpacity={0.8}
+              onPress={() => onOpenMore(post.id)}
+            >
+              <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {cmtOpen && (
+        <KeyboardAvoidingView
+          style={styles.viewerCmtWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.viewerCmtSheet}>
+            <View style={styles.viewerCmtHeader}>
+              <Text style={styles.viewerCmtTitle}>댓글 {tops.length}</Text>
+              <TouchableOpacity onPress={() => setCmtOpen(false)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: Math.round(winHeight * 0.34) }} keyboardShouldPersistTaps="handled">
+              {tops.length === 0 ? (
+                <Text style={styles.viewerCmtEmpty}>첫 댓글을 남겨 보세요.</Text>
+              ) : (
+                tops.map((c) => (
+                  <Text key={String(c.id)} style={styles.viewerCmtItem}>
+                    <Text style={{ fontWeight: '700' }}>{c.authorName || '회원'} </Text>
+                    {c.content}
+                  </Text>
+                ))
+              )}
+            </ScrollView>
+            <View style={styles.viewerCmtInputRow}>
+              <TextInput
+                style={styles.viewerCmtInput}
+                value={text}
+                onChangeText={setText}
+                placeholder="댓글 달기..."
+                placeholderTextColor="#9CA3AF"
+              />
+              <TouchableOpacity onPress={submit} disabled={!text.trim() || sending} style={styles.viewerCmtSend}>
+                <Text style={[styles.viewerCmtSendText, (!text.trim() || sending) && { opacity: 0.4 }]}>등록</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      )}
+    </View>
+  );
+};
+
 // 게시물 상세 팝업 (댓글/대댓글 작성·수정·삭제, 등록 후 입력창만 닫힘)
 const PostDetailPopup = ({
   post,
@@ -692,10 +963,12 @@ const PostDetailPopup = ({
   const [editingCommentText, setEditingCommentText] = useState('');
 
   const [isZoomed, setIsZoomed] = useState(false);
+  const [popIdx, setPopIdx] = useState(0);
   const winWidth = getWindowWidth();
   const winHeight = getWindowHeight();
 
   useEffect(() => {
+    setPopIdx(0);
     setIsEditing(false);
     setEditValue(post?.content || '');
     setEditVisibility(post?.visibility || 'public');
@@ -720,6 +993,8 @@ const PostDetailPopup = ({
 
   const isMyPost = post.author_id === currentUserId;
   const imgUri = post.image_urls?.[0];
+  const popUris = post.image_urls || [];
+  const popH = Math.min(Math.round(winHeight * 0.56), Math.max(120, Math.round(winWidth / (aspectRatio || 1))));
 
   const openNewCommentComposer = () => {
     setReplyTargetComment(null);
@@ -871,30 +1146,20 @@ const PostDetailPopup = ({
         </View>
 
         {isMyPost && !isEditing && (
-          <View style={{ flexDirection: 'row', gap: 6, marginRight: 8 }}>
-            <TouchableOpacity
-              style={styles.whitePopupMiniBtn}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TextBtn
+              label="수정"
               onPress={() => {
                 setEditValue(post.content || '');
                 setEditVisibility(post.visibility || 'public');
                 setIsEditing(true);
               }}
-            >
-              <Text style={styles.whitePopupMiniBtnText}>수정</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.whitePopupMiniBtn, { backgroundColor: '#FFE5E5' }]}
-              onPress={() => onDeletePost(post.id)}
-            >
-              <Text style={[styles.whitePopupMiniBtnText, { color: '#C53030' }]}>삭제</Text>
-            </TouchableOpacity>
+            />
+            <TextBtn label="삭제" pressedColor="#DC2626" onPress={() => onDeletePost(post.id)} />
           </View>
         )}
 
-        <TouchableOpacity style={styles.popupCloseIconBtn} onPress={onClose}>
-          <Ionicons name="close" size={15} color="#3C1E1E" />
-          <Text style={styles.popupCloseIconText}>닫기</Text>
-        </TouchableOpacity>
+        <TextBtn label="닫기" onPress={onClose} />
       </View>
 
       <ScrollView
@@ -905,20 +1170,61 @@ const PostDetailPopup = ({
       >
         {imgUri && (
           <View style={{ width: '100%', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
-            <ZoomableImage
-              uri={imgUri}
-              aspectRatio={aspectRatio}
-              containerWidth={winWidth}
-              maxHeight={Math.round(winHeight * 0.56)}
-              onZoomStateChange={setIsZoomed}
-            />
+            {popUris.length > 1 ? (
+              <>
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  nestedScrollEnabled
+                  showsHorizontalScrollIndicator={false}
+                  onMomentumScrollEnd={(e) =>
+                    setPopIdx(Math.max(0, Math.min(popUris.length - 1, Math.round(e.nativeEvent.contentOffset.x / winWidth))))
+                  }
+                  style={{ width: winWidth, height: popH }}
+                >
+                  {popUris.map((u, i) => (
+                    <Image
+                      key={u + i}
+                      source={{ uri: u }}
+                      style={{ width: winWidth, height: popH, backgroundColor: '#FAFAFA' }}
+                      resizeMode="contain"
+                    />
+                  ))}
+                </ScrollView>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 20 }}>
+                  {popUris.map((u, i) => (
+                    <View
+                      key={'pd' + i}
+                      style={{
+                        width: i === popIdx ? 7 : 5,
+                        height: i === popIdx ? 7 : 5,
+                        borderRadius: 4,
+                        marginHorizontal: 2.5,
+                        backgroundColor: i === popIdx ? '#18181B' : '#CBD5E1',
+                      }}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : (
+              <ZoomableImage
+                uri={imgUri}
+                aspectRatio={aspectRatio}
+                containerWidth={winWidth}
+                maxHeight={Math.round(winHeight * 0.56)}
+                onZoomStateChange={setIsZoomed}
+              />
+            )}
             <View style={styles.imageToolbarRow}>
-              <Text style={styles.zoomHintText}>핀치 줌 / 드래그 / 더블 탭 확대</Text>
+              <Text style={styles.zoomHintText}>
+                {popUris.length > 1 ? `옆으로 넘기기 · ${popIdx + 1}/${popUris.length}` : '핀치 줌 / 드래그 / 더블 탭 확대'}
+              </Text>
               <TouchableOpacity
                 style={styles.fullViewChipBtn}
                 onPress={() =>
                   onOpenFullImage({
-                    uri: imgUri,
+                    uri: popUris[popIdx] || imgUri,
+                    index: popIdx,
                     postId: post.id,
                     authorId: post.author_id,
                     authorName: post.profiles?.nickname || defaultNickname || '내 스토리',
@@ -1117,6 +1423,7 @@ const showAlert = (title, message, onConfirm) => {
 
 
 export default function App() {
+  const fontsReady = useAppFonts();
   const [showGroupChat, setShowGroupChat] = useState(false);
   const [session, setSession] = useState(null);
   const [isSignUpScreen, setIsSignUpScreen] = useState(false);
@@ -2700,12 +3007,21 @@ export default function App() {
   };
 
   const toggleReaction = async (postId, type) => {
+    const target = posts.find((p) => String(p.id) === String(postId));
+    const mine = target && (target.reactions || []).find((x) => x.user_id === session.user.id);
+    if (mine && mine.type === type) {
+      await supabase.from('reactions').delete().eq('post_id', postId).eq('user_id', session.user.id);
+      fetchPosts();
+      return;
+    }
     await supabase.from('reactions').upsert(
       { post_id: postId, user_id: session.user.id, type },
       { onConflict: 'post_id,user_id' }
     );
     fetchPosts();
   };
+
+  if (!fontsReady) return null;
 
   if (!session) {
     if (isSignUpScreen) {
@@ -3129,7 +3445,7 @@ export default function App() {
         <View style={styles.feedCommentHeader}>
           <Text style={[styles.feedCommentTitle, { color: mainColor }]}>댓글 {tops.length}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ paddingHorizontal: 6 }}>
+            <TouchableOpacity onPress={() => openPostView(item, 0)} style={{ paddingHorizontal: 6 }}>
               <Text style={{ color: subColor, fontSize: 12 }}>댓글상세</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => { setPanelReplyTarget(null); setCommentPanelPostId(null); }} style={{ paddingHorizontal: 4 }}>
@@ -3227,18 +3543,7 @@ export default function App() {
         {hasImage && (
           <View style={{ position: 'relative', minHeight: isPanelOpen ? 300 : undefined }}>
             {(() => {
-              const openViewer = (i) =>
-                setViewingImage({
-                  uri: item.image_urls[i] || item.image_urls[0],
-                  postId: item.id,
-                  authorId: item.author_id,
-                  authorName,
-                  avatarUrl: authorAvatar,
-                  dateText,
-                  caption: item.content || '',
-                  likeCount: totalReactions,
-                  isLikedByMe,
-                });
+              const openViewer = (i) => openPostView(item, i);
               return item.image_urls.length > 1 ? (
                 <FeedImageCarousel
                   width={homeListWidth > 0 ? homeListWidth : undefined}
@@ -3928,7 +4233,7 @@ export default function App() {
       <TouchableOpacity
         style={[styles.gridItem, { width: gridCell, height: gridCell }]}
         activeOpacity={0.85}
-        onPress={() => setSelectedPostId(item.id)}
+        onPress={() => openPostView(item, 0)}
       >
         {hasImage ? (
           <>
@@ -3972,6 +4277,18 @@ export default function App() {
   };
 
   const selectedPostObj = visiblePosts.find((p) => p.id === selectedPostId) || null;
+  const viewingPost = viewingImage && viewingImage.postId
+    ? (posts.find((p) => String(p.id) === String(viewingImage.postId)) || null)
+    : null;
+
+  // 게시물 열기: 사진이 있으면 검은 화면 사진보기, 글만 있으면 상세 팝업
+  const openPostView = (post, index = 0) => {
+    if (post && post.image_urls && post.image_urls.length > 0) {
+      setViewingImage({ postId: post.id, index });
+    } else if (post) {
+      setSelectedPostId(post.id);
+    }
+  };
   const selectedPostComments = selectedPostId ? (commentsByPost[String(selectedPostId)] || []) : [];
 
   const isHomeActive = mainTab === 'home' && !onlyFavoritesFeed;
@@ -4478,8 +4795,30 @@ export default function App() {
         }}
       />
 
+      {viewingPost ? (
+        <PostPhotoViewer
+          key={String(viewingPost.id)}
+          post={viewingPost}
+          startIndex={viewingImage?.index || 0}
+          currentUserId={session.user.id}
+          defaultNickname={profile.nickname}
+          comments={commentsByPost[String(viewingPost.id)] || []}
+          onClose={() => setViewingImage(null)}
+          onToggleReaction={toggleReaction}
+          onAddComment={handleAddComment}
+          onOpenMore={(postId) => {
+            setViewingImage(null);
+            setSelectedPostId(postId);
+          }}
+          onOpenAuthorChat={(partner) => {
+            setViewingImage(null);
+            openInlineChatInMessagesTab(partner);
+          }}
+        />
+      ) : null}
+
       <FullscreenPhotoPopup
-        photoInfo={viewingImage}
+        photoInfo={viewingPost ? null : viewingImage}
         currentUserId={session.user.id}
         onClose={() => setViewingImage(null)}
         onToggleReaction={toggleReaction}
@@ -5149,6 +5488,25 @@ const styles = StyleSheet.create({
     color: '#18181B',
   },
 
+  viewerCounter: { position: 'absolute', top: 24, right: 16, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1220 },
+  viewerCounterText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  viewerDotsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  viewerDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.4)', marginRight: 5 },
+  viewerDotOn: { backgroundColor: '#FFFFFF' },
+  reactPickRow: { position: 'absolute', right: 52, bottom: 0, flexDirection: 'row', backgroundColor: 'rgba(30,30,34,0.96)', borderRadius: 30, paddingHorizontal: 6, paddingVertical: 6, width: 296 },
+  reactPickItem: { width: 56, alignItems: 'center', paddingVertical: 4, borderRadius: 24 },
+  reactPickItemOn: { backgroundColor: 'rgba(255,255,255,0.18)' },
+  reactPickLabel: { color: '#FFFFFF', fontSize: 10, marginTop: 2 },
+  viewerCmtWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 1230 },
+  viewerCmtSheet: { backgroundColor: 'rgba(20,20,24,0.97)', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20 },
+  viewerCmtHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  viewerCmtTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  viewerCmtEmpty: { color: '#A1A1AA', fontSize: 13, paddingVertical: 8 },
+  viewerCmtItem: { color: '#FFFFFF', fontSize: 13.5, lineHeight: 19, marginBottom: 8 },
+  viewerCmtInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  viewerCmtInput: { flex: 1, height: 42, borderRadius: 21, backgroundColor: '#FFFFFF', paddingHorizontal: 16, fontSize: 14, color: '#111827' },
+  viewerCmtSend: { paddingHorizontal: 14, paddingVertical: 10 },
+  viewerCmtSendText: { color: '#60A5FA', fontSize: 15, fontWeight: '800' },
   fullscreenViewerRoot: {
     position: 'absolute',
     top: 0,

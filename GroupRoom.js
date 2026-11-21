@@ -1,8 +1,18 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, FlatList, TextInput, SafeAreaView,
-  KeyboardAvoidingView, Alert, StyleSheet, Image, Modal, Linking, ActivityIndicator,
+  View,
+  TouchableOpacity,
+  FlatList,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Alert,
+  StyleSheet,
+  Image,
+  Modal,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
+import { Text, TextInput } from './fonts';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';

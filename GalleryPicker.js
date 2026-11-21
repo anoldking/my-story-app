@@ -1,8 +1,17 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  Modal, View, Text, TouchableOpacity, FlatList, Image, Dimensions,
-  StyleSheet, ActivityIndicator, Alert, Linking,
+  Modal,
+  View,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  Dimensions,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  Linking,
 } from 'react-native';
+import { Text } from './fonts';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -10,7 +19,9 @@ const COLS = 3;
 const GAP = 2;
 const MAX_SELECT = 10;
 
-export default function GalleryPicker({ visible, onClose, onSend }) {
+export default function GalleryPicker({ visible, onClose, onSend, maxSelect, sendLabel }) {
+  const LIMIT = maxSelect || MAX_SELECT;
+  const SEND_LABEL = sendLabel || '전송';
   const [perm, setPerm] = useState('loading'); // loading | ok | denied
   const [albums, setAlbums] = useState([]);
   const [album, setAlbum] = useState(null); // null = 전체보기
@@ -90,8 +101,9 @@ export default function GalleryPicker({ visible, onClose, onSend }) {
     setSelected((prev) => {
       const idx = prev.findIndex((x) => x.id === asset.id);
       if (idx >= 0) return prev.filter((x) => x.id !== asset.id);
-      if (prev.length >= MAX_SELECT) {
-        Alert.alert('선택 제한', `사진은 한 번에 ${MAX_SELECT}장까지 보낼 수 있어요.`);
+      if (LIMIT === 1) return [asset];
+      if (prev.length >= LIMIT) {
+        Alert.alert('선택 제한', `사진은 한 번에 ${LIMIT}장까지 선택할 수 있어요.`);
         return prev;
       }
       return [...prev, asset];
@@ -136,7 +148,7 @@ export default function GalleryPicker({ visible, onClose, onSend }) {
             onPress={() => onSend(selected)}
           >
             <Text style={[s.sendText, selected.length > 0 && { color: '#fff' }]}>
-              전송{selected.length > 0 ? ` ${selected.length}` : ''}
+              {SEND_LABEL}{selected.length > 0 && LIMIT > 1 ? ` ${selected.length}` : ''}
             </Text>
           </TouchableOpacity>
         </View>

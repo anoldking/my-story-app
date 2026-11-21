@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Image, ActivityIndicator, StyleSheet, Dimensions } from 'react-native';
+import {
+  View,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  ActivityIndicator,
+  StyleSheet,
+  Dimensions,
+} from 'react-native';
+import { Text } from './fonts';
 
 export const STICKER_PREFIX = '[sticker]';
 export const isSticker = (content) => typeof content === 'string' && content.startsWith(STICKER_PREFIX);

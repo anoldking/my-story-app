@@ -1,8 +1,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, FlatList, TextInput, Image,
-  Linking, Platform,Modal,ActivityIndicator, Alert, SafeAreaView, StyleSheet,
+  View,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  Linking,
+  Platform,
+  Modal,
+  ActivityIndicator,
+  Alert,
+  SafeAreaView,
+  StyleSheet,
 } from 'react-native';
+import { Text, TextInput } from './fonts';
 import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 import GroupRoom from './GroupRoomPlus';
