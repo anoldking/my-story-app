@@ -25,6 +25,7 @@ Notifications.setNotificationHandler({
 const LEFT_RAIL_WIDTH = 52;
 const RIGHT_RAIL_WIDTH = 52;
 const LAST_EMAIL_STORAGE_KEY = '@me_last_login_email';
+const HOME_VIEW_STORAGE_KEY = '@me_home_view_mode';
 const getWindowWidth = () => Dimensions.get('window').width;
 const getWindowHeight = () => Dimensions.get('window').height;
 const SCREEN_WIDTH = getWindowWidth();
@@ -1106,6 +1107,17 @@ export default function App() {
   const inlineChatScrollRef = useRef(null);
 
   const lastBackPressRef = useRef(0);
+
+  const [homeGrid, setHomeGrid] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(HOME_VIEW_STORAGE_KEY)
+      .then((v) => { if (v === 'grid') setHomeGrid(true); })
+      .catch(() => {});
+  }, []);
+  const changeHomeView = (grid) => {
+    setHomeGrid(grid);
+    AsyncStorage.setItem(HOME_VIEW_STORAGE_KEY, grid ? 'grid' : 'feed').catch(() => {});
+  };
 
   useEffect(() => {
     AsyncStorage.getItem(LAST_EMAIL_STORAGE_KEY).then((savedEmail) => {
@@ -2909,6 +2921,21 @@ export default function App() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      <View style={{ flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#EEEEEE', marginTop: 8 }}>
+        <TouchableOpacity
+          style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: homeGrid ? 2 : 0, borderBottomColor: '#111111' }}
+          onPress={() => changeHomeView(true)}
+        >
+          <Ionicons name="grid" size={22} color={homeGrid ? '#111111' : '#B0B3B8'} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: homeGrid ? 0 : 2, borderBottomColor: '#111111' }}
+          onPress={() => changeHomeView(false)}
+        >
+          <Ionicons name="albums" size={22} color={homeGrid ? '#B0B3B8' : '#111111'} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -3822,12 +3849,14 @@ export default function App() {
         <View style={styles.centerContentArea}>
           {mainTab === 'home' && (
             <FlatList
+              key={homeGrid ? 'home-grid' : 'home-feed'}
               style={{ flex: 1, backgroundColor: '#FFFFFF' }}
               contentContainerStyle={{ paddingBottom: 28 }}
               data={feedPosts}
+              numColumns={homeGrid ? 3 : 1}
               keyExtractor={(item) => String(item.id)}
               ListHeaderComponent={renderHomeFeedHeader}
-              renderItem={renderHomeFeedPostItem}
+              renderItem={homeGrid ? renderGridItem : renderHomeFeedPostItem}
               ListEmptyComponent={
                 <View style={styles.emptyBox}>
                   <Text style={[styles.emptyText, { color: '#777' }]}>
