@@ -25,8 +25,9 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const LEFT_RAIL_WIDTH = 52;
-const RIGHT_RAIL_WIDTH = 52;
+const LEFT_RAIL_WIDTH = 36;
+const RIGHT_RAIL_WIDTH = 44;
+const RIGHT_MARGIN = 30; // 화면 오른쪽 여백 (사진·글자 모두 이 안쪽에 배치)
 const LAST_EMAIL_STORAGE_KEY = '@me_last_login_email';
 const HOME_VIEW_STORAGE_KEY = '@me_home_view_mode';
 const getWindowWidth = () => Dimensions.get('window').width;
@@ -35,8 +36,8 @@ const SCREEN_WIDTH = getWindowWidth();
 const SCREEN_HEIGHT = getWindowHeight();
 const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
 const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
-const GRID_ITEM_SIZE = (CONTENT_WIDTH - RIGHT_RAIL_WIDTH - 4) / 3;
-const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - RIGHT_RAIL_WIDTH);
+const GRID_ITEM_SIZE = (CONTENT_WIDTH - RIGHT_MARGIN - 4) / 3;
+const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - RIGHT_MARGIN);
 const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.44)
 const EXPANDED_CHAT_HEIGHT = Math.max(200, Math.round(SCREEN_HEIGHT * 0.32));
 
@@ -436,7 +437,7 @@ const ZoomableImage = ({ uri, aspectRatio, containerWidth, maxHeight, fillHeight
 
 // 피드 화면용: 한 화면 안에 깔끔하게 들어오는 사이즈로 표시
 const CompactFeedImage = ({ uri, onPress, width: widthProp }) => {
-  const FEED_W = widthProp || FEED_MEDIA_WIDTH;
+  const FEED_W = (widthProp || FEED_MEDIA_WIDTH);
   const [aspectRatio, setAspectRatio] = useState(1);
 
   useEffect(() => {
@@ -2696,6 +2697,9 @@ export default function App() {
   const otherMembers = members
     .filter((m) => m.id !== session.user.id)
     .sort((x, y) => {
+      const ux = (unreadCountBySender[x.id] || 0) > 0 ? 0 : 1;
+      const uy = (unreadCountBySender[y.id] || 0) > 0 ? 0 : 1;
+      if (ux !== uy) return ux - uy;
       const fx = acceptedFriendIds.includes(x.id) ? 0 : 1;
       const fy = acceptedFriendIds.includes(y.id) ? 0 : 1;
       return fx - fy;
@@ -2940,6 +2944,7 @@ export default function App() {
 
         {otherMembers.map((member) => {
           const isFriendMember = acceptedFriendIds.includes(member.id);
+          const unreadN = unreadCountBySender[member.id] || 0;
           return (
           <TouchableOpacity
             key={member.id}
@@ -2947,7 +2952,11 @@ export default function App() {
             onPress={() => {
               setBrandMenuOpen(false);
               setAccountMenuOpen(false);
-              setSelectedFriend(member);
+              if (unreadN > 0) {
+                openInlineChatInMessagesTab(member);
+              } else {
+                setSelectedFriend(member);
+              }
             }}
           >
             <View style={styles.igStoryAvatarWrap}>
@@ -2963,6 +2972,11 @@ export default function App() {
               {isFriendMember && (
                 <View style={styles.igStoryFriendBadge}>
                   <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                </View>
+              )}
+              {unreadN > 0 && (
+                <View style={styles.igStoryUnreadBadge}>
+                  <Text style={styles.igStoryUnreadText}>{unreadN > 99 ? '…' : unreadN}</Text>
                 </View>
               )}
             </View>
@@ -3816,7 +3830,7 @@ export default function App() {
   // 격자 한 칸 크기: 실제 목록 너비를 재서 3칸으로 나눔 (기기마다 잘리지 않게)
   const gridCell = homeListWidth > 0
     ? Math.floor(((homeListWidth - 4) / 3) * 100) / 100
-    : (CONTENT_WIDTH - 4) / 3;
+    : (CONTENT_WIDTH - RIGHT_MARGIN - 4) / 3;
 
   const renderGridItem = ({ item }) => {
     const hasImage = item.image_urls && item.image_urls.length > 0;
@@ -3967,7 +3981,7 @@ export default function App() {
               {totalUnreadMessages > 0 && (
                 <View style={styles.leftRailUnreadBadge}>
                   <Text style={styles.leftRailUnreadText}>
-                    {totalUnreadMessages > 99 ? '99+' : totalUnreadMessages}
+                    {totalUnreadMessages > 99 ? '…' : totalUnreadMessages}
                   </Text>
                 </View>
               )}
@@ -4091,51 +4105,6 @@ export default function App() {
           )}
         </View>
 
-        {/* 오른쪽 세로 레일: 안 읽은 메시지가 있을 때만 표시 (없으면 화면을 넓게 사용) */}
-        {unreadSendersSorted.length > 0 && (
-        <View style={styles.rightUnreadRailBar}>
-          <ScrollView
-            style={{ width: '100%' }}
-            contentContainerStyle={styles.rightUnreadRailScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {unreadSendersSorted.map((sender) => {
-              const isSelectedPartner = chatPartner?.id === sender.id && mainTab === 'chats';
-              return (
-                <TouchableOpacity
-                  key={sender.id}
-                  style={styles.rightUnreadItem}
-                  activeOpacity={0.8}
-                  onPress={() => openInlineChatInMessagesTab(sender)}
-                >
-                  <View
-                    style={[
-                      styles.rightUnreadAvatarWrap,
-                      isSelectedPartner && styles.rightUnreadAvatarWrapActive,
-                    ]}
-                  >
-                    {sender.avatar_url ? (
-                      <Image source={{ uri: sender.avatar_url }} style={styles.rightUnreadAvatar} />
-                    ) : (
-                      <View style={[styles.rightUnreadAvatar, styles.ktDefaultAvatar]}>
-                        <Ionicons name="person" size={16} color="#64748B" />
-                      </View>
-                    )}
-                    <View style={styles.rightUnreadCountPill}>
-                      <Text style={styles.rightUnreadCountText}>
-                        {sender.unreadCount > 99 ? '99+' : sender.unreadCount}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.rightUnreadName} numberOfLines={1}>
-                    {sender.nickname}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-        )}
       </View>
 
       {selectedFriend && (
@@ -4527,15 +4496,15 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   leftMenuBtn: {
-    width: 44,
+    width: 34,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   leftRailUnreadBadge: {
     position: 'absolute',
-    top: -6,
-    right: -9,
+    top: -7,
+    right: -4,
     minWidth: 16,
     height: 16,
     paddingHorizontal: 3.5,
@@ -4567,6 +4536,7 @@ const styles = StyleSheet.create({
   centerContentArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingRight: RIGHT_MARGIN,
   },
 
   rightUnreadRailBar: {
@@ -4816,7 +4786,7 @@ const styles = StyleSheet.create({
   igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 10 },
 
   igStoryBarContent: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 8,
     paddingTop: 4,
     paddingBottom: 12,
     gap: 12,
@@ -4836,6 +4806,21 @@ const styles = StyleSheet.create({
     borderColor: '#18181B',
     marginBottom: 5,
   },
+  igStoryUnreadBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    backgroundColor: '#EF4444',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  igStoryUnreadText: { color: '#FFFFFF', fontSize: 10.5, fontWeight: '800' },
   igStoryRingOff: {
     borderColor: '#D4D4D8',
   },
@@ -4887,7 +4872,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
+    paddingHorizontal: 8,
     paddingBottom: 10,
   },
   igPostAuthorRow: {
@@ -5006,11 +4991,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   compactFeedImage: {
-    borderRadius: 12,
+    borderRadius: 0,
     backgroundColor: '#FAFAFA',
   },
   minimalPostFooter: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 8,
     paddingTop: 10,
   },
   minimalStatsRow: {
