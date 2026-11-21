@@ -20,6 +20,7 @@ function hhmm(iso) {
 export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite }) {
   const [messages, setMessages] = useState([]);
   const [names, setNames] = useState({});
+  const [avatars, setAvatars] = useState({});
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -48,11 +49,13 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         .from('chat_room_members').select('user_id').eq('room_id', room.id);
       const ids = (mem.data || []).map((r) => r.user_id);
       if (ids.length) {
-        const pr = await supabase.from('profiles').select('id, nickname').in('id', ids);
+        const pr = await supabase.from('profiles').select('id, nickname, avatar_url').in('id', ids);
         if (alive && pr.data) {
           const map = {};
-          pr.data.forEach((p) => { map[p.id] = p.nickname; });
+          const amap = {};
+          pr.data.forEach((p) => { map[p.id] = p.nickname; amap[p.id] = p.avatar_url; });
           setNames(map);
+          setAvatars(amap);
         }
       }
       const res = await supabase
@@ -244,12 +247,32 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
 
   const renderItem = ({ item }) => {
     const mine = item.sender_id === me;
+    if (mine) {
+      return (
+        <View style={[s.msgRow, s.rowMine]}>
+          <View style={[s.bubbleLine, { flexDirection: 'row-reverse' }]}>
+            {renderBody(item, true)}
+            <Text style={s.time}>{hhmm(item.created_at)}</Text>
+          </View>
+        </View>
+      );
+    }
+    const av = avatars[item.sender_id];
     return (
-      <View style={[s.msgRow, mine ? s.rowMine : s.rowOther]}>
-        {!mine && <Text style={s.name}>{names[item.sender_id] || '알 수 없음'}</Text>}
-        <View style={[s.bubbleLine, mine && { flexDirection: 'row-reverse' }]}>
-          {renderBody(item, mine)}
-          <Text style={s.time}>{hhmm(item.created_at)}</Text>
+      <View style={s.otherRow}>
+        {av ? (
+          <Image source={{ uri: av }} style={s.avatar} />
+        ) : (
+          <View style={[s.avatar, s.avatarDefault]}>
+            <Ionicons name="person" size={16} color="#94A3B8" />
+          </View>
+        )}
+        <View style={[s.msgRow, s.rowOther, { marginBottom: 0, marginLeft: 8, flexShrink: 1 }]}>
+          <Text style={s.name}>{names[item.sender_id] || '알 수 없음'}</Text>
+          <View style={s.bubbleLine}>
+            {renderBody(item, false)}
+            <Text style={s.time}>{hhmm(item.created_at)}</Text>
+          </View>
         </View>
       </View>
     );
@@ -359,7 +382,10 @@ const s = StyleSheet.create({
   msgRow: { marginBottom: 10, maxWidth: '85%' },
   rowMine: { alignSelf: 'flex-end', alignItems: 'flex-end' },
   rowOther: { alignSelf: 'flex-start', alignItems: 'flex-start' },
-  name: { fontSize: 12, color: '#666', marginBottom: 2, marginLeft: 4 },
+  name: { fontSize: 12, color: '#666', marginBottom: 2, marginLeft: 2 },
+  otherRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, maxWidth: '92%', alignSelf: 'flex-start' },
+  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E5E7EB' },
+  avatarDefault: { alignItems: 'center', justifyContent: 'center' },
   bubbleLine: { flexDirection: 'row', alignItems: 'flex-end' },
   bubble: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 14, maxWidth: '100%', flexShrink: 1 },
   bubbleMine: { backgroundColor: '#2563eb' },
