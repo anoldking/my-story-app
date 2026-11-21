@@ -93,8 +93,8 @@ export default function GroupInvite({ supabase, me, roomId, visible, onClose, on
         {already ? (
           <Text style={styles.joined}>참여 중</Text>
         ) : (
-          <View style={[styles.check, on && styles.checkOn]}>
-            {on ? <Text style={styles.checkMark}>✓</Text> : null}
+          <View style={styles.check}>
+            {on ? <View style={styles.checkDot} /> : null}
           </View>
         )}
       </TouchableOpacity>
@@ -170,11 +170,10 @@ const styles = StyleSheet.create({
   name: { flex: 1, fontSize: 16, color: '#111111' },
   joined: { fontSize: 13, color: '#9CA3AF' },
   check: {
-    width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#D1D5DB',
-    alignItems: 'center', justifyContent: 'center',
+    width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#C4C8CF',
+    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
   },
-  checkOn: { backgroundColor: '#2B6CB0', borderColor: '#2B6CB0' },
-  checkMark: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  checkDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#8A8F98' },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 40 },
   footer: { padding: 12, paddingBottom: 28, borderTopWidth: 1, borderTopColor: '#EEEEEE' },
   inviteBtn: { backgroundColor: '#2B6CB0', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
