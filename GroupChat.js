@@ -4,7 +4,7 @@ import {
     Linking, Platform,Modal,ActivityIndicator, Alert, SafeAreaView, StyleSheet,
     } from 'react-native';
     import * as Notifications from 'expo-notifications';
-    import GroupRoom from './GroupRoom';
+    import GroupRoom from './GroupRoomPlus';
 
     export async function ensureGroupChannel() {
       if (Platform.OS !== 'android') return;
