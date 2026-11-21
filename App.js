@@ -743,11 +743,6 @@ const PostDetailPopup = ({
           <>
             <Text style={styles.commentContentText}>{c.content}</Text>
             <View style={styles.commentActionLinksRow}>
-              {!isReply && (
-                <TouchableOpacity onPress={() => openReplyComposer(c)}>
-                  <Text style={styles.commentActionLink}>답글</Text>
-                </TouchableOpacity>
-              )}
               {isMine && (
                 <>
                   <TouchableOpacity
@@ -952,11 +947,9 @@ const PostDetailPopup = ({
               <Text style={styles.commentEmptyText}>아직 댓글이 없습니다. 첫 댓글을 남겨 보세요!</Text>
             ) : (
               topLevelComments.map((c) => {
-                const children = repliesByParent[String(c.id)] || [];
                 return (
                   <View key={String(c.id)} style={{ marginBottom: 4 }}>
                     {renderCommentRow(c, false)}
-                    {children.map((reply) => renderCommentRow(reply, true))}
                   </View>
                 );
               })
@@ -1111,6 +1104,7 @@ export default function App() {
   const [homeGrid, setHomeGrid] = useState(false);
   const [commentPanelPostId, setCommentPanelPostId] = useState(null);
   const [panelCommentText, setPanelCommentText] = useState('');
+  const [panelReplyTarget, setPanelReplyTarget] = useState(null);
   useEffect(() => {
     AsyncStorage.getItem(HOME_VIEW_STORAGE_KEY)
       .then((v) => { if (v === 'grid') setHomeGrid(true); })
@@ -2960,7 +2954,8 @@ export default function App() {
   const renderFeedCommentPanel = (item, overlay) => {
     const list = commentsByPost[String(item.id)] || [];
     const tops = list.filter((c) => !c.parent_id);
-    const replies = list.filter((c) => c.parent_id);
+    const repliesOf = (pid) => list.filter((c) => String(c.parent_id) === String(pid));
+    const target = panelReplyTarget && panelReplyTarget.postId === item.id ? panelReplyTarget : null;
     const mainColor = overlay ? '#FFFFFF' : '#18181B';
     const subColor = overlay ? '#D4D4D8' : '#52525B';
 
@@ -2968,18 +2963,19 @@ export default function App() {
       const txt = panelCommentText.trim();
       if (!txt) return;
       setPanelCommentText('');
-      await handleAddComment(item.id, txt, null);
+      setPanelReplyTarget(null);
+      await handleAddComment(item.id, txt, target ? target.id : null);
     };
 
     return (
       <View style={overlay ? styles.feedCommentOverlay : styles.feedCommentInline}>
         <View style={styles.feedCommentHeader}>
-          <Text style={[styles.feedCommentTitle, { color: mainColor }]}>댓글 {list.length}</Text>
+          <Text style={[styles.feedCommentTitle, { color: mainColor }]}>댓글 {tops.length}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ paddingHorizontal: 6 }}>
-              <Text style={{ color: subColor, fontSize: 12 }}>전체</Text>
+              <Text style={{ color: subColor, fontSize: 12 }}>댓글상세</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setCommentPanelPostId(null)} style={{ paddingHorizontal: 4 }}>
+            <TouchableOpacity onPress={() => { setPanelReplyTarget(null); setCommentPanelPostId(null); }} style={{ paddingHorizontal: 4 }}>
               <Ionicons name="close" size={20} color={mainColor} />
             </TouchableOpacity>
           </View>
@@ -2990,7 +2986,7 @@ export default function App() {
           style={overlay ? { flex: 1 } : { maxHeight: 220 }}
           showsVerticalScrollIndicator={false}
         >
-          {list.length === 0 ? (
+          {tops.length === 0 ? (
             <Text style={{ color: subColor, fontSize: 13, marginTop: 6 }}>첫 댓글을 남겨 보세요.</Text>
           ) : (
             tops.map((c) => (
@@ -2999,26 +2995,42 @@ export default function App() {
                   <Text style={{ fontWeight: '700' }}>{c.authorName || '회원'} </Text>
                   {c.content}
                 </Text>
-                {replies
-                  .filter((r) => String(r.parent_id) === String(c.id))
-                  .map((r) => (
-                    <Text key={String(r.id)} style={{ color: subColor, fontSize: 12, lineHeight: 17, marginLeft: 10, marginTop: 3 }}>
-                      {'ㄴ '}
+                <TouchableOpacity
+                  onPress={() => setPanelReplyTarget({ id: c.id, postId: item.id, name: c.authorName || '회원' })}
+                  style={{ paddingVertical: 2, alignSelf: 'flex-start' }}
+                >
+                  <Text style={{ color: subColor, fontSize: 11 }}>답글</Text>
+                </TouchableOpacity>
+                {repliesOf(c.id).map((r) => (
+                  <View key={String(r.id)} style={{ marginTop: 4, paddingLeft: 12 }}>
+                    <Text style={{ color: mainColor, fontSize: 12.5, lineHeight: 17 }}>
+                      <Text style={{ color: subColor }}>ㄴ </Text>
                       <Text style={{ fontWeight: '700' }}>{r.authorName || '회원'} </Text>
                       {r.content}
                     </Text>
-                  ))}
+                  </View>
+                ))}
               </View>
             ))
           )}
         </ScrollView>
 
+        {target && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+            <Text style={{ color: subColor, fontSize: 11, flex: 1 }} numberOfLines={1}>
+              @{target.name} 님에게 답글
+            </Text>
+            <TouchableOpacity onPress={() => setPanelReplyTarget(null)} style={{ paddingHorizontal: 6 }}>
+              <Text style={{ color: mainColor, fontSize: 11 }}>취소</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.feedCommentInputRow}>
           <TextInput
             style={styles.feedCommentInput}
             value={panelCommentText}
             onChangeText={setPanelCommentText}
-            placeholder="댓글 달기..."
+            placeholder={target ? '답글 달기...' : '댓글 달기...'}
             placeholderTextColor="#9CA3AF"
           />
           <TouchableOpacity onPress={submit} style={styles.feedCommentSendBtn}>
@@ -5248,10 +5260,11 @@ const styles = StyleSheet.create({
   feedCommentTitle: { fontSize: 14, fontWeight: '700' },
   feedCommentInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   feedCommentInput: {
-    flex: 1, height: 34, borderRadius: 17, paddingHorizontal: 12, fontSize: 13,
+    flex: 1, height: 46, borderRadius: 23, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, fontSize: 14,
+    textAlignVertical: 'center',
     backgroundColor: '#FFFFFF', color: '#111111',
   },
-  feedCommentSendBtn: { marginLeft: 6, paddingHorizontal: 10, height: 34, justifyContent: 'center' },
+  feedCommentSendBtn: { marginLeft: 6, paddingHorizontal: 10, height: 46, justifyContent: 'center' },
   feedCommentSendText: { color: '#60A5FA', fontWeight: '700', fontSize: 13 },
   gridItem: { width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, margin: 0.6, backgroundColor: '#2D2D2D' },
   gridImage: { width: '100%', height: '100%' },
