@@ -33,8 +33,8 @@ const CONTENT_WIDTH = Math.max(240, SCREEN_WIDTH - LEFT_RAIL_WIDTH);
 const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (CONTENT_WIDTH - 4) / 3;
 const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - RIGHT_RAIL_WIDTH);
-const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.44);
-const EXPANDED_CHAT_HEIGHT = Math.max(380, Math.round(SCREEN_HEIGHT * 0.62));
+const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.44)
+const EXPANDED_CHAT_HEIGHT = Math.max(200, Math.round(SCREEN_HEIGHT * 0.32));
 
 const VISIBILITY_OPTIONS = [
   { key: 'public', label: '전체공개', icon: 'globe-outline' },
