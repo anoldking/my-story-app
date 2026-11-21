@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, Text, View, TextInput, TouchableOpacity,
   FlatList, Image, ImageBackground, Alert, SafeAreaView,
-  ActivityIndicator, ScrollView, Dimensions, KeyboardAvoidingView,
+    ActivityIndicator, ScrollView, Dimensions, KeyboardAvoidingView, Modal,
   Platform, BackHandler, ToastAndroid, Linking, PanResponder
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -1482,7 +1482,36 @@ export default function App() {
       showAlert('링크 열기 오류', `해당 링크를 열 수 없습니다.\n${rawUrl}`);
     }
   };
-
+  const handleLeaveChat = (partner) => {
+        if (!partner?.id || !session?.user?.id) return;
+            Alert.alert(
+                  '대화 나가기',
+                        '대화가 완전히 종료되고 이 대화의 모든 내용이 삭제됩니다.\n상대방 화면에서도 사라지며 복구할 수 없습니다.',
+                              [
+                                      { text: '취소', style: 'cancel' },
+                                              {
+                                                        text: '나가기',
+                                                                  style: 'destructive',
+                                                                            onPress: async () => {
+                                                                                        const me = session.user.id;
+                                                                                                    const other = partner.id;
+                                                                                                                const { error } = await supabase
+                                                                                                                              .from('messages')
+                                                                                                                                            .delete()
+                                                                                                                                                          .or(`and(sender_id.eq.${me},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${me})`);
+                                                                                                                                                                      if (error) {
+                                                                                                                                                                                    showAlert('나가기 실패', getKoreanErrorMessage(error));
+                                                                                                                                                                                                  return;
+                                                                                                                                                                                                              }
+                                                                                                                                                                                                                          setChatMessages([]);
+                                                                                                                                                                                                                                      setChatPartner(null);
+                                                                                                                                                                                                                                                  fetchUnreadCountsBySender(me);
+                                                                                                                                                                                                                                                            },
+                                                                                                                                                                                                                                                                    },
+                                                                                                                                                                                                                                                                          ]
+                                                                                                                                                                                                                                                                              );
+                                                                                                                                                                                                                                                                                };
+  }
   const handleDeleteSentMessage = (msgItem) => {
     if (!msgItem || msgItem.sender_id !== session?.user?.id) return;
 
@@ -3341,6 +3370,13 @@ export default function App() {
               <Text style={styles.inlineChatSendText}>전송</Text>
             )}
           </TouchableOpacity>
+                    <TouchableOpacity
+                                style={{ marginLeft: 6, paddingHorizontal: 10, height: 36, borderRadius: 18, backgroundColor: '#E53E3E', alignItems: 'center', justifyContent: 'center' }}
+                                            onPress={() => handleLeaveChat(partner)}
+                                                        disabled={sendingMsg}
+                                                                  >
+                                                                              <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>나가기</Text>
+                                                                                        </TouchableOpacity>
         </View>
 
         {chatAttachMenuOpen && (
@@ -3448,16 +3484,16 @@ export default function App() {
                 </View>
               </TouchableOpacity>
 
-            {isExpanded && (
-                <Modal visible animationType="slide" onRequestClose={() => setChatPartner(null)}>
-                    <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: 36 }}>
-                          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-                                  {renderInlineChatDrawer(item)}
-                                        </KeyboardAvoidingView>
-                                            </View>
-                                              </Modal>
-                                              )}
-            )}
+                        {isExpanded && (
+                                        <Modal visible animationType="slide" onRequestClose={() => setChatPartner(null)}>
+                                                        <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: 36 }}>
+                                                                          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                                                                                              {renderInlineChatDrawer(item)}
+                                                                                                                </KeyboardAvoidingView>
+                                                                                                                                </View>
+                                                                                                                                              </Modal>
+                                                                                                                                                          )}
+                        )}
             </View>
           );
         }}
