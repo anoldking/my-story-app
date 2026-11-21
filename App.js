@@ -3112,8 +3112,7 @@ export default function App() {
   const renderFeedCommentPanel = (item, overlay) => {
     const list = commentsByPost[String(item.id)] || [];
     const tops = list.filter((c) => !c.parent_id);
-    const repliesOf = (pid) => list.filter((c) => String(c.parent_id) === String(pid));
-    const target = panelReplyTarget && panelReplyTarget.postId === item.id ? panelReplyTarget : null;
+    const target = null; // 답글 기능 없음 (새 댓글만)
     const mainColor = overlay ? '#FFFFFF' : '#18181B';
     const subColor = overlay ? '#D4D4D8' : '#52525B';
 
@@ -3153,42 +3152,17 @@ export default function App() {
                   <Text style={{ fontWeight: '700' }}>{c.authorName || '회원'} </Text>
                   {c.content}
                 </Text>
-                <TouchableOpacity
-                  onPress={() => setPanelReplyTarget({ id: c.id, postId: item.id, name: c.authorName || '회원' })}
-                  style={{ paddingVertical: 2, alignSelf: 'flex-start' }}
-                >
-                  <Text style={{ color: subColor, fontSize: 11 }}>답글</Text>
-                </TouchableOpacity>
-                {repliesOf(c.id).map((r) => (
-                  <View key={String(r.id)} style={{ marginTop: 4, paddingLeft: 12 }}>
-                    <Text style={{ color: mainColor, fontSize: 12.5, lineHeight: 17 }}>
-                      <Text style={{ color: subColor }}>ㄴ </Text>
-                      <Text style={{ fontWeight: '700' }}>{r.authorName || '회원'} </Text>
-                      {r.content}
-                    </Text>
-                  </View>
-                ))}
               </View>
             ))
           )}
         </ScrollView>
 
-        {target && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-            <Text style={{ color: subColor, fontSize: 11, flex: 1 }} numberOfLines={1}>
-              @{target.name} 님에게 답글
-            </Text>
-            <TouchableOpacity onPress={() => setPanelReplyTarget(null)} style={{ paddingHorizontal: 6 }}>
-              <Text style={{ color: mainColor, fontSize: 11 }}>취소</Text>
-            </TouchableOpacity>
-          </View>
-        )}
         <View style={styles.feedCommentInputRow}>
           <TextInput
             style={styles.feedCommentInput}
             value={panelCommentText}
             onChangeText={setPanelCommentText}
-            placeholder={target ? '답글 달기...' : '댓글 달기...'}
+            placeholder="댓글 달기..."
             placeholderTextColor="#9CA3AF"
           />
           <TouchableOpacity onPress={submit} style={styles.feedCommentSendBtn}>
