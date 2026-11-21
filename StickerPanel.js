@@ -44,7 +44,10 @@ export default function StickerPanel({ supabase, onPick, onClose }) {
     return () => { alive = false; };
   }, [supabase]);
 
-  const cell = Math.floor((Dimensions.get('window').width - 16) / 4);
+  // 이모티콘 칸 크기: 한 칸 약 68, 화면 너비에 맞춰 한 줄 개수를 자동 계산
+  const CELL = 68;
+  const cols = Math.max(4, Math.floor((Dimensions.get('window').width - 16) / CELL));
+  const cell = Math.floor((Dimensions.get('window').width - 16) / cols);
 
   return (
     <View style={s.wrap}>
@@ -60,10 +63,11 @@ export default function StickerPanel({ supabase, onPick, onClose }) {
         <FlatList
           data={items}
           keyExtractor={(i) => i.name}
-          numColumns={4}
+          numColumns={cols}
+          key={`cols${cols}`}
           contentContainerStyle={{ paddingHorizontal: 8 }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={{ width: cell, height: cell, padding: 8 }} onPress={() => onPick(item.url)}>
+            <TouchableOpacity style={{ width: cell, height: cell, padding: 6 }} onPress={() => onPick(item.url)}>
               <Image source={{ uri: item.url }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
             </TouchableOpacity>
           )}
@@ -78,7 +82,7 @@ export function StickerBubbleImage({ url }) {
 }
 
 const s = StyleSheet.create({
-  wrap: { height: 260, backgroundColor: '#F9FAFB', borderTopWidth: 1, borderColor: '#eee' },
+  wrap: { height: 230, backgroundColor: '#F9FAFB', borderTopWidth: 1, borderColor: '#eee' },
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
   title: { fontSize: 14, fontWeight: '700', color: '#333' },
   close: { fontSize: 13, color: '#666' },
