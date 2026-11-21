@@ -5,7 +5,9 @@ import {
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as MediaLibrary from 'expo-media-library';
 import { Ionicons } from '@expo/vector-icons';
+import GalleryPicker from './GalleryPicker';
 
 function hhmm(iso) {
   const d = new Date(iso);
@@ -19,6 +21,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   const [names, setNames] = useState({});
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [viewingImage, setViewingImage] = useState(null);
   const listRef = useRef(null);
@@ -95,33 +98,54 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     setText('');
   };
 
-  const sendPhoto = async () => {
+  // 사진 1장 업로드 + 메시지 저장
+  const uploadPhotoUri = async (uri) => {
+    const manipulated = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1080 } }],
+      { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    const path = `${me}/group_photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
+    const response = await fetch(manipulated.uri);
+    const buf = await response.arrayBuffer();
+    const up = await supabase.storage
+      .from('chat-files')
+      .upload(path, buf, { contentType: 'image/jpeg', upsert: true });
+    if (up.error) throw up.error;
+    const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
+    const { error } = await postMessage({ image_url: urlData.publicUrl });
+    if (error) throw error;
+  };
+
+  // "사진 올리기" → 갤러리 선택 화면 열기
+  const sendPhoto = () => {
     if (sending) return;
     setMenuOpen(false);
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-      if (result.canceled || !result.assets || !result.assets[0] || !result.assets[0].uri) return;
-      setSending(true);
-      const manipulated = await ImageManipulator.manipulateAsync(
-        result.assets[0].uri,
-        [{ resize: { width: 1080 } }],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-      );
-      const path = `${me}/group_photo_${Date.now()}.jpg`;
-      const response = await fetch(manipulated.uri);
-      const buf = await response.arrayBuffer();
-      const up = await supabase.storage
-        .from('chat-files')
-        .upload(path, buf, { contentType: 'image/jpeg', upsert: true });
-      if (up.error) throw up.error;
-      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
-      const { error } = await postMessage({ image_url: urlData.publicUrl });
-      setSending(false);
-      if (error) Alert.alert('사진 전송 실패', error.message);
-    } catch (e) {
-      setSending(false);
-      Alert.alert('사진 전송 오류', '사진을 올리지 못했습니다.\n(' + (e && e.message ? e.message : e) + ')');
+    setGalleryOpen(true);
+  };
+
+  // 갤러리에서 고른 사진들 전송
+  const sendPhotos = async (assets) => {
+    setGalleryOpen(false);
+    if (!assets || !assets.length) return;
+    setSending(true);
+    let fail = 0;
+    let lastMsg = '';
+    for (const a of assets) {
+      try {
+        let uri = a.uri;
+        try {
+          const info = await MediaLibrary.getAssetInfoAsync(a);
+          if (info && info.localUri) uri = info.localUri;
+        } catch (e) { /* 원래 uri 사용 */ }
+        await uploadPhotoUri(uri);
+      } catch (e) {
+        fail += 1;
+        lastMsg = e && e.message ? e.message : String(e);
+      }
     }
+    setSending(false);
+    if (fail > 0) Alert.alert('사진 전송 오류', `${fail}장을 보내지 못했습니다.\n(${lastMsg})`);
   };
 
   const sendFile = async () => {
@@ -285,6 +309,8 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           </View>
         ) : null}
       </KeyboardAvoidingView>
+
+      <GalleryPicker visible={galleryOpen} onClose={() => setGalleryOpen(false)} onSend={sendPhotos} />
 
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <View style={s.viewer}>
