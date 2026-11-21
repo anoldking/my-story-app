@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, FlatList, TextInput,
+  View, Text, TouchableOpacity, FlatList, TextInput, Image,
   Linking, Platform,Modal,ActivityIndicator, Alert, SafeAreaView, StyleSheet,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { Ionicons } from '@expo/vector-icons';
 import GroupRoom from './GroupRoomPlus';
 
 export async function ensureGroupChannel() {
@@ -44,6 +45,30 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
   const [roomName, setRoomName] = useState('');
   const [saving, setSaving] = useState(false);
   const [activeRoom, setActiveRoom] = useState(null);
+  const [roomInfo, setRoomInfo] = useState({}); // roomId -> { count, rep }
+
+  // 각 방의 참여 인원 수와 대표 멤버(나를 뺀 첫 번째 사람) 불러오기
+  const loadRoomInfo = async (list) => {
+    try {
+      if (!list.length) { setRoomInfo({}); return; }
+      const mem = await supabase
+        .from('chat_room_members')
+        .select('room_id, user_id')
+        .in('room_id', list.map((r) => r.id));
+      if (mem.error || !mem.data) return;
+      const uids = [...new Set(mem.data.map((m) => m.user_id))];
+      const pr = await supabase.from('profiles').select('id, nickname, avatar_url').in('id', uids);
+      const pmap = {};
+      (pr.data || []).forEach((p) => { pmap[p.id] = p; });
+      const info = {};
+      mem.data.forEach((m) => {
+        const o = info[m.room_id] || (info[m.room_id] = { count: 0, rep: null });
+        o.count += 1;
+        if (m.user_id !== me && !o.rep) o.rep = pmap[m.user_id] || { nickname: '멤버' };
+      });
+      setRoomInfo(info);
+    } catch (e) { /* 표시만 못 할 뿐, 목록은 정상 */ }
+  };
 
   const loadRooms = useCallback(async () => {
       setLoading(true);
@@ -59,6 +84,7 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
         .filter(Boolean)
         .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
         setRooms(list);
+        loadRoomInfo(list);
       }
       setLoading(false);
     }, [supabase, me]);
@@ -182,16 +208,31 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
         keyExtractor={(r) => r.id}
         ListHeaderComponent={<TouchableOpacity style={{ padding: 14 }} onPress={openGroupSound}><Text style={s.link}>🔔 단체방 알림음 변경</Text></TouchableOpacity>}
         ListEmptyComponent={<Text style={s.empty}>아직 단체방이 없어요.{'\n'}오른쪽 위 ＋새 방을 눌러 보세요.</Text>}
-        renderItem={({ item }) => (
-            <TouchableOpacity
-            style={s.row}
-            onPress={() =>
-              setActiveRoom(item)
-            }
-            >
-            <Text style={s.rowText}>{item.name}</Text>
-            </TouchableOpacity>
-        )}
+        renderItem={({ item }) => {
+            const info = roomInfo[item.id];
+            const count = info ? info.count : 0;
+            const rep = info ? info.rep : null;
+            return (
+              <TouchableOpacity style={[s.row, s.roomRow]} onPress={() => setActiveRoom(item)}>
+                {rep && rep.avatar_url ? (
+                  <Image source={{ uri: rep.avatar_url }} style={s.roomAvatar} />
+                ) : (
+                  <View style={[s.roomAvatar, s.roomAvatarDefault]}>
+                    <Ionicons name="people" size={22} color="#94A3B8" />
+                  </View>
+                )}
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={s.rowText} numberOfLines={1}>{item.name}</Text>
+                </View>
+                {count > 0 ? (
+                  <View style={s.countBadge}>
+                    <Ionicons name="person" size={11} color="#64748B" />
+                    <Text style={s.countText}>{count}명</Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            );
+        }}
         />
     )}
     </SafeAreaView>
@@ -218,6 +259,15 @@ const s = StyleSheet.create({
     },
     circleDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#8A8F98' },
     empty: { textAlign: 'center', marginTop: 60, color: '#888', lineHeight: 24 },
+    roomRow: { flexDirection: 'row', alignItems: 'center' },
+    roomAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E5E7EB' },
+    roomAvatarDefault: { alignItems: 'center', justifyContent: 'center' },
+    roomSub: { fontSize: 13, color: '#6B7280', marginTop: 3 },
+    countBadge: {
+      flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9',
+      borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4, marginLeft: 8,
+    },
+    countText: { fontSize: 12, color: '#475569', fontWeight: '700', marginLeft: 3 },
 });
 export default function GroupChat(props) {
   return (
