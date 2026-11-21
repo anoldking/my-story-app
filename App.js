@@ -1109,6 +1109,8 @@ export default function App() {
   const lastBackPressRef = useRef(0);
 
   const [homeGrid, setHomeGrid] = useState(false);
+  const [commentPanelPostId, setCommentPanelPostId] = useState(null);
+  const [panelCommentText, setPanelCommentText] = useState('');
   useEffect(() => {
     AsyncStorage.getItem(HOME_VIEW_STORAGE_KEY)
       .then((v) => { if (v === 'grid') setHomeGrid(true); })
@@ -2939,6 +2941,78 @@ export default function App() {
     </View>
   );
 
+  const renderFeedCommentPanel = (item, overlay) => {
+    const list = commentsByPost[String(item.id)] || [];
+    const tops = list.filter((c) => !c.parent_id);
+    const replies = list.filter((c) => c.parent_id);
+    const mainColor = overlay ? '#FFFFFF' : '#18181B';
+    const subColor = overlay ? '#D4D4D8' : '#52525B';
+
+    const submit = async () => {
+      const txt = panelCommentText.trim();
+      if (!txt) return;
+      setPanelCommentText('');
+      await handleAddComment(item.id, txt, null);
+    };
+
+    return (
+      <View style={overlay ? styles.feedCommentOverlay : styles.feedCommentInline}>
+        <View style={styles.feedCommentHeader}>
+          <Text style={[styles.feedCommentTitle, { color: mainColor }]}>댓글 {list.length}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity onPress={() => setSelectedPostId(item.id)} style={{ paddingHorizontal: 6 }}>
+              <Text style={{ color: subColor, fontSize: 12 }}>전체</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setCommentPanelPostId(null)} style={{ paddingHorizontal: 4 }}>
+              <Ionicons name="close" size={20} color={mainColor} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <ScrollView
+          nestedScrollEnabled
+          style={overlay ? { flex: 1 } : { maxHeight: 220 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {list.length === 0 ? (
+            <Text style={{ color: subColor, fontSize: 13, marginTop: 6 }}>첫 댓글을 남겨 보세요.</Text>
+          ) : (
+            tops.map((c) => (
+              <View key={String(c.id)} style={{ marginBottom: 9 }}>
+                <Text style={{ color: mainColor, fontSize: 13, lineHeight: 18 }}>
+                  <Text style={{ fontWeight: '700' }}>{c.authorName || '회원'} </Text>
+                  {c.content}
+                </Text>
+                {replies
+                  .filter((r) => String(r.parent_id) === String(c.id))
+                  .map((r) => (
+                    <Text key={String(r.id)} style={{ color: subColor, fontSize: 12, lineHeight: 17, marginLeft: 10, marginTop: 3 }}>
+                      {'ㄴ '}
+                      <Text style={{ fontWeight: '700' }}>{r.authorName || '회원'} </Text>
+                      {r.content}
+                    </Text>
+                  ))}
+              </View>
+            ))
+          )}
+        </ScrollView>
+
+        <View style={styles.feedCommentInputRow}>
+          <TextInput
+            style={styles.feedCommentInput}
+            value={panelCommentText}
+            onChangeText={setPanelCommentText}
+            placeholder="댓글 달기..."
+            placeholderTextColor="#9CA3AF"
+          />
+          <TouchableOpacity onPress={submit} style={styles.feedCommentSendBtn}>
+            <Text style={styles.feedCommentSendText}>등록</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   const renderHomeFeedPostItem = ({ item }) => {
     const isMyPost = item.author_id === session.user.id;
     const isLikedByMe = Boolean(item.reactions?.some((x) => x.user_id === session.user.id));
@@ -2947,6 +3021,8 @@ export default function App() {
     const authorName = item.profiles?.nickname || profile.nickname || '친구';
     const authorAvatar = item.profiles?.avatar_url || null;
     const dateText = new Date(item.created_at).toLocaleString('ko-KR');
+    const isPanelOpen = commentPanelPostId === item.id;
+    const hasImage = Boolean(item.image_urls?.[0]);
 
     return (
       <View style={styles.minimalPostCard}>
@@ -2988,24 +3064,29 @@ export default function App() {
           </View>
         </View>
 
-        {item.image_urls?.[0] && (
-          <CompactFeedImage
-            uri={item.image_urls[0]}
-            onPress={() =>
-              setViewingImage({
-                uri: item.image_urls[0],
-                postId: item.id,
-                authorId: item.author_id,
-                authorName,
-                avatarUrl: authorAvatar,
-                dateText,
-                caption: item.content || '',
-                likeCount: totalReactions,
-                isLikedByMe,
-              })
-            }
-          />
+        {hasImage && (
+          <View style={{ position: 'relative', minHeight: isPanelOpen ? 300 : undefined }}>
+            <CompactFeedImage
+              uri={item.image_urls[0]}
+              onPress={() =>
+                setViewingImage({
+                  uri: item.image_urls[0],
+                  postId: item.id,
+                  authorId: item.author_id,
+                  authorName,
+                  avatarUrl: authorAvatar,
+                  dateText,
+                  caption: item.content || '',
+                  likeCount: totalReactions,
+                  isLikedByMe,
+                })
+              }
+            />
+            {isPanelOpen ? renderFeedCommentPanel(item, true) : null}
+          </View>
         )}
+
+        {!hasImage && isPanelOpen ? renderFeedCommentPanel(item, false) : null}
 
         <View style={styles.minimalPostFooter}>
           <View style={styles.minimalStatsRow}>
@@ -3027,9 +3108,17 @@ export default function App() {
             <TouchableOpacity
               style={styles.minimalStatBtn}
               activeOpacity={0.75}
-              onPress={() => setSelectedPostId(item.id)}
+              onPress={() => {
+                if (isPanelOpen) {
+                  setCommentPanelPostId(null);
+                } else {
+                  setPanelCommentText('');
+                  setCommentPanelPostId(item.id);
+                  fetchCommentsForPost(item.id);
+                }
+              }}
             >
-              <Ionicons name="chatbubble-outline" size={19} color="#18181B" />
+              <Ionicons name={isPanelOpen ? 'chatbubble' : 'chatbubble-outline'} size={19} color="#18181B" />
               <Text style={styles.minimalStatCount}>{postComments.length}</Text>
             </TouchableOpacity>
           </View>
@@ -5114,6 +5203,24 @@ const styles = StyleSheet.create({
   glassDividerVertical: { width: 1, height: '100%', backgroundColor: 'rgba(255, 255, 255, 0.35)' },
   glassBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
 
+  feedCommentOverlay: {
+    position: 'absolute', right: 0, top: 0, bottom: 0, width: '52%',
+    backgroundColor: 'rgba(0,0,0,0.62)', paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8,
+  },
+  feedCommentInline: {
+    marginHorizontal: 12, marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: '#F3F4F6',
+  },
+  feedCommentHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6,
+  },
+  feedCommentTitle: { fontSize: 14, fontWeight: '700' },
+  feedCommentInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  feedCommentInput: {
+    flex: 1, height: 34, borderRadius: 17, paddingHorizontal: 12, fontSize: 13,
+    backgroundColor: '#FFFFFF', color: '#111111',
+  },
+  feedCommentSendBtn: { marginLeft: 6, paddingHorizontal: 10, height: 34, justifyContent: 'center' },
+  feedCommentSendText: { color: '#60A5FA', fontWeight: '700', fontSize: 13 },
   gridItem: { width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, margin: 0.6, backgroundColor: '#2D2D2D' },
   gridImage: { width: '100%', height: '100%' },
   gridVisBadge: {
