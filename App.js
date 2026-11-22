@@ -1687,6 +1687,35 @@ export default function App() {
   const [imageUri, setImageUri] = useState(null);
   const [postImages, setPostImages] = useState([]); // 새 게시물 사진 (최대 10장)
   const [postPhotoBusy, setPostPhotoBusy] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
+
+  // AI 문구 추천: 첫 번째 사진을 작게 줄여서 Edge Function(suggest-caption)에 보내고 문구 3개를 받음
+  const suggestCaptionWithAI = async () => {
+    if (aiBusy || postImages.length === 0) return;
+    setAiBusy(true);
+    setAiError('');
+    setAiSuggestions([]);
+    try {
+      const small = await ImageManipulator.manipulateAsync(
+        postImages[0],
+        [{ resize: { width: 640 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      const { data, error } = await supabase.functions.invoke('suggest-caption', {
+        body: { image: small.base64, hint: content.trim() },
+      });
+      if (error) throw error;
+      const list = data && Array.isArray(data.suggestions) ? data.suggestions : [];
+      if (list.length === 0) throw new Error('empty');
+      setAiSuggestions(list.slice(0, 3));
+    } catch (e) {
+      setAiError('추천을 불러오지 못했어요. 잠시 후 다시 눌러 주세요.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
   const [loading, setLoading] = useState(false);
 
   const [commentsByPostRaw, setCommentsByPost] = useState({});
@@ -5204,6 +5233,27 @@ export default function App() {
 
             {postImages.length > 0 ? (
               <View style={{ marginBottom: 10 }}>
+                <TouchableOpacity
+                  style={styles.aiSuggestBtn}
+                  onPress={suggestCaptionWithAI}
+                  disabled={aiBusy}
+                >
+                  {aiBusy ? (
+                    <ActivityIndicator color="#6D28D9" />
+                  ) : (
+                    <Text style={styles.aiSuggestBtnText}>✨ AI 문구 추천받기</Text>
+                  )}
+                </TouchableOpacity>
+                {aiError ? <Text style={styles.aiErrorText}>{aiError}</Text> : null}
+                {aiSuggestions.map((t, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.aiSuggestItem}
+                    onPress={() => { setContent(t); hapticSelect(); }}
+                  >
+                    <Text style={styles.aiSuggestItemText}>{t}</Text>
+                  </TouchableOpacity>
+                ))}
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
                   {postImages.map((u, idx) => (
                     <View key={u + idx} style={styles.postThumbWrap}>
@@ -7019,5 +7069,10 @@ const styles = themedStyles({
   feedDot: { borderRadius: 5, marginHorizontal: 2.5 },
   writePreviewImg: { width: '100%', height: 220, borderRadius: 8, backgroundColor: '#F5F5F5' },
   removePhotoBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginTop: 6, padding: 6, backgroundColor: '#EEE', borderRadius: 4 },
+  aiSuggestBtn: { padding: 11, borderRadius: 8, backgroundColor: '#F3E8FF', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  aiSuggestBtnText: { color: '#6D28D9', fontWeight: 'bold', fontSize: 14 },
+  aiErrorText: { color: '#B91C1C', fontSize: 12, marginBottom: 8, textAlign: 'center' },
+  aiSuggestItem: { padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#DDD6FE', backgroundColor: '#FAF5FF', marginBottom: 6 },
+  aiSuggestItemText: { color: '#3B0764', fontSize: 13, lineHeight: 19 },
   attachPhotoBtn: { flexDirection: 'row', gap: 6, padding: 14, borderRadius: 8, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#DDD' },
 });
