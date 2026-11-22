@@ -1619,6 +1619,7 @@ export default function App() {
   const [mainTab, setMainTab] = useState('home');
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [incomingListExpanded, setIncomingListExpanded] = useState(true);
   const [onlyFavoritesFeed, setOnlyFavoritesFeed] = useState(false);
 
@@ -3621,33 +3622,6 @@ export default function App() {
 
           <TouchableOpacity
             style={styles.accountPopoverActionRow}
-            onPress={() => { hapticSelect(); cycleThemeMode(); }}
-          >
-            <Ionicons name="moon-outline" size={16} color="#18181B" />
-            <Text style={styles.accountPopoverActionText}>화면 모드</Text>
-            <View style={styles.applicantCountPill}>
-              <Text style={styles.applicantCountPillText}>{modeLabel(getMode())}</Text>
-            </View>
-          </TouchableOpacity>
-          <View style={styles.igDropdownDivider} />
-
-          <TouchableOpacity
-            style={styles.accountPopoverActionRow}
-            onPress={() => {
-              setAccountMenuOpen(false);
-              setBlockListOpen(true);
-            }}
-          >
-            <Ionicons name="ban-outline" size={16} color="#18181B" />
-            <Text style={styles.accountPopoverActionText}>차단 관리</Text>
-            <View style={styles.applicantCountPill}>
-              <Text style={styles.applicantCountPillText}>{blockedIds.length}명</Text>
-            </View>
-          </TouchableOpacity>
-          <View style={styles.igDropdownDivider} />
-
-          <TouchableOpacity
-            style={styles.accountPopoverActionRow}
             onPress={handleLogout}
             disabled={loading}
           >
@@ -3655,25 +3629,68 @@ export default function App() {
             <Text style={styles.accountPopoverActionText}>로그아웃</Text>
           </TouchableOpacity>
           <View style={styles.igDropdownDivider} />
+
           <TouchableOpacity
             style={styles.accountPopoverActionRow}
-            onPress={() => {
-              setAccountMenuOpen(false);
-              openNotificationSoundSettings();
-            }}
+            onPress={() => setSettingsMenuOpen(!settingsMenuOpen)}
           >
-            <Ionicons name="musical-notes-outline" size={16} color="#18181B" />
-            <Text style={styles.accountPopoverActionText}>알림음 변경</Text>
+            <Ionicons name="settings-outline" size={16} color="#18181B" />
+            <Text style={styles.accountPopoverActionText}>설정</Text>
+            <Ionicons name={settingsMenuOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#71717A" />
           </TouchableOpacity>
-          <View style={styles.igDropdownDivider} />
-          <TouchableOpacity
-            style={styles.accountPopoverActionRow}
-            onPress={handleWithdrawAccount}
-            disabled={loading}
-          >
-            <Ionicons name="trash-outline" size={16} color="#DC2626" />
-            <Text style={[styles.accountPopoverActionText, { color: '#DC2626' }]}>탈퇴</Text>
-          </TouchableOpacity>
+
+          {settingsMenuOpen && (
+            <View style={{ paddingLeft: 14 }}>
+              <View style={styles.igDropdownDivider} />
+              <TouchableOpacity
+                style={styles.accountPopoverActionRow}
+                onPress={() => { hapticSelect(); cycleThemeMode(); }}
+              >
+                <Ionicons name="moon-outline" size={16} color="#18181B" />
+                <Text style={styles.accountPopoverActionText}>화면 모드</Text>
+                <View style={styles.applicantCountPill}>
+                  <Text style={styles.applicantCountPillText}>{modeLabel(getMode())}</Text>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.igDropdownDivider} />
+
+              <TouchableOpacity
+                style={styles.accountPopoverActionRow}
+                onPress={() => {
+                  setAccountMenuOpen(false);
+                  setBlockListOpen(true);
+                }}
+              >
+                <Ionicons name="ban-outline" size={16} color="#18181B" />
+                <Text style={styles.accountPopoverActionText}>차단 관리</Text>
+                <View style={styles.applicantCountPill}>
+                  <Text style={styles.applicantCountPillText}>{blockedIds.length}명</Text>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.igDropdownDivider} />
+
+              <TouchableOpacity
+                style={styles.accountPopoverActionRow}
+                onPress={() => {
+                  setAccountMenuOpen(false);
+                  openNotificationSoundSettings();
+                }}
+              >
+                <Ionicons name="musical-notes-outline" size={16} color="#18181B" />
+                <Text style={styles.accountPopoverActionText}>알림음 변경</Text>
+              </TouchableOpacity>
+              <View style={styles.igDropdownDivider} />
+
+              <TouchableOpacity
+                style={styles.accountPopoverActionRow}
+                onPress={handleWithdrawAccount}
+                disabled={loading}
+              >
+                <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                <Text style={[styles.accountPopoverActionText, { color: '#DC2626' }]}>탈퇴</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
 
