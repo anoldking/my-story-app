@@ -1620,6 +1620,23 @@ export default function App() {
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+
+  // 접속시 음악 자동재생 켬/끔 (기본: 끔)
+  const BGM_AUTOSTART_KEY = 'bgm_autostart_v1';
+  const [bgmAutoStart, setBgmAutoStart] = useState(false);
+  const [bgmAutoLoaded, setBgmAutoLoaded] = useState(false);
+  const bgmAutoDoneRef = useRef(false);
+  useEffect(() => {
+    AsyncStorage.getItem(BGM_AUTOSTART_KEY)
+      .then((v) => setBgmAutoStart(v === '1'))
+      .catch(() => {})
+      .then(() => setBgmAutoLoaded(true));
+  }, []);
+  const toggleBgmAutoStart = () => {
+    const next = !bgmAutoStart;
+    setBgmAutoStart(next);
+    AsyncStorage.setItem(BGM_AUTOSTART_KEY, next ? '1' : '0').catch(() => {});
+  };
   const [incomingListExpanded, setIncomingListExpanded] = useState(true);
   const [onlyFavoritesFeed, setOnlyFavoritesFeed] = useState(false);
 
@@ -1639,6 +1656,15 @@ export default function App() {
   const [tempCoverUri, setTempCoverUri] = useState(null);
 
   const [members, setMembers] = useState([]);
+
+  useEffect(() => {
+    if (!bgmAutoLoaded || !bgmAutoStart || bgmAutoDoneRef.current) return;
+    if (!session || !session.user) return;
+    const list = bgmListRef.current || [];
+    if (list.length === 0) return;
+    bgmAutoDoneRef.current = true;
+    bgmPlay(bgmToTrack(list[0]));
+  }, [bgmAutoLoaded, bgmAutoStart, session && session.user && session.user.id, members]);
   const [friendRelationMap, setFriendRelationMap] = useState({});
   const [incomingRequests, setIncomingRequests] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -3641,6 +3667,17 @@ export default function App() {
 
           {settingsMenuOpen && (
             <View style={{ paddingLeft: 14 }}>
+              <View style={styles.igDropdownDivider} />
+              <TouchableOpacity
+                style={styles.accountPopoverActionRow}
+                onPress={() => { hapticSelect(); toggleBgmAutoStart(); }}
+              >
+                <Ionicons name="musical-note-outline" size={16} color="#18181B" />
+                <Text style={styles.accountPopoverActionText}>접속시 음악재생</Text>
+                <View style={styles.applicantCountPill}>
+                  <Text style={styles.applicantCountPillText}>{bgmAutoStart ? '켬' : '끔'}</Text>
+                </View>
+              </TouchableOpacity>
               <View style={styles.igDropdownDivider} />
               <TouchableOpacity
                 style={styles.accountPopoverActionRow}
