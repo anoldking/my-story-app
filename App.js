@@ -699,7 +699,7 @@ const FullscreenPhotoPopup = ({
 };
 
 // 홈 BGM 안내 글자: 왼쪽에서 오른쪽으로 계속 흘러감
-const BgmMarquee = ({ text }) => {
+const BgmMarquee = ({ text, color }) => {
   const [boxW, setBoxW] = useState(0);
   const [textW, setTextW] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
@@ -724,7 +724,7 @@ const BgmMarquee = ({ text }) => {
     <View style={styles.musicMarqueeBox} onLayout={(e) => setBoxW(e.nativeEvent.layout.width)}>
       <Animated.View style={{ position: 'absolute', left: 0, width: 2000, flexDirection: 'row', transform: [{ translateX: x }] }}>
         <Text
-          style={styles.musicMarqueeText}
+          style={[styles.musicMarqueeText, color ? { color } : null]}
           numberOfLines={1}
           onLayout={(e) => setTextW(e.nativeEvent.layout.width)}
         >
@@ -738,13 +738,13 @@ const BgmMarquee = ({ text }) => {
 // 홈 위쪽 배경음악 바
 const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNext }) => (
   <View style={styles.musicBar}>
-    <Ionicons name="musical-notes" size={17} color={playing ? '#2563EB' : '#71717A'} />
+    <Ionicons name="musical-notes" size={17} color={playing ? '#3F3F46' : '#A1A1AA'} />
     <View style={{ maxWidth: '38%', marginLeft: 10, marginRight: 6 }}>
       <Text style={styles.musicTitle} numberOfLines={1}>{track.title || '제목 없음'}</Text>
       <Text style={styles.musicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
     </View>
     {playing ? (
-      <BgmMarquee text="홈 BGM이 재생되고 있습니다." />
+      <BgmMarquee text="홈 BGM이 재생되고 있습니다." color="#71717A" />
     ) : (
       <View style={{ flex: 1 }} />
     )}
@@ -752,13 +752,35 @@ const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNe
       <Ionicons name={muted ? 'volume-mute-outline' : 'volume-medium-outline'} size={16} color="#FFFFFF" />
     </TouchableOpacity>
     <TouchableOpacity onPress={onToggle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.musicBtn}>
-      <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#18181B" />
+      <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#3F3F46" />
     </TouchableOpacity>
     {hasNext ? (
       <TouchableOpacity onPress={onNext} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.musicBtn}>
-        <Ionicons name="play-skip-forward" size={18} color="#18181B" />
+        <Ionicons name="play-skip-forward" size={18} color="#3F3F46" />
       </TouchableOpacity>
     ) : null}
+  </View>
+);
+
+// 친구 프로필 배경사진 위 투명 음악 재생기 (홈 재생기와 같은 구성, 검정/회색 톤만 사용)
+const ProfileMusicBar = ({ track, playing, muted, onToggle, onToggleMute }) => (
+  <View style={styles.pMusicBar}>
+    <Ionicons name="musical-notes" size={17} color="#D4D4D8" />
+    <View style={{ maxWidth: '38%', marginLeft: 10, marginRight: 6 }}>
+      <Text style={styles.pMusicTitle} numberOfLines={1}>{track.title || '제목 없음'}</Text>
+      <Text style={styles.pMusicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
+    </View>
+    {playing ? (
+      <BgmMarquee text="프로필 BGM이 재생되고 있습니다." color="#D4D4D8" />
+    ) : (
+      <View style={{ flex: 1 }} />
+    )}
+    <TouchableOpacity onPress={onToggleMute} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.pMusicMuteBtn}>
+      <Ionicons name={muted ? 'volume-mute-outline' : 'volume-medium-outline'} size={16} color="#E4E4E7" />
+    </TouchableOpacity>
+    <TouchableOpacity onPress={onToggle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.musicBtn}>
+      <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#E4E4E7" />
+    </TouchableOpacity>
   </View>
 );
 
@@ -5084,24 +5106,19 @@ export default function App() {
                 </TouchableOpacity>
               </TouchableOpacity>
 
-              {/* 음악 재생기: 배경사진 위쪽 가운데, 반투명 */}
+              {/* 음악 재생기: 배경사진 위쪽, 투명 (홈 재생기와 같은 구성) */}
               {selectedFriend.bgm_url ? (
                 <View style={styles.friendBgmFloatWrap} pointerEvents="box-none">
-                  <TouchableOpacity
-                    style={styles.friendBgmRow}
-                    activeOpacity={0.8}
-                    onPress={() => {
+                  <ProfileMusicBar
+                    track={bgmToTrack(selectedFriend)}
+                    playing={!!(bgmPlaying && bgmTrack && bgmTrack.url === selectedFriend.bgm_url)}
+                    muted={bgmMuted}
+                    onToggleMute={bgmToggleMute}
+                    onToggle={() => {
                       if (bgmTrack && bgmTrack.url === selectedFriend.bgm_url && soundRef.current) bgmToggle();
                       else bgmPlay(bgmToTrack(selectedFriend));
                     }}
-                  >
-                    <Ionicons
-                      name={bgmPlaying && bgmTrack && bgmTrack.url === selectedFriend.bgm_url ? 'pause-circle' : 'play-circle'}
-                      size={24}
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.friendBgmText} numberOfLines={1}>♪ {selectedFriend.bgm_title || '배경음악'}</Text>
-                  </TouchableOpacity>
+                  />
                 </View>
               ) : null}
             </ImageBackground>
@@ -6181,14 +6198,18 @@ const styles = themedStyles({
 
   viewerZoomLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000', zIndex: 1250 },
   viewerZoomHint: { position: 'absolute', bottom: 40, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1260 },
-  musicBar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 6, marginBottom: 2, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: '#F4F4F5' },
-  musicTitle: { fontSize: 13, fontWeight: '700', color: '#18181B' },
+  musicBar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 6, marginBottom: 2, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: 'rgba(113,113,122,0.12)', borderWidth: 1, borderColor: 'rgba(113,113,122,0.25)' },
+  musicTitle: { fontSize: 13, fontWeight: '700', color: '#27272A' },
   musicOwner: { fontSize: 11, color: '#71717A', marginTop: 1 },
   musicBtn: { padding: 6, marginLeft: 2 },
   musicMuteBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#3F3F46', alignItems: 'center', justifyContent: 'center', marginLeft: 4, marginRight: 2 },
   musicMarqueeBox: { flex: 1, height: 20, overflow: 'hidden', justifyContent: 'center', marginHorizontal: 4 },
-  musicMarqueeText: { fontSize: 12, color: '#2563EB', fontWeight: '600' },
-  friendBgmFloatWrap: { position: 'absolute', top: 80, left: 0, right: 0, alignItems: 'center' },
+  musicMarqueeText: { fontSize: 12, color: '#71717A', fontWeight: '600' },
+  friendBgmFloatWrap: { position: 'absolute', top: 80, left: 0, right: 0, paddingHorizontal: 12 },
+  pMusicBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.35)', borderWidth: 1, borderColor: 'rgba(161,161,170,0.35)' },
+  pMusicTitle: { fontSize: 13, fontWeight: '700', color: '#E4E4E7' },
+  pMusicOwner: { fontSize: 11, color: '#A1A1AA', marginTop: 1 },
+  pMusicMuteBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(63,63,70,0.6)', alignItems: 'center', justifyContent: 'center', marginLeft: 4, marginRight: 2 },
   friendBgmRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.35)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', maxWidth: '80%' },
   friendBgmText: { fontSize: 13, color: '#FFFFFF', marginLeft: 6, flexShrink: 1, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
   bgmPickRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
