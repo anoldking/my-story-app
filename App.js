@@ -704,20 +704,21 @@ const BgmMarquee = ({ text }) => {
   const [textW, setTextW] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
 
+  const tw = textW || String(text || '').length * 11;
   useEffect(() => {
-    if (!boxW || !textW) return;
-    x.setValue(-textW);
+    if (!boxW) return;
+    x.setValue(-tw);
     const anim = Animated.loop(
       Animated.timing(x, {
         toValue: boxW,
-        duration: Math.max(4000, (boxW + textW) * 28),
+        duration: Math.max(4000, (boxW + tw) * 28),
         easing: Easing.linear,
         useNativeDriver: true,
       })
     );
     anim.start();
     return () => anim.stop();
-  }, [boxW, textW]);
+  }, [boxW, tw]);
 
   return (
     <View style={styles.musicMarqueeBox} onLayout={(e) => setBoxW(e.nativeEvent.layout.width)}>
@@ -743,7 +744,7 @@ const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNe
       <Text style={styles.musicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
     </View>
     {playing ? (
-      <BgmMarquee text={muted ? '🔇 홈 BGM이 음소거되어 있습니다.' : '♪ 홈 BGM이 재생되고 있습니다.'} />
+      <BgmMarquee text="홈 BGM이 재생되고 있습니다." />
     ) : (
       <View style={{ flex: 1 }} />
     )}
@@ -1559,8 +1560,9 @@ export default function App() {
   const [tempBgmTitle, setTempBgmTitle] = useState('');
   const [tempBgmMime, setTempBgmMime] = useState('audio/mpeg');
   const [bgmChanged, setBgmChanged] = useState(false);
-  const [bgmMuted, setBgmMutedState] = useState(false);
-  const bgmMutedRef = useRef(false);
+  // 처음 접속하면 음소거 상태로 자동재생 (스피커 버튼을 누르면 소리가 나옴)
+  const [bgmMuted, setBgmMutedState] = useState(true);
+  const bgmMutedRef = useRef(true);
   const bgmToggleMute = async () => {
     const next = !bgmMutedRef.current;
     bgmMutedRef.current = next;
