@@ -5022,6 +5022,27 @@ export default function App() {
                   <Ionicons name="close" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
               </TouchableOpacity>
+
+              {/* 음악 재생기: 배경사진 위쪽 가운데, 반투명 */}
+              {selectedFriend.bgm_url ? (
+                <View style={styles.friendBgmFloatWrap} pointerEvents="box-none">
+                  <TouchableOpacity
+                    style={styles.friendBgmRow}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      if (bgmTrack && bgmTrack.url === selectedFriend.bgm_url && soundRef.current) bgmToggle();
+                      else bgmPlay(bgmToTrack(selectedFriend));
+                    }}
+                  >
+                    <Ionicons
+                      name={bgmPlaying && bgmTrack && bgmTrack.url === selectedFriend.bgm_url ? 'pause-circle' : 'play-circle'}
+                      size={24}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.friendBgmText} numberOfLines={1}>♪ {selectedFriend.bgm_title || '배경음악'}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </ImageBackground>
 
             <View style={styles.friendCardBody}>
@@ -5054,23 +5075,6 @@ export default function App() {
               <Text style={styles.friendCardName}>-{selectedFriend.nickname || '친구'}-</Text>
               <Text style={styles.friendCardBio}>{selectedFriend.bio || '상태 메시지가 없습니다.'}</Text>
 
-              {selectedFriend.bgm_url ? (
-                <TouchableOpacity
-                  style={styles.friendBgmRow}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    if (bgmTrack && bgmTrack.url === selectedFriend.bgm_url && soundRef.current) bgmToggle();
-                    else bgmPlay(bgmToTrack(selectedFriend));
-                  }}
-                >
-                  <Ionicons
-                    name={bgmPlaying && bgmTrack && bgmTrack.url === selectedFriend.bgm_url ? 'pause-circle' : 'play-circle'}
-                    size={24}
-                    color="#2563EB"
-                  />
-                  <Text style={styles.friendBgmText} numberOfLines={1}>♪ {selectedFriend.bgm_title || '배경음악'}</Text>
-                </TouchableOpacity>
-              ) : null}
 
               {/* 프로필 하단 버튼 3개: 친구 / 1:1 채팅 / 차단 */}
               {(() => {
@@ -6120,8 +6124,9 @@ const styles = themedStyles({
   musicTitle: { fontSize: 13, fontWeight: '700', color: '#18181B' },
   musicOwner: { fontSize: 11, color: '#71717A', marginTop: 1 },
   musicBtn: { padding: 6, marginLeft: 2 },
-  friendBgmRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginBottom: 14, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#2A2A2A', maxWidth: '92%' },
-  friendBgmText: { fontSize: 13, color: '#E5E5E5', marginLeft: 6, flexShrink: 1 },
+  friendBgmFloatWrap: { position: 'absolute', top: 80, left: 0, right: 0, alignItems: 'center' },
+  friendBgmRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.35)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', maxWidth: '80%' },
+  friendBgmText: { fontSize: 13, color: '#FFFFFF', marginLeft: 6, flexShrink: 1, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
   bgmPickRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
   bgmPickTitle: { flex: 1, fontSize: 14, color: '#3F3F46', marginRight: 8 },
   viewerCounter: { position: 'absolute', top: 24, right: 16, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1220 },
