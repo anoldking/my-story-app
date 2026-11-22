@@ -4908,7 +4908,7 @@ export default function App() {
       </View>
 
       {selectedFriend && (
-        <View style={styles.overlayBackdrop}>
+        <View style={styles.friendFullBackdrop}>
           <View style={styles.friendCardModal}>
             <ImageBackground
               source={selectedFriend.cover_url ? { uri: selectedFriend.cover_url } : undefined}
@@ -6148,17 +6148,27 @@ const styles = themedStyles({
   ktFriendName: { fontSize: 14, fontWeight: '600', color: '#191919' },
   ktFriendBio: { fontSize: 12, color: '#888888', marginTop: 2 },
 
-  friendCardModal: {
+  friendFullBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    zIndex: 999,
+  },
+  friendCardModal: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
     overflow: 'hidden',
   },
-  friendCardCover: { width: '100%', height: 180, backgroundColor: '#4A5568' },
+  friendCardCover: { width: '100%', height: '42%', backgroundColor: '#4A5568' },
   friendCardCoverOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.2)',
     alignItems: 'flex-end',
     padding: 12,
+    paddingTop: 40,
   },
   friendCardCloseBtn: {
     width: 30,
@@ -6168,7 +6178,7 @@ const styles = themedStyles({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  friendCardBody: { alignItems: 'center', padding: 20, paddingTop: 0 },
+  friendCardBody: { flex: 1, alignItems: 'center', padding: 20, paddingTop: 0, paddingBottom: 32 },
   friendCardAvatar: {
     width: 76,
     height: 76,
@@ -6180,7 +6190,7 @@ const styles = themedStyles({
   },
   friendCardName: { fontSize: 18, fontWeight: 'bold', color: '#222' },
   friendCardBio: { fontSize: 13, color: '#666', marginTop: 4, marginBottom: 18, textAlign: 'center' },
-  friendCardActions: { flexDirection: 'row', gap: 10, width: '100%' },
+  friendCardActions: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 'auto' },
   friendCardActionBtn: {
     flex: 1,
     paddingVertical: 12,
