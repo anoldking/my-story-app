@@ -1046,18 +1046,36 @@ const PostPhotoViewer = ({
                 ))
               )}
             </ScrollView>
-            <View style={styles.viewerCmtInputRow}>
+            {/* 키보드가 열려 있어도 보내기 버튼을 한 번만 누르면 바로 전송되도록 감싸줌 */}
+            <ScrollView
+              scrollEnabled={false}
+              keyboardShouldPersistTaps="always"
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={styles.viewerCmtInputRow}
+            >
               <TextInput
                 style={styles.viewerCmtInput}
                 value={text}
                 onChangeText={setText}
                 placeholder="댓글 달기..."
                 placeholderTextColor="#A1A1AA"
+                onSubmitEditing={submit}
+                returnKeyType="send"
+                blurOnSubmit={false}
               />
-              <TouchableOpacity onPress={submit} disabled={!text.trim() || sending} style={styles.viewerCmtSend}>
-                <Text style={[styles.viewerCmtSendText, (!text.trim() || sending) && { opacity: 0.4 }]}>등록</Text>
+              <TouchableOpacity
+                onPress={submit}
+                disabled={!text.trim() || sending}
+                activeOpacity={0.7}
+                style={[styles.viewerCmtSend, (!text.trim() || sending) && { opacity: 0.45 }]}
+              >
+                {sending ? (
+                  <ActivityIndicator size="small" color="#111111" />
+                ) : (
+                  <Text style={styles.viewerCmtSendText}>보내기</Text>
+                )}
               </TouchableOpacity>
-            </View>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       )}
@@ -6225,9 +6243,9 @@ const styles = themedStyles({
   viewerCmtEmpty: { color: '#A1A1AA', fontSize: 13, paddingVertical: 8 },
   viewerCmtItem: { color: '#FFFFFF', fontSize: 13.5, lineHeight: 19, marginBottom: 8 },
   viewerCmtInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  viewerCmtInput: { flex: 1, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 16, fontSize: 14, color: '#FFFFFF' },
-  viewerCmtSend: { paddingHorizontal: 14, paddingVertical: 10 },
-  viewerCmtSendText: { color: '#60A5FA', fontSize: 15, fontWeight: '800' },
+  viewerCmtInput: { flex: 1, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 16, paddingTop: 0, paddingBottom: 0, fontSize: 15, color: '#FFFFFF', textAlignVertical: 'center', includeFontPadding: false },
+  viewerCmtSend: { marginLeft: 8, height: 44, minWidth: 68, paddingHorizontal: 14, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  viewerCmtSendText: { color: '#111111', fontSize: 15, fontWeight: '800' },
   fullscreenViewerRoot: {
     position: 'absolute',
     top: 0,
