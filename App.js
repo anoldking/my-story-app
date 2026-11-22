@@ -2602,7 +2602,9 @@ export default function App() {
     fetchFriendsAndRequests();
   };
 
-  const renderFriendStatusActionButton = (targetUserId, compact = false) => {
+  const renderFriendStatusActionButton = (targetUserId, compact = false, dark = false) => {
+    const dk = dark ? { backgroundColor: '#2A2A2A' } : null;
+    const dkText = dark ? { color: '#FFFFFF' } : null;
     const myId = session.user.id;
     if (!targetUserId || targetUserId === myId) return null;
 
@@ -2610,10 +2612,10 @@ export default function App() {
     if (!rel) {
       return (
         <TouchableOpacity
-          style={[styles.friendActionChip, compact && styles.friendActionChipCompact]}
+          style={[styles.friendActionChip, compact && styles.friendActionChipCompact, dk]}
           onPress={() => sendFriendRequest(targetUserId)}
         >
-          <Text style={styles.friendActionChipText}>친구신청</Text>
+          <Text style={[styles.friendActionChipText, dkText]}>친구신청</Text>
         </TouchableOpacity>
       );
     }
@@ -2621,10 +2623,10 @@ export default function App() {
     if (rel.status === 'accepted') {
       return (
         <TouchableOpacity
-          style={[styles.friendActionChip, styles.friendActionChipAccepted, compact && styles.friendActionChipCompact]}
+          style={[styles.friendActionChip, styles.friendActionChipAccepted, compact && styles.friendActionChipCompact, dk]}
           onPress={() => cancelOrRemoveFriend(targetUserId)}
         >
-          <Text style={styles.friendActionChipAcceptedText}>친구됨</Text>
+          <Text style={[styles.friendActionChipAcceptedText, dkText]}>친구됨</Text>
         </TouchableOpacity>
       );
     }
@@ -2632,20 +2634,20 @@ export default function App() {
     if (rel.addressee_id === myId) {
       return (
         <TouchableOpacity
-          style={[styles.friendActionChip, styles.friendActionChipIncoming, compact && styles.friendActionChipCompact]}
+          style={[styles.friendActionChip, styles.friendActionChipIncoming, compact && styles.friendActionChipCompact, dk]}
           onPress={() => acceptFriendRequest(rel.id, targetUserId)}
         >
-          <Text style={styles.friendActionChipIncomingText}>신청수락</Text>
+          <Text style={[styles.friendActionChipIncomingText, dkText]}>신청수락</Text>
         </TouchableOpacity>
       );
     }
 
     return (
       <TouchableOpacity
-        style={[styles.friendActionChip, styles.friendActionChipPending, compact && styles.friendActionChipCompact]}
+        style={[styles.friendActionChip, styles.friendActionChipPending, compact && styles.friendActionChipCompact, dk]}
         onPress={() => cancelOrRemoveFriend(targetUserId)}
       >
-        <Text style={styles.friendActionChipPendingText}>신청중</Text>
+        <Text style={[styles.friendActionChipPendingText, dkText]}>신청중</Text>
       </TouchableOpacity>
     );
   };
@@ -4912,7 +4914,7 @@ export default function App() {
           <View style={styles.friendCardModal}>
             <ImageBackground
               source={selectedFriend.cover_url ? { uri: selectedFriend.cover_url } : undefined}
-              style={styles.friendCardCover}
+              style={[styles.friendCardCover, { height: Math.round(getWindowHeight() * 0.7) }]}
               resizeMode="cover"
             >
               <TouchableOpacity
@@ -4992,7 +4994,7 @@ export default function App() {
 
               <View style={styles.friendCardActions}>
                 <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                  {renderFriendStatusActionButton(selectedFriend.id, false)}
+                  {renderFriendStatusActionButton(selectedFriend.id, false, true)}
                 </View>
 
                 <TouchableOpacity
@@ -5959,8 +5961,8 @@ const styles = themedStyles({
   musicTitle: { fontSize: 13, fontWeight: '700', color: '#18181B' },
   musicOwner: { fontSize: 11, color: '#71717A', marginTop: 1 },
   musicBtn: { padding: 6, marginLeft: 2 },
-  friendBgmRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginBottom: 14, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#F4F4F5', maxWidth: '92%' },
-  friendBgmText: { fontSize: 13, color: '#3F3F46', marginLeft: 6, flexShrink: 1 },
+  friendBgmRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginBottom: 14, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#2A2A2A', maxWidth: '92%' },
+  friendBgmText: { fontSize: 13, color: '#E5E5E5', marginLeft: 6, flexShrink: 1 },
   bgmPickRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
   bgmPickTitle: { flex: 1, fontSize: 14, color: '#3F3F46', marginRight: 8 },
   viewerCounter: { position: 'absolute', top: 24, right: 16, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 1220 },
@@ -6154,15 +6156,15 @@ const styles = themedStyles({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#000000',
     zIndex: 999,
   },
   friendCardModal: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#000000',
     overflow: 'hidden',
   },
-  friendCardCover: { width: '100%', height: '42%', backgroundColor: '#4A5568' },
+  friendCardCover: { width: '100%', backgroundColor: '#4A5568' },
   friendCardCoverOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.2)',
@@ -6178,29 +6180,29 @@ const styles = themedStyles({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  friendCardBody: { flex: 1, alignItems: 'center', padding: 20, paddingTop: 0, paddingBottom: 32 },
+  friendCardBody: { flex: 1, alignItems: 'center', padding: 20, paddingTop: 0, paddingBottom: 20 },
   friendCardAvatar: {
     width: 76,
     height: 76,
     borderRadius: 28,
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: '#000000',
     marginTop: -38,
     marginBottom: 10,
   },
-  friendCardName: { fontSize: 18, fontWeight: 'bold', color: '#222' },
-  friendCardBio: { fontSize: 13, color: '#666', marginTop: 4, marginBottom: 18, textAlign: 'center' },
+  friendCardName: { fontSize: 18, fontWeight: 'bold', color: '#FFFFFF' },
+  friendCardBio: { fontSize: 13, color: '#BBBBBB', marginTop: 4, marginBottom: 18, textAlign: 'center' },
   friendCardActions: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 'auto' },
   friendCardActionBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 10,
-    backgroundColor: '#F2F2F2',
+    backgroundColor: '#2A2A2A',
     alignItems: 'center',
     gap: 4,
   },
   friendCardChatBtn: { backgroundColor: '#FEE500' },
-  friendCardActionLabel: { fontSize: 13, color: '#333' },
+  friendCardActionLabel: { fontSize: 13, color: '#EEEEEE' },
 
   coverBackground: { width: '100%', height: COVER_HEIGHT, backgroundColor: '#4A5568' },
   coverOverlay: {
