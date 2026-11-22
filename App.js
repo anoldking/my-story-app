@@ -20,6 +20,8 @@ import {
   PanResponder,
   Pressable,
   AppState,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Text, TextInput, useAppFonts } from './fonts';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -696,14 +698,58 @@ const FullscreenPhotoPopup = ({
   );
 };
 
+// 홈 BGM 안내 글자: 왼쪽에서 오른쪽으로 계속 흘러감
+const BgmMarquee = ({ text }) => {
+  const [boxW, setBoxW] = useState(0);
+  const [textW, setTextW] = useState(0);
+  const x = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!boxW || !textW) return;
+    x.setValue(-textW);
+    const anim = Animated.loop(
+      Animated.timing(x, {
+        toValue: boxW,
+        duration: Math.max(4000, (boxW + textW) * 28),
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [boxW, textW]);
+
+  return (
+    <View style={styles.musicMarqueeBox} onLayout={(e) => setBoxW(e.nativeEvent.layout.width)}>
+      <Animated.View style={{ position: 'absolute', left: 0, width: 2000, flexDirection: 'row', transform: [{ translateX: x }] }}>
+        <Text
+          style={styles.musicMarqueeText}
+          numberOfLines={1}
+          onLayout={(e) => setTextW(e.nativeEvent.layout.width)}
+        >
+          {text}
+        </Text>
+      </Animated.View>
+    </View>
+  );
+};
+
 // 홈 위쪽 배경음악 바
-const MusicBar = ({ track, playing, onToggle, onNext, hasNext }) => (
+const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNext }) => (
   <View style={styles.musicBar}>
     <Ionicons name="musical-notes" size={17} color={playing ? '#2563EB' : '#71717A'} />
-    <View style={{ flex: 1, marginHorizontal: 10 }}>
+    <View style={{ maxWidth: '38%', marginLeft: 10, marginRight: 6 }}>
       <Text style={styles.musicTitle} numberOfLines={1}>{track.title || '제목 없음'}</Text>
       <Text style={styles.musicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
     </View>
+    {playing ? (
+      <BgmMarquee text={muted ? '🔇 홈 BGM이 음소거되어 있습니다.' : '♪ 홈 BGM이 재생되고 있습니다.'} />
+    ) : (
+      <View style={{ flex: 1 }} />
+    )}
+    <TouchableOpacity onPress={onToggleMute} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.musicMuteBtn}>
+      <Ionicons name={muted ? 'volume-mute-outline' : 'volume-medium-outline'} size={16} color="#FFFFFF" />
+    </TouchableOpacity>
     <TouchableOpacity onPress={onToggle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.musicBtn}>
       <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#18181B" />
     </TouchableOpacity>
@@ -1513,6 +1559,16 @@ export default function App() {
   const [tempBgmTitle, setTempBgmTitle] = useState('');
   const [tempBgmMime, setTempBgmMime] = useState('audio/mpeg');
   const [bgmChanged, setBgmChanged] = useState(false);
+  const [bgmMuted, setBgmMutedState] = useState(false);
+  const bgmMutedRef = useRef(false);
+  const bgmToggleMute = async () => {
+    const next = !bgmMutedRef.current;
+    bgmMutedRef.current = next;
+    setBgmMutedState(next);
+    if (soundRef.current) {
+      try { await soundRef.current.setIsMutedAsync(next); } catch (e) { /* 무시 */ }
+    }
+  };
 
   const setBgmPlaying = (v) => {
     bgmPlayingRef.current = v;
@@ -1544,7 +1600,7 @@ export default function App() {
       });
       await bgmUnload();
       setBgmTrack(track);
-      const { sound } = await Audio.Sound.createAsync({ uri: track.url }, { shouldPlay: true });
+      const { sound } = await Audio.Sound.createAsync({ uri: track.url }, { shouldPlay: true, isMuted: bgmMutedRef.current });
       soundRef.current = sound;
       setBgmPlaying(true);
       sound.setOnPlaybackStatusUpdate((st) => {
@@ -1616,14 +1672,14 @@ export default function App() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
 
-  // 접속시 음악 자동재생 켬/끔 (기본: 끔)
+  // 접속시 음악 자동재생 켬/끔 (기본: 켬 — 처음 홈화면에 들어오면 바로 재생)
   const BGM_AUTOSTART_KEY = 'bgm_autostart_v1';
-  const [bgmAutoStart, setBgmAutoStart] = useState(false);
+  const [bgmAutoStart, setBgmAutoStart] = useState(true);
   const [bgmAutoLoaded, setBgmAutoLoaded] = useState(false);
   const bgmAutoDoneRef = useRef(false);
   useEffect(() => {
     AsyncStorage.getItem(BGM_AUTOSTART_KEY)
-      .then((v) => setBgmAutoStart(v === '1'))
+      .then((v) => setBgmAutoStart(v !== '0'))
       .catch(() => {})
       .then(() => setBgmAutoLoaded(true));
   }, []);
@@ -1655,11 +1711,12 @@ export default function App() {
   useEffect(() => {
     if (!bgmAutoLoaded || !bgmAutoStart || bgmAutoDoneRef.current) return;
     if (!session || !session.user) return;
+    if (mainTab !== 'home') return;
     const list = bgmListRef.current || [];
     if (list.length === 0) return;
     bgmAutoDoneRef.current = true;
     bgmPlay(bgmToTrack(list[0]));
-  }, [bgmAutoLoaded, bgmAutoStart, session && session.user && session.user.id, members]);
+  }, [bgmAutoLoaded, bgmAutoStart, session && session.user && session.user.id, members, mainTab]);
   const [friendRelationMap, setFriendRelationMap] = useState({});
   const [incomingRequests, setIncomingRequests] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -3793,6 +3850,8 @@ export default function App() {
         <MusicBar
           track={shownBgmTrack}
           playing={bgmPlaying}
+          muted={bgmMuted}
+          onToggleMute={bgmToggleMute}
           hasNext={bgmList.length > 1}
           onToggle={() => bgmToggle(shownBgmTrack)}
           onNext={() => bgmNext(shownBgmTrack)}
@@ -6124,6 +6183,9 @@ const styles = themedStyles({
   musicTitle: { fontSize: 13, fontWeight: '700', color: '#18181B' },
   musicOwner: { fontSize: 11, color: '#71717A', marginTop: 1 },
   musicBtn: { padding: 6, marginLeft: 2 },
+  musicMuteBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#3F3F46', alignItems: 'center', justifyContent: 'center', marginLeft: 4, marginRight: 2 },
+  musicMarqueeBox: { flex: 1, height: 20, overflow: 'hidden', justifyContent: 'center', marginHorizontal: 4 },
+  musicMarqueeText: { fontSize: 12, color: '#2563EB', fontWeight: '600' },
   friendBgmFloatWrap: { position: 'absolute', top: 80, left: 0, right: 0, alignItems: 'center' },
   friendBgmRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.35)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', maxWidth: '80%' },
   friendBgmText: { fontSize: 13, color: '#FFFFFF', marginLeft: 6, flexShrink: 1, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
