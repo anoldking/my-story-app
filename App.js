@@ -5072,53 +5072,83 @@ export default function App() {
                 </TouchableOpacity>
               ) : null}
 
-              <View style={styles.friendCardActions}>
-                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                  {renderFriendStatusActionButton(selectedFriend.id, false, true)}
-                </View>
+              {/* 프로필 하단 버튼 3개: 친구 / 1:1 채팅 / 차단 */}
+              {(() => {
+                const fid = selectedFriend.id;
+                const isMe = fid === session?.user?.id;
+                const rel = friendRelationMap[fid];
+                const isBlocked = blockedIds.includes(fid);
 
-                <TouchableOpacity
-                  style={[styles.friendCardActionBtn, styles.friendCardChatBtn]}
-                  onPress={() => {
-                    const target = selectedFriend;
-                    setSelectedFriend(null);
-                    openInlineChatInMessagesTab(target);
-                  }}
-                >
-                  <Ionicons name="chatbubble-outline" size={19} color="#3C1E1E" />
-                  <Text style={[styles.friendCardActionLabel, { fontWeight: 'bold', color: '#3C1E1E' }]}>
-                    1:1 채팅하기
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                // 친구 버튼 상태
+                let friendIcon = 'person-add-outline';
+                let friendLabel = '친구신청';
+                let friendColor = '#FFFFFF';
+                let onFriendPress = () => sendFriendRequest(fid);
+                if (rel && rel.status === 'accepted') {
+                  friendIcon = 'person-remove-outline';
+                  friendLabel = '친구끊기';
+                  onFriendPress = () => cancelOrRemoveFriend(fid);
+                } else if (rel && rel.addressee_id === session?.user?.id) {
+                  friendIcon = 'person-add';
+                  friendLabel = '신청수락';
+                  friendColor = '#60A5FA';
+                  onFriendPress = () => acceptFriendRequest(rel.id, fid);
+                } else if (rel) {
+                  friendIcon = 'time-outline';
+                  friendLabel = '신청중';
+                  friendColor = '#9CA3AF';
+                  onFriendPress = () => cancelOrRemoveFriend(fid);
+                }
 
-              {/* 차단 / 차단 해제 (내 프로필이 아닐 때만) */}
-              {selectedFriend.id !== session?.user?.id && (
-                blockedIds.includes(selectedFriend.id) ? (
-                  <TouchableOpacity
-                    style={styles.friendCardBlockBtn}
-                    activeOpacity={0.7}
-                    onPress={async () => {
-                      const ok = await unblockUser(selectedFriend.id);
-                      if (ok) showAlert('차단 해제', `${selectedFriend.nickname || '이 사람'}님의 차단을 해제했어요.`);
-                    }}
-                  >
-                    <Ionicons name="lock-open-outline" size={15} color="#9CA3AF" />
-                    <Text style={[styles.friendCardBlockText, { color: '#9CA3AF' }]}>차단 해제</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.friendCardBlockBtn}
-                    activeOpacity={0.7}
-                    onPress={() =>
-                      blockUser(selectedFriend.id, selectedFriend.nickname, () => setSelectedFriend(null))
-                    }
-                  >
-                    <Ionicons name="ban-outline" size={15} color="#F87171" />
-                    <Text style={styles.friendCardBlockText}>차단하기</Text>
-                  </TouchableOpacity>
-                )
-              )}
+                return (
+                  <View style={styles.friendCardActions}>
+                    {!isMe && (
+                      <TouchableOpacity style={styles.friendCardActionBtn} activeOpacity={0.7} onPress={onFriendPress}>
+                        <Ionicons name={friendIcon} size={19} color={friendColor} />
+                        <Text style={[styles.friendCardActionLabel, { color: friendColor }]}>{friendLabel}</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      style={styles.friendCardActionBtn}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        const target = selectedFriend;
+                        setSelectedFriend(null);
+                        openInlineChatInMessagesTab(target);
+                      }}
+                    >
+                      <Ionicons name="chatbubble-outline" size={19} color="#FFFFFF" />
+                      <Text style={styles.friendCardActionLabel}>1:1 채팅하기</Text>
+                    </TouchableOpacity>
+
+                    {!isMe && (
+                      isBlocked ? (
+                        <TouchableOpacity
+                          style={styles.friendCardActionBtn}
+                          activeOpacity={0.7}
+                          onPress={async () => {
+                            const ok = await unblockUser(fid);
+                            if (ok) showAlert('차단 해제', `${selectedFriend.nickname || '이 사람'}님의 차단을 해제했어요.`);
+                          }}
+                        >
+                          <Ionicons name="lock-open-outline" size={19} color="#9CA3AF" />
+                          <Text style={[styles.friendCardActionLabel, { color: '#9CA3AF' }]}>차단해제</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.friendCardActionBtn}
+                          activeOpacity={0.7}
+                          onPress={() => blockUser(fid, selectedFriend.nickname, () => setSelectedFriend(null))}
+                        >
+                          <Ionicons name="ban-outline" size={19} color="#F87171" />
+                          <Text style={[styles.friendCardActionLabel, { color: '#F87171' }]}>차단하기</Text>
+                        </TouchableOpacity>
+                      )
+                    )}
+                  </View>
+                );
+              })()}
             </View>
           </View>
         </View>
@@ -6326,8 +6356,11 @@ const styles = themedStyles({
     flex: 1,
     paddingVertical: 12,
     borderRadius: 10,
-    backgroundColor: '#2A2A2A',
+    backgroundColor: '#000000',
+    borderWidth: 1,
+    borderColor: '#3A3A3A',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
   },
   friendCardChatBtn: { backgroundColor: '#FEE500' },
