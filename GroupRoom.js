@@ -11,7 +11,10 @@ import {
   Modal,
   Linking,
   ActivityIndicator,
+  Platform,
+  ScrollView,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { Text, TextInput } from './fonts';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -19,6 +22,23 @@ import * as MediaLibrary from 'expo-media-library';
 import { Ionicons, themedStyles, hapticTap } from './theme';
 import GalleryPicker from './GalleryPicker';
 import StickerPanel, { getSticker, STICKER_LABEL, StickerBubbleImage } from './StickerPanel';
+
+// 단체방 알림음 설정 화면 열기 (안드로이드 알림 채널 설정)
+async function openGroupSound() {
+  if (Platform.OS !== 'android') { Linking.openSettings(); return; }
+  try {
+    await Notifications.setNotificationChannelAsync('messages_group', {
+      name: '단체방 새 메시지 알림 (전용음)',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'mimi_up.wav',
+      vibrationPattern: [0, 250, 250, 250],
+    });
+    await Linking.sendIntent('android.settings.CHANNEL_NOTIFICATION_SETTINGS', [
+      { key: 'android.provider.extra.APP_PACKAGE', value: 'com.anoldking.mystoryapp' },
+      { key: 'android.provider.extra.CHANNEL_ID', value: 'messages_group' },
+    ]);
+  } catch (e) { Linking.openSettings(); }
+}
 
 function hhmm(iso) {
   const d = new Date(iso);
@@ -37,7 +57,37 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   const [stickerOpen, setStickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [viewingImage, setViewingImage] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  const [noticeDraft, setNoticeDraft] = useState('');
+  const [noticeSaving, setNoticeSaving] = useState(false);
+  const [noticeExpanded, setNoticeExpanded] = useState(false);
   const listRef = useRef(null);
+
+  // 공지 불러오기
+  const loadNotice = useCallback(async () => {
+    const { data } = await supabase.from('chat_rooms').select('notice').eq('id', room.id).maybeSingle();
+    setNotice((data && data.notice) || '');
+  }, [supabase, room.id]);
+
+  useEffect(() => { loadNotice(); }, [loadNotice]);
+
+  const openNoticeEditor = () => {
+    setSettingsOpen(false);
+    setNoticeDraft(notice);
+    setNoticeOpen(true);
+  };
+
+  const saveNotice = async (value) => {
+    setNoticeSaving(true);
+    const v = (value || '').trim();
+    const { error } = await supabase.from('chat_rooms').update({ notice: v || null }).eq('id', room.id);
+    setNoticeSaving(false);
+    if (error) { Alert.alert('공지 저장 실패', error.message); return; }
+    setNotice(v);
+    setNoticeOpen(false);
+  };
 
   const markRead = useCallback(() => {
     supabase
@@ -241,10 +291,10 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           onPress={() => openUrl(item.file_url)}
           style={[s.bubble, mine ? s.bubbleMine : s.bubbleOther, s.fileBubble]}
         >
-          <Ionicons name="attach" size={18} color={mine ? '#fff' : '#333'} />
+          <Ionicons name="attach" size={18} color={mine ? '#FFFFFF' : '#3F3F46'} />
           <View style={{ flexShrink: 1, marginLeft: 6 }}>
             <Text style={mine ? s.textMine : s.textOther} numberOfLines={2}>{item.file_name || '첨부파일'}</Text>
-            <Text style={[s.fileHint, mine && { color: '#dbe7ff' }]}>터치하여 열기 / 저장</Text>
+            <Text style={[s.fileHint, mine && { color: '#E4E4E7' }]}>터치하여 열기 / 저장</Text>
           </View>
         </TouchableOpacity>
       );
@@ -275,7 +325,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           <Image source={{ uri: av }} style={s.avatar} />
         ) : (
           <View style={[s.avatar, s.avatarDefault]}>
-            <Ionicons name="person" size={16} color="#94A3B8" />
+            <Ionicons name="person" size={16} color="#A1A1AA" />
           </View>
         )}
         <View style={[s.msgRow, s.rowOther, { marginBottom: 0, marginLeft: 8, flexShrink: 1 }]}>
@@ -297,16 +347,23 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         </TouchableOpacity>
         <Text style={s.title} numberOfLines={1}>{room.name}</Text>
         <View style={s.headerRight}>
-          {onInvite ? (
-            <TouchableOpacity onPress={onInvite} style={s.inviteBtn}>
-              <Text style={s.inviteText}>+ 초대</Text>
-            </TouchableOpacity>
-          ) : null}
+          <TouchableOpacity onPress={() => setSettingsOpen(true)} hitSlop={8} style={{ marginRight: 14 }}>
+            <Ionicons name="settings-outline" size={21} color="#3F3F46" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={leaveRoom}>
-            <Text style={{ color: '#dc2626', fontSize: 15 }}>나가기</Text>
+            <Text style={s.leaveText}>나가기</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* 공지: 단체방 맨 위 고정 */}
+      {notice ? (
+        <TouchableOpacity activeOpacity={0.85} style={s.noticeBar} onPress={() => setNoticeExpanded(!noticeExpanded)}>
+          <Ionicons name="megaphone-outline" size={16} color="#FFFFFF" />
+          <Text style={s.noticeText} numberOfLines={noticeExpanded ? 0 : 1}>{notice}</Text>
+          <Ionicons name={noticeExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#FFFFFF" />
+        </TouchableOpacity>
+      ) : null}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
           ref={listRef}
@@ -323,7 +380,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
             onPress={() => setMenuOpen(!menuOpen)}
             disabled={sending}
           >
-            <Ionicons name={menuOpen ? 'close' : 'add'} size={22} color="#444" />
+            <Ionicons name={menuOpen ? 'close' : 'add'} size={22} color="#3F3F46" />
           </TouchableOpacity>
           <TextInput
             style={s.input}
@@ -331,6 +388,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
             onChangeText={setText}
             onFocus={() => { setMenuOpen(false); setStickerOpen(false); }}
             placeholder="메시지 입력"
+            placeholderTextColor="#A1A1AA"
             multiline
           />
           <TouchableOpacity style={s.sendBtn} onPress={send} disabled={sending}>
@@ -340,19 +398,19 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         {menuOpen ? (
           <View style={s.menu}>
             <TouchableOpacity style={s.menuItem} onPress={sendPhoto}>
-              <View style={[s.menuIcon, { backgroundColor: '#48BB78' }]}>
+              <View style={s.menuIcon}>
                 <Ionicons name="image-outline" size={22} color="#fff" />
               </View>
               <Text style={s.menuLabel}>사진 올리기</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.menuItem} onPress={() => { setMenuOpen(false); setStickerOpen(true); }}>
-              <View style={[s.menuIcon, { backgroundColor: '#F6AD55' }]}>
+              <View style={s.menuIcon}>
                 <Ionicons name="happy-outline" size={22} color="#fff" />
               </View>
               <Text style={s.menuLabel}>이모티콘</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.menuItem} onPress={sendFile}>
-              <View style={[s.menuIcon, { backgroundColor: '#4299E1' }]}>
+              <View style={s.menuIcon}>
                 <Ionicons name="document-attach-outline" size={22} color="#fff" />
               </View>
               <Text style={s.menuLabel}>파일 첨부</Text>
@@ -363,6 +421,66 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           <StickerPanel supabase={supabase} onPick={sendSticker} onClose={() => setStickerOpen(false)} />
         ) : null}
       </KeyboardAvoidingView>
+
+      {/* 방 설정: 초대 / 공지 / 알림음 */}
+      <Modal visible={settingsOpen} transparent animationType="fade" onRequestClose={() => setSettingsOpen(false)}>
+        <TouchableOpacity style={s.sheetBackdrop} activeOpacity={1} onPress={() => setSettingsOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={s.sheet}>
+            <Text style={s.sheetTitle}>방 설정</Text>
+            <TouchableOpacity
+              style={s.sheetRow}
+              onPress={() => { setSettingsOpen(false); if (onInvite) onInvite(); }}
+            >
+              <Ionicons name="person-add-outline" size={20} color="#3F3F46" />
+              <Text style={s.sheetRowText}>초대</Text>
+              <Ionicons name="chevron-forward" size={18} color="#A1A1AA" />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.sheetRow} onPress={openNoticeEditor}>
+              <Ionicons name="megaphone-outline" size={20} color="#3F3F46" />
+              <Text style={s.sheetRowText}>공지</Text>
+              <Text style={s.sheetRowSub} numberOfLines={1}>{notice ? '등록됨' : '없음'}</Text>
+              <Ionicons name="chevron-forward" size={18} color="#A1A1AA" />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.sheetRow} onPress={() => { setSettingsOpen(false); openGroupSound(); }}>
+              <Ionicons name="notifications-outline" size={20} color="#3F3F46" />
+              <Text style={s.sheetRowText}>알림음</Text>
+              <Ionicons name="chevron-forward" size={18} color="#A1A1AA" />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.sheetClose} onPress={() => setSettingsOpen(false)}>
+              <Text style={s.sheetCloseText}>닫기</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={noticeOpen} transparent animationType="fade" onRequestClose={() => setNoticeOpen(false)}>
+        <KeyboardAvoidingView style={s.sheetBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={s.sheet}>
+            <Text style={s.sheetTitle}>공지</Text>
+            <TextInput
+              style={s.noticeInput}
+              value={noticeDraft}
+              onChangeText={setNoticeDraft}
+              placeholder="방 맨 위에 고정할 공지를 입력하세요"
+              placeholderTextColor="#A1A1AA"
+              multiline
+            />
+            <View style={s.noticeBtnRow}>
+              {notice ? (
+                <TouchableOpacity style={[s.grayBtn, s.grayBtnLight]} onPress={() => saveNotice('')} disabled={noticeSaving}>
+                  <Text style={s.grayBtnLightText}>공지 내리기</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity style={[s.grayBtn, s.grayBtnLight]} onPress={() => setNoticeOpen(false)} disabled={noticeSaving}>
+                <Text style={s.grayBtnLightText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.grayBtn} onPress={() => saveNotice(noticeDraft)} disabled={noticeSaving}>
+                {noticeSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={s.grayBtnText}>저장</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <GalleryPicker visible={galleryOpen} onClose={() => setGalleryOpen(false)} onSend={sendPhotos} />
 
@@ -384,29 +502,28 @@ const s = themedStyles({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: '#eee',
   },
-  title: { fontSize: 18, fontWeight: '700', flex: 1, textAlign: 'center' },
-  link: { fontSize: 16, color: '#2563eb', width: 110 },
+  title: { fontSize: 18, fontWeight: '700', flex: 1, textAlign: 'center', color: '#111111' },
+  link: { fontSize: 16, color: '#3F3F46', width: 110 },
+  leaveText: { color: '#3F3F46', fontSize: 15, fontWeight: '600' },
   headerRight: { width: 110, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
-  inviteBtn: { backgroundColor: '#2B6CB0', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5, marginRight: 12 },
-  inviteText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  empty: { textAlign: 'center', marginTop: 60, color: '#888' },
+  empty: { textAlign: 'center', marginTop: 60, color: '#A1A1AA' },
   msgRow: { marginBottom: 10, maxWidth: '85%' },
   rowMine: { alignSelf: 'flex-end', alignItems: 'flex-end' },
   rowOther: { alignSelf: 'flex-start', alignItems: 'flex-start' },
-  name: { fontSize: 12, color: '#666', marginBottom: 2, marginLeft: 2 },
+  name: { fontSize: 12, color: '#71717A', marginBottom: 2, marginLeft: 2 },
   otherRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, maxWidth: '92%', alignSelf: 'flex-start' },
   avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E5E7EB' },
   avatarDefault: { alignItems: 'center', justifyContent: 'center' },
   bubbleLine: { flexDirection: 'row', alignItems: 'flex-end' },
   bubble: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 14, maxWidth: '100%', flexShrink: 1 },
-  bubbleMine: { backgroundColor: '#2563eb' },
-  bubbleOther: { backgroundColor: '#eee' },
-  textMine: { color: '#fff', fontSize: 16 },
-  textOther: { color: '#111', fontSize: 16 },
-  time: { fontSize: 11, color: '#999', marginHorizontal: 6 },
+  bubbleMine: { backgroundColor: '#52525B' },
+  bubbleOther: { backgroundColor: '#EEEEEE' },
+  textMine: { color: '#FFFFFF', fontSize: 16 },
+  textOther: { color: '#111111', fontSize: 16 },
+  time: { fontSize: 11, color: '#A1A1AA', marginHorizontal: 6 },
   photo: { width: 200, height: 200, borderRadius: 14, backgroundColor: '#eee' },
   fileBubble: { flexDirection: 'row', alignItems: 'center' },
-  fileHint: { fontSize: 11, color: '#777', marginTop: 2 },
+  fileHint: { fontSize: 11, color: '#71717A', marginTop: 2 },
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', padding: 8, paddingBottom: 28,
     borderTopWidth: 1, borderColor: '#eee', backgroundColor: '#fff',
@@ -418,17 +535,40 @@ const s = themedStyles({
   plusBtnOn: { backgroundColor: '#E5E7EB' },
   input: {
     flex: 1, maxHeight: 120, borderWidth: 1, borderColor: '#ddd',
-    borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, fontSize: 16,
+    borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, fontSize: 16, color: '#111111',
   },
-  sendBtn: { marginLeft: 8, backgroundColor: '#2563eb', borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10, minWidth: 64, alignItems: 'center' },
-  sendText: { color: '#fff', fontWeight: '700' },
+  sendBtn: { marginLeft: 8, backgroundColor: '#3F3F46', borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10, minWidth: 64, alignItems: 'center' },
+  sendText: { color: '#FFFFFF', fontWeight: '700' },
   menu: {
     flexDirection: 'row', paddingHorizontal: 24, paddingVertical: 18, paddingBottom: 30,
     backgroundColor: '#F9FAFB', borderTopWidth: 1, borderColor: '#eee',
   },
   menuItem: { alignItems: 'center', marginRight: 32 },
-  menuIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  menuLabel: { marginTop: 6, fontSize: 12, color: '#444' },
+  menuIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: '#52525B' },
+  menuLabel: { marginTop: 6, fontSize: 12, color: '#3F3F46' },
+  noticeBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 10, marginTop: 8, paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 12, backgroundColor: '#52525B',
+  },
+  noticeText: { flex: 1, color: '#FFFFFF', fontSize: 14, lineHeight: 20 },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 30 },
+  sheetTitle: { fontSize: 17, fontWeight: '800', color: '#111111', marginBottom: 8 },
+  sheetRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderColor: '#F4F4F5' },
+  sheetRowText: { flex: 1, fontSize: 16, color: '#111111', marginLeft: 12 },
+  sheetRowSub: { fontSize: 13, color: '#A1A1AA', marginRight: 6 },
+  sheetClose: { marginTop: 14, alignItems: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: '#F4F4F5' },
+  sheetCloseText: { fontSize: 15, color: '#3F3F46', fontWeight: '700' },
+  noticeInput: {
+    minHeight: 100, maxHeight: 200, borderWidth: 1, borderColor: '#E4E4E7', borderRadius: 12,
+    padding: 12, fontSize: 15, color: '#111111', textAlignVertical: 'top',
+  },
+  noticeBtnRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 14 },
+  grayBtn: { backgroundColor: '#3F3F46', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10, minWidth: 64, alignItems: 'center' },
+  grayBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+  grayBtnLight: { backgroundColor: '#F4F4F5' },
+  grayBtnLightText: { color: '#3F3F46', fontWeight: '700', fontSize: 14 },
   viewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center' },
   viewerImg: { width: '100%', height: '80%' },
   viewerClose: { position: 'absolute', top: 44, right: 20, zIndex: 2, padding: 6 },

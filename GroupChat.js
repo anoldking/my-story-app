@@ -216,7 +216,6 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
         <FlatList
         data={rooms}
         keyExtractor={(r) => r.id}
-        ListHeaderComponent={<TouchableOpacity style={{ padding: 14 }} onPress={openGroupSound}><Text style={s.link}>🔔 단체방 알림음 변경</Text></TouchableOpacity>}
         ListEmptyComponent={<Text style={s.empty}>아직 단체방이 없어요.{'\n'}오른쪽 위 ＋새 방을 눌러 보세요.</Text>}
         renderItem={({ item }) => {
             const info = roomInfo[item.id];
@@ -228,7 +227,7 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
                   <Image source={{ uri: rep.avatar_url }} style={s.roomAvatar} />
                 ) : (
                   <View style={[s.roomAvatar, s.roomAvatarDefault]}>
-                    <Ionicons name="people" size={22} color="#94A3B8" />
+                    <Ionicons name="people" size={22} color="#A1A1AA" />
                   </View>
                 )}
                 <View style={{ flex: 1, marginLeft: 12 }}>
@@ -236,7 +235,7 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
                 </View>
                 {count > 0 ? (
                   <View style={s.countBadge}>
-                    <Ionicons name="person" size={11} color="#64748B" />
+                    <Ionicons name="person" size={11} color="#71717A" />
                     <Text style={s.countText}>{count}명</Text>
                   </View>
                 ) : null}
@@ -255,29 +254,29 @@ const s = themedStyles({
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
       paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: '#eee',
     },
-    title: { fontSize: 18, fontWeight: '700' },
-    link: { fontSize: 16, color: '#2563eb' },
+    title: { fontSize: 18, fontWeight: '700', color: '#111111' },
+    link: { fontSize: 16, color: '#3F3F46' },
     input: { margin: 16, padding: 12, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, fontSize: 16 },
-    sub: { marginHorizontal: 16, marginBottom: 6, color: '#666' },
+    sub: { marginHorizontal: 16, marginBottom: 6, color: '#71717A' },
     row: { paddingVertical: 16, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: '#f0f0f0' },
     rowOn: { backgroundColor: '#F5F6F8' },
-    rowText: { fontSize: 16 },
+    rowText: { fontSize: 16, color: '#111111' },
     rowInner: { flexDirection: 'row', alignItems: 'center' },
     circle: {
       width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#C4C8CF',
       backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginRight: 12,
     },
     circleDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#8A8F98' },
-    empty: { textAlign: 'center', marginTop: 60, color: '#888', lineHeight: 24 },
+    empty: { textAlign: 'center', marginTop: 60, color: '#A1A1AA', lineHeight: 24 },
     roomRow: { flexDirection: 'row', alignItems: 'center' },
     roomAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E5E7EB' },
     roomAvatarDefault: { alignItems: 'center', justifyContent: 'center' },
     roomSub: { fontSize: 13, color: '#6B7280', marginTop: 3 },
     countBadge: {
-      flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9',
+      flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F4F5',
       borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4, marginLeft: 8,
     },
-    countText: { fontSize: 12, color: '#475569', fontWeight: '700', marginLeft: 3 },
+    countText: { fontSize: 12, color: '#52525B', fontWeight: '700', marginLeft: 3 },
 });
 export default function GroupChat(props) {
   return (

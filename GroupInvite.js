@@ -176,6 +176,6 @@ const styles = StyleSheet.create({
   checkDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#8A8F98' },
   empty: { textAlign: 'center', color: '#9CA3AF', marginTop: 40 },
   footer: { padding: 12, paddingBottom: 28, borderTopWidth: 1, borderTopColor: '#EEEEEE' },
-  inviteBtn: { backgroundColor: '#2B6CB0', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  inviteBtn: { backgroundColor: '#3F3F46', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   inviteText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });
