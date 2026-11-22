@@ -1232,11 +1232,6 @@ const PostDetailPopup = ({
         {!isMyPost && (
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <TextBtn label="신고" pressedColor="#DC2626" onPress={() => onReportPost && onReportPost(post)} />
-            <TextBtn
-              label="차단"
-              pressedColor="#DC2626"
-              onPress={() => onBlockUser && onBlockUser(post.author_id, post.profiles?.nickname)}
-            />
           </View>
         )}
 
@@ -3269,7 +3264,7 @@ export default function App() {
     } catch (e) { /* 무시 */ }
   };
 
-  const blockUser = (userId, name) => {
+  const blockUser = (userId, name, onDone) => {
     Alert.alert(
       '차단',
       `${name || '이 사람'}님을 차단할까요?\n이 사람의 글과 댓글이 보이지 않아요. (차단 관리에서 해제할 수 있어요)`,
@@ -3288,6 +3283,7 @@ export default function App() {
             }
             setBlockedIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
             setSelectedPostId(null);
+            if (onDone) onDone();
             showAlert('차단했어요', '더 이상 이 사람의 글과 댓글이 보이지 않아요.');
           },
         },
@@ -3303,9 +3299,10 @@ export default function App() {
       .eq('blocked_id', userId);
     if (error) {
       showAlert('해제 실패', getKoreanErrorMessage(error));
-      return;
+      return false;
     }
     setBlockedIds((prev) => prev.filter((id) => id !== userId));
+    return true;
   };
 
   const reportPost = (post) => {
@@ -5094,6 +5091,34 @@ export default function App() {
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {/* 차단 / 차단 해제 (내 프로필이 아닐 때만) */}
+              {selectedFriend.id !== session?.user?.id && (
+                blockedIds.includes(selectedFriend.id) ? (
+                  <TouchableOpacity
+                    style={styles.friendCardBlockBtn}
+                    activeOpacity={0.7}
+                    onPress={async () => {
+                      const ok = await unblockUser(selectedFriend.id);
+                      if (ok) showAlert('차단 해제', `${selectedFriend.nickname || '이 사람'}님의 차단을 해제했어요.`);
+                    }}
+                  >
+                    <Ionicons name="lock-open-outline" size={15} color="#9CA3AF" />
+                    <Text style={[styles.friendCardBlockText, { color: '#9CA3AF' }]}>차단 해제</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.friendCardBlockBtn}
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      blockUser(selectedFriend.id, selectedFriend.nickname, () => setSelectedFriend(null))
+                    }
+                  >
+                    <Ionicons name="ban-outline" size={15} color="#F87171" />
+                    <Text style={styles.friendCardBlockText}>차단하기</Text>
+                  </TouchableOpacity>
+                )
+              )}
             </View>
           </View>
         </View>
@@ -6307,6 +6332,15 @@ const styles = themedStyles({
   },
   friendCardChatBtn: { backgroundColor: '#FEE500' },
   friendCardActionLabel: { fontSize: 13, color: '#EEEEEE' },
+  friendCardBlockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  friendCardBlockText: { fontSize: 13, color: '#F87171' },
 
   coverBackground: { width: '100%', height: COVER_HEIGHT, backgroundColor: '#4A5568' },
   coverOverlay: {
