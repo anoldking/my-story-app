@@ -1017,30 +1017,24 @@ const PostPhotoViewer = ({
               <Text style={styles.fullscreenActionCount}>{tops.length}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.fullscreenActionBtn}
-              activeOpacity={0.8}
-              onPress={() => onOpenMore(post.id)}
-            >
-              <Ionicons name="ellipsis-horizontal" size={22} color="#FFFFFF" />
-            </TouchableOpacity>
           </View>
         </View>
       )}
 
       {cmtOpen && (
         <KeyboardAvoidingView
-          style={styles.viewerCmtWrap}
+          style={[styles.viewerCmtWrap, { height: Math.round(winHeight * 0.5) }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.viewerCmtSheet}>
+          {/* 사진 아래쪽 50%에 음영이 생기고, 그 안에 댓글과 입력창이 보임 */}
+          <View style={styles.viewerCmtShade}>
             <View style={styles.viewerCmtHeader}>
               <Text style={styles.viewerCmtTitle}>댓글 {tops.length}</Text>
-              <TouchableOpacity onPress={() => setCmtOpen(false)} style={{ padding: 4 }}>
-                <Ionicons name="close" size={22} color="#FFFFFF" />
+              <TouchableOpacity onPress={() => setCmtOpen(false)} hitSlop={8} style={{ padding: 4 }}>
+                <Ionicons name="chevron-down" size={24} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={{ maxHeight: Math.round(winHeight * 0.34) }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
               {tops.length === 0 ? (
                 <Text style={styles.viewerCmtEmpty}>첫 댓글을 남겨 보세요.</Text>
               ) : (
@@ -1058,7 +1052,7 @@ const PostPhotoViewer = ({
                 value={text}
                 onChangeText={setText}
                 placeholder="댓글 달기..."
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor="#A1A1AA"
               />
               <TouchableOpacity onPress={submit} disabled={!text.trim() || sending} style={styles.viewerCmtSend}>
                 <Text style={[styles.viewerCmtSendText, (!text.trim() || sending) && { opacity: 0.4 }]}>등록</Text>
@@ -6225,12 +6219,13 @@ const styles = themedStyles({
   reactPickLabel: { color: '#FFFFFF', fontSize: 10, marginTop: 2 },
   viewerCmtWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 1230 },
   viewerCmtSheet: { backgroundColor: 'rgba(20,20,24,0.97)', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20 },
+  viewerCmtShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20 },
   viewerCmtHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   viewerCmtTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   viewerCmtEmpty: { color: '#A1A1AA', fontSize: 13, paddingVertical: 8 },
   viewerCmtItem: { color: '#FFFFFF', fontSize: 13.5, lineHeight: 19, marginBottom: 8 },
   viewerCmtInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
-  viewerCmtInput: { flex: 1, height: 42, borderRadius: 21, backgroundColor: '#FFFFFF', paddingHorizontal: 16, fontSize: 14, color: '#111827' },
+  viewerCmtInput: { flex: 1, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 16, fontSize: 14, color: '#FFFFFF' },
   viewerCmtSend: { paddingHorizontal: 14, paddingVertical: 10 },
   viewerCmtSendText: { color: '#60A5FA', fontSize: 15, fontWeight: '800' },
   fullscreenViewerRoot: {
@@ -6265,7 +6260,7 @@ const styles = themedStyles({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(0, 0, 0, 0.42)',
+    backgroundColor: 'transparent',
     zIndex: 1210,
   },
   fullscreenAuthorMeta: {
@@ -6299,14 +6294,20 @@ const styles = themedStyles({
     textShadowRadius: 3,
   },
   fullscreenSubMeta: {
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 12,
     marginBottom: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   fullscreenCaptionText: {
     color: '#FFFFFF',
     fontSize: 13,
     lineHeight: 18,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   fullscreenRightActions: {
     alignItems: 'center',
