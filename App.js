@@ -699,7 +699,7 @@ const FullscreenPhotoPopup = ({
 };
 
 // 홈 BGM 안내 글자: 왼쪽에서 오른쪽으로 계속 흘러감
-const BgmMarquee = ({ text, color }) => {
+const BgmMarquee = ({ text, color, style }) => {
   const [boxW, setBoxW] = useState(0);
   const [textW, setTextW] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
@@ -721,7 +721,7 @@ const BgmMarquee = ({ text, color }) => {
   }, [boxW, tw]);
 
   return (
-    <View style={styles.musicMarqueeBox} onLayout={(e) => setBoxW(e.nativeEvent.layout.width)}>
+    <View style={[styles.musicMarqueeBox, style]} onLayout={(e) => setBoxW(e.nativeEvent.layout.width)}>
       <Animated.View style={{ position: 'absolute', left: 0, width: 2000, flexDirection: 'row', transform: [{ translateX: x }] }}>
         <Text
           style={[styles.musicMarqueeText, color ? { color } : null]}
@@ -739,15 +739,15 @@ const BgmMarquee = ({ text, color }) => {
 const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNext }) => (
   <View style={styles.musicBar}>
     <Ionicons name="musical-notes" size={17} color={playing ? '#3F3F46' : '#A1A1AA'} />
-    <View style={{ maxWidth: '38%', marginLeft: 10, marginRight: 6 }}>
+    <View style={{ flex: 1, marginLeft: 10, marginRight: 6 }}>
       <Text style={styles.musicTitle} numberOfLines={1}>{track.title || '제목 없음'}</Text>
-      <Text style={styles.musicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
+      {/* 둘째 줄: 재생 중이면 안내 글자가 가로로 흘러감, 멈추면 누구 노래인지 표시 */}
+      {playing ? (
+        <BgmMarquee text={`홈 BGM이 재생되고 있습니다.  ·  ${track.ownerLabel || ''}`} color="#71717A" style={{ flex: 0, alignSelf: 'stretch', marginHorizontal: 0, marginTop: 2, height: 20 }} />
+      ) : (
+        <Text style={styles.musicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
+      )}
     </View>
-    {playing ? (
-      <BgmMarquee text="홈 BGM이 재생되고 있습니다." color="#71717A" />
-    ) : (
-      <View style={{ flex: 1 }} />
-    )}
     <TouchableOpacity onPress={onToggleMute} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.musicMuteBtn}>
       <Ionicons name={muted ? 'volume-mute-outline' : 'volume-medium-outline'} size={16} color="#FFFFFF" />
     </TouchableOpacity>
@@ -766,15 +766,14 @@ const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNe
 const ProfileMusicBar = ({ track, playing, muted, onToggle, onToggleMute }) => (
   <View style={styles.pMusicBar}>
     <Ionicons name="musical-notes" size={17} color="#D4D4D8" />
-    <View style={{ maxWidth: '38%', marginLeft: 10, marginRight: 6 }}>
+    <View style={{ flex: 1, marginLeft: 10, marginRight: 6 }}>
       <Text style={styles.pMusicTitle} numberOfLines={1}>{track.title || '제목 없음'}</Text>
-      <Text style={styles.pMusicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
+      {playing ? (
+        <BgmMarquee text={`프로필 BGM이 재생되고 있습니다.  ·  ${track.ownerLabel || ''}`} color="#D4D4D8" style={{ flex: 0, alignSelf: 'stretch', marginHorizontal: 0, marginTop: 2, height: 20 }} />
+      ) : (
+        <Text style={styles.pMusicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
+      )}
     </View>
-    {playing ? (
-      <BgmMarquee text="프로필 BGM이 재생되고 있습니다." color="#D4D4D8" />
-    ) : (
-      <View style={{ flex: 1 }} />
-    )}
     <TouchableOpacity onPress={onToggleMute} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.pMusicMuteBtn}>
       <Ionicons name={muted ? 'volume-mute-outline' : 'volume-medium-outline'} size={16} color="#E4E4E7" />
     </TouchableOpacity>
