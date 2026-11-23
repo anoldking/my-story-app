@@ -3761,7 +3761,7 @@ export default function App() {
           }}
         >
           <Text style={styles.igLogoText}>
-            {onlyFavoritesFeed ? 'me ★' : 'me'}
+            me
           </Text>
           <Ionicons
             name={brandMenuOpen ? 'chevron-up' : 'chevron-down'}
@@ -3946,21 +3946,6 @@ export default function App() {
           >
             <Ionicons name="person-add-outline" size={17} color="#111111" />
             <Text style={styles.igDropdownLabel}>친구하기</Text>
-          </TouchableOpacity>
-
-          <View style={styles.igDropdownDivider} />
-
-          <TouchableOpacity
-            style={styles.igDropdownRow}
-            onPress={() => {
-              setBrandMenuOpen(false);
-              setOnlyFavoritesFeed(!onlyFavoritesFeed);
-            }}
-          >
-            <Ionicons name={onlyFavoritesFeed ? 'star' : 'star-outline'} size={17} color="#111111" />
-            <Text style={styles.igDropdownLabel}>
-              {onlyFavoritesFeed ? '친구공개 필터 끄기 (전체 보기)' : '친구공개 모아보기'}
-            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -5100,23 +5085,6 @@ export default function App() {
             <GroupChat supabase={supabase} me={session.user.id} onClose={() => setShowGroupChat(false)} />
           ) : null}
 
-          <TouchableOpacity
-            style={styles.leftMenuBtn}
-            onPress={() => {
-              setBrandMenuOpen(false);
-              setMemberPostsUser(null);
-              setAccountMenuOpen(false);
-              setOnlyFavoritesFeed(!onlyFavoritesFeed);
-              setMainTab('home');
-            }}
-          >
-            <Ionicons
-              name={isFavActive ? 'heart' : 'heart-outline'}
-              size={22}
-              color="#111111"
-              style={{ opacity: isFavActive ? 1 : 0.45 }}
-            />
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.leftMenuBtn}
