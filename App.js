@@ -2892,7 +2892,8 @@ export default function App() {
   };
 
   // 갤러리에서 고른 사진들을 한 장씩 전송
-  const sendChatPhotos = async (assets) => {
+  const sendChatPhotos = async (assets, opts) => {
+    const sendOriginal = !!(opts && opts.original);
     setChatGalleryOpen(false);
     if (!chatPartner || !assets || !assets.length) return;
     const partnerId = chatPartner.id;
@@ -2907,10 +2908,11 @@ export default function App() {
           const info = await MediaLibrary.getAssetInfoAsync(a);
           if (info && info.localUri) src = info.localUri;
         } catch (e) { /* 원래 uri 사용 */ }
+        // 원본으로 보내기: 크기 그대로 + 최고 품질 / 아니면 가로 1080px, 품질 0.8
         const manipulated = await ImageManipulator.manipulateAsync(
           src,
-          [{ resize: { width: 1080 } }],
-          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+          sendOriginal ? [] : [{ resize: { width: 1080 } }],
+          { compress: sendOriginal ? 1 : 0.8, format: ImageManipulator.SaveFormat.JPEG }
         );
         const storagePath = `${session.user.id}/photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
         const response = await fetch(manipulated.uri);
@@ -3086,10 +3088,13 @@ export default function App() {
             const info = await MediaLibrary.getAssetInfoAsync(a);
             if (info && info.localUri) src = info.localUri;
           } catch (e) { /* 원래 uri 사용 */ }
+          // 게시물 사진 화질: 가로 최대 1600px, 압축 0.9 (원본이 더 작으면 원본 크기 그대로)
+          const POST_MAX_W = 1600;
+          const actions = a.width && a.width > 0 && a.width <= POST_MAX_W ? [] : [{ resize: { width: POST_MAX_W } }];
           const manipulated = await ImageManipulator.manipulateAsync(
             src,
-            [{ resize: { width: 1080 } }],
-            { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+            actions,
+            { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
           );
           added.push(manipulated.uri);
         } catch (e) {
@@ -4557,6 +4562,7 @@ export default function App() {
           visible={chatGalleryOpen}
           onClose={() => setChatGalleryOpen(false)}
           onSend={sendChatPhotos}
+          originalOption
         />
 
         {chatStickerOpen && (

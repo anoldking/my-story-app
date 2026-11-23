@@ -19,7 +19,7 @@ const COLS = 3;
 const GAP = 2;
 const MAX_SELECT = 10;
 
-export default function GalleryPicker({ visible, onClose, onSend, maxSelect, sendLabel }) {
+export default function GalleryPicker({ visible, onClose, onSend, maxSelect, sendLabel, originalOption }) {
   const LIMIT = maxSelect || MAX_SELECT;
   const SEND_LABEL = sendLabel || '전송';
   const [perm, setPerm] = useState('loading'); // loading | ok | denied
@@ -31,6 +31,7 @@ export default function GalleryPicker({ visible, onClose, onSend, maxSelect, sen
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState([]); // asset 객체 배열 (선택 순서)
   const [dropOpen, setDropOpen] = useState(false);
+  const [original, setOriginal] = useState(false); // 원본으로 보내기
   const cursorRef = useRef(undefined);
   const busyRef = useRef(false);
 
@@ -145,7 +146,7 @@ export default function GalleryPicker({ visible, onClose, onSend, maxSelect, sen
           <TouchableOpacity
             style={[s.sendBtn, selected.length > 0 && s.sendBtnOn]}
             disabled={selected.length === 0}
-            onPress={() => onSend(selected)}
+            onPress={() => onSend(selected, { original })}
           >
             <Text style={[s.sendText, selected.length > 0 && { color: '#fff' }]}>
               {SEND_LABEL}{selected.length > 0 && LIMIT > 1 ? ` ${selected.length}` : ''}
@@ -175,6 +176,16 @@ export default function GalleryPicker({ visible, onClose, onSend, maxSelect, sen
             ListEmptyComponent={!loading ? <Text style={s.empty}>사진이 없어요.</Text> : null}
           />
         )}
+
+        {originalOption && perm === 'ok' ? (
+          <TouchableOpacity style={s.origBar} activeOpacity={0.8} onPress={() => setOriginal(!original)}>
+            <View style={[s.origCheck, original && s.origCheckOn]}>
+              {original ? <Ionicons name="checkmark" size={15} color="#FFFFFF" /> : null}
+            </View>
+            <Text style={s.origText}>원본으로 보내기</Text>
+            <Text style={s.origSub}>{original ? '화질 그대로 · 용량 큼' : '보통 화질 · 빠름'}</Text>
+          </TouchableOpacity>
+        ) : null}
 
         {dropOpen ? (
           <View style={s.dropWrap}>
@@ -240,4 +251,15 @@ const s = themedStyles({
   dropItem: { paddingVertical: 14, paddingHorizontal: 18 },
   dropText: { fontSize: 17, color: '#111' },
   dropCount: { color: '#9CA3AF' },
+  origBar: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 30,
+    borderTopWidth: 1, borderColor: '#EEEEEE', backgroundColor: '#FFFFFF',
+  },
+  origCheck: {
+    width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#A1A1AA',
+    alignItems: 'center', justifyContent: 'center', marginRight: 10,
+  },
+  origCheckOn: { backgroundColor: '#3F3F46', borderColor: '#3F3F46' },
+  origText: { fontSize: 15, fontWeight: '700', color: '#111111' },
+  origSub: { fontSize: 12, color: '#A1A1AA', marginLeft: 8 },
 });

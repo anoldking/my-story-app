@@ -165,11 +165,12 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   };
 
   // 사진 1장 업로드 + 메시지 저장
-  const uploadPhotoUri = async (uri) => {
+  const uploadPhotoUri = async (uri, original) => {
+    // 원본으로 보내기: 크기 그대로 + 최고 품질 / 아니면 가로 1080px, 품질 0.8
     const manipulated = await ImageManipulator.manipulateAsync(
       uri,
-      [{ resize: { width: 1080 } }],
-      { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      original ? [] : [{ resize: { width: 1080 } }],
+      { compress: original ? 1 : 0.8, format: ImageManipulator.SaveFormat.JPEG }
     );
     const path = `${me}/group_photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
     const response = await fetch(manipulated.uri);
@@ -191,7 +192,8 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
   };
 
   // 갤러리에서 고른 사진들 전송
-  const sendPhotos = async (assets) => {
+  const sendPhotos = async (assets, opts) => {
+    const sendOriginal = !!(opts && opts.original);
     setGalleryOpen(false);
     if (!assets || !assets.length) return;
     setSending(true);
@@ -204,7 +206,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           const info = await MediaLibrary.getAssetInfoAsync(a);
           if (info && info.localUri) uri = info.localUri;
         } catch (e) { /* 원래 uri 사용 */ }
-        await uploadPhotoUri(uri);
+        await uploadPhotoUri(uri, sendOriginal);
       } catch (e) {
         fail += 1;
         lastMsg = e && e.message ? e.message : String(e);
@@ -482,7 +484,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         </KeyboardAvoidingView>
       </Modal>
 
-      <GalleryPicker visible={galleryOpen} onClose={() => setGalleryOpen(false)} onSend={sendPhotos} />
+      <GalleryPicker visible={galleryOpen} onClose={() => setGalleryOpen(false)} onSend={sendPhotos} originalOption />
 
       <Modal visible={!!viewingImage} transparent animationType="fade" onRequestClose={() => setViewingImage(null)}>
         <View style={s.viewer}>
