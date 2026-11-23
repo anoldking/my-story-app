@@ -1613,6 +1613,12 @@ export default function App() {
     }
   };
 
+  // 사용자가 직접 곡을 고르거나 미리 들을 때는 음소거를 풀어서 소리가 나오게 함
+  const bgmUnmute = () => {
+    bgmMutedRef.current = false;
+    setBgmMutedState(false);
+  };
+
   const setBgmPlaying = (v) => {
     bgmPlayingRef.current = v;
     setBgmPlayingState(v);
@@ -3217,6 +3223,7 @@ export default function App() {
       cleanupOldBgmFiles(fileName);
       setProfile((prev) => ({ ...prev, bgm_url: url, bgm_title: title }));
       fetchFriendsAndRequests();
+      bgmUnmute();
       bgmPlay(bgmToTrack({ id: session.user.id, nickname: profile.nickname, bgm_url: url, bgm_title: title }));
       setBgmQuickBusy(false);
       showAlert('BGM 변경 완료', `"${title}"(으)로 바뀌었어요.`);
@@ -3256,6 +3263,7 @@ export default function App() {
   };
 
   const previewLibraryBgm = (it) => {
+    bgmUnmute();
     bgmPlay({ url: it.url, title: it.title, ownerId: null, ownerLabel: '미리듣기' });
   };
 
@@ -3268,6 +3276,7 @@ export default function App() {
       cleanupOldBgmFiles(null); // 예전에 내가 직접 올린 곡 파일은 정리
       setProfile((prev) => ({ ...prev, bgm_url: it.url, bgm_title: it.title }));
       fetchFriendsAndRequests();
+      bgmUnmute();
       bgmPlay(bgmToTrack({ id: session.user.id, nickname: profile.nickname, bgm_url: it.url, bgm_title: it.title }));
       setBgmLibOpen(false);
       showAlert('BGM 변경 완료', `"${it.title}"(으)로 바뀌었어요.`);
@@ -5734,9 +5743,16 @@ export default function App() {
           <View style={styles.cmtSheetHandle} />
           <View style={styles.cmtSheetHeader}>
             <Text style={styles.cmtSheetTitle}>BGM 고르기</Text>
-            <TouchableOpacity onPress={() => setBgmLibOpen(false)} hitSlop={10}>
-              <Ionicons name="close" size={24} color="#3F3F46" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+              {/* 미리듣기용 음소거 버튼 (홈 음악바와 같은 상태) */}
+              <TouchableOpacity onPress={bgmToggleMute} hitSlop={10} style={styles.bgmLibMuteBtn}>
+                <Ionicons name={bgmMuted ? 'volume-mute-outline' : 'volume-medium-outline'} size={16} color="#FFFFFF" />
+                <Text style={styles.bgmLibMuteText}>{bgmMuted ? '음소거' : '소리 켬'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setBgmLibOpen(false)} hitSlop={10}>
+                <Ionicons name="close" size={24} color="#3F3F46" />
+              </TouchableOpacity>
+            </View>
           </View>
           {bgmLibLoading ? (
             <ActivityIndicator style={{ marginTop: 30 }} color="#3F3F46" />
@@ -7014,6 +7030,8 @@ const styles = themedStyles({
 
   cmtSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
   bgmLibRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderColor: '#F4F4F5' },
+  bgmLibMuteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: '#3F3F46' },
+  bgmLibMuteText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   bgmLibPlayBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#3F3F46', alignItems: 'center', justifyContent: 'center' },
   bgmLibTitle: { flex: 1, marginLeft: 12, fontSize: 15, color: '#111111' },
   bgmLibMine: { fontSize: 12, color: '#A1A1AA', marginLeft: 8 },
