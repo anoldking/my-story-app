@@ -1847,6 +1847,7 @@ export default function App() {
   const lastBackPressRef = useRef(0);
 
   const [homeGrid, setHomeGrid] = useState(false);
+  const [memberFilterFriends, setMemberFilterFriends] = useState(false); // 홈 멤버 줄: true=친구만, false=모두
   const [memberPostsUser, setMemberPostsUser] = useState(null); // 프로필에서 '게시물'을 누른 멤버
   const [memberPostsGrid, setMemberPostsGrid] = useState(true); // 격자 보기 / 크게 보기
   const [commentPanelPostId, setCommentPanelPostId] = useState(null);
@@ -3976,6 +3977,26 @@ export default function App() {
         />
       ) : null}
 
+      {/* 멤버 줄 위: 친구만 / 모두 선택 (작은 글자 + 음영) */}
+      <View style={styles.memberFilterRow}>
+        {[
+          { key: false, label: '모두' },
+          { key: true, label: '친구만' },
+        ].map((opt) => {
+          const on = memberFilterFriends === opt.key;
+          return (
+            <TouchableOpacity
+              key={opt.label}
+              style={[styles.memberFilterBtn, on && styles.memberFilterBtnOn]}
+              activeOpacity={0.7}
+              onPress={() => setMemberFilterFriends(opt.key)}
+            >
+              <Text style={[styles.memberFilterText, on && styles.memberFilterTextOn]}>{opt.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -4009,7 +4030,7 @@ export default function App() {
           <Text style={styles.igStoryName} numberOfLines={1}>내 스토리</Text>
         </TouchableOpacity>
 
-        {otherMembers.map((member) => {
+        {(memberFilterFriends ? otherMembers.filter((m) => acceptedFriendIds.includes(m.id)) : otherMembers).map((member) => {
           const isFriendMember = acceptedFriendIds.includes(member.id);
           const unreadN = unreadCountBySender[member.id] || 0;
           return (
@@ -6281,6 +6302,11 @@ const styles = themedStyles({
   igDropdownLabel: { fontSize: 14, fontWeight: '600', color: '#191919' },
   igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 10 },
 
+  memberFilterRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 2, paddingTop: 2, paddingBottom: 2 },
+  memberFilterBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  memberFilterBtnOn: { backgroundColor: '#E4E4E7' },
+  memberFilterText: { fontSize: 12, color: '#A1A1AA' },
+  memberFilterTextOn: { color: '#27272A', fontWeight: '700' },
   igStoryBarContent: {
     paddingHorizontal: 2,
     paddingTop: 6,
