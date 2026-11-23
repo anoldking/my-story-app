@@ -1842,6 +1842,8 @@ export default function App() {
   const [commentPanelPostId, setCommentPanelPostId] = useState(null);
   const [panelCommentText, setPanelCommentText] = useState('');
   const [panelReplyTarget, setPanelReplyTarget] = useState(null);
+  const [commentSheetPost, setCommentSheetPost] = useState(null); // 아래에서 올라오는 댓글 팝업의 게시물
+  const [sheetSending, setSheetSending] = useState(false);
   useEffect(() => {
     AsyncStorage.getItem(HOME_VIEW_STORAGE_KEY)
       .then((v) => { if (v === 'grid') setHomeGrid(true); })
@@ -4108,7 +4110,7 @@ export default function App() {
         </View>
 
         {hasImage && (
-          <View style={{ position: 'relative', minHeight: isPanelOpen ? 300 : undefined }}>
+          <View style={{ position: 'relative' }}>
             {(() => {
               const openViewer = (i) => openPostView(item, i);
               return item.image_urls.length > 1 ? (
@@ -4127,11 +4129,9 @@ export default function App() {
                 />
               );
             })()}
-            {isPanelOpen ? renderFeedCommentPanel(item, true) : null}
           </View>
         )}
 
-        {!hasImage && isPanelOpen ? renderFeedCommentPanel(item, false) : null}
 
         <View style={styles.minimalPostFooter}>
           <View style={styles.minimalStatsRow}>
@@ -4156,13 +4156,11 @@ export default function App() {
               style={styles.minimalStatBtn}
               activeOpacity={0.75}
               onPress={() => {
-                if (isPanelOpen) {
-                  setCommentPanelPostId(null);
-                } else {
-                  setPanelCommentText('');
-                  setCommentPanelPostId(item.id);
-                  fetchCommentsForPost(item.id);
-                }
+                // 아래에서 댓글 팝업이 올라옴 (게시물 상세로 이동하지 않음)
+                setPanelCommentText('');
+                setCommentPanelPostId(item.id);
+                setCommentSheetPost(item);
+                fetchCommentsForPost(item.id);
               }}
             >
               <Ionicons name={isPanelOpen ? 'chatbubble' : 'chatbubble-outline'} size={19} color="#18181B" />
@@ -5462,6 +5460,93 @@ export default function App() {
         </View>
       )}
 
+      {/* 댓글 팝업: 화면 아래에서 올라옴 */}
+      <Modal
+        visible={!!commentSheetPost}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setCommentSheetPost(null); setCommentPanelPostId(null); }}
+      >
+        {commentSheetPost ? (() => {
+          const sp = commentSheetPost;
+          const list = (commentsByPost[String(sp.id)] || []).filter((c) => !c.parent_id);
+          const avatarFor = (uid) => {
+            if (uid === session.user.id) return profile.avatar_url || null;
+            const m = members.find((x) => x.id === uid);
+            return (m && m.avatar_url) || null;
+          };
+          const closeSheet = () => { setCommentSheetPost(null); setCommentPanelPostId(null); };
+          const sendSheet = async () => {
+            const txt = panelCommentText.trim();
+            if (!txt || sheetSending) return;
+            setSheetSending(true);
+            setPanelCommentText('');
+            await handleAddComment(sp.id, txt, null);
+            setSheetSending(false);
+          };
+          return (
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <TouchableOpacity style={styles.cmtSheetBackdrop} activeOpacity={1} onPress={closeSheet} />
+              <View style={styles.cmtSheet}>
+                <View style={styles.cmtSheetHandle} />
+                <View style={styles.cmtSheetHeader}>
+                  <Text style={styles.cmtSheetTitle}>댓글 {list.length}</Text>
+                  <TouchableOpacity onPress={closeSheet} hitSlop={10}>
+                    <Ionicons name="close" size={24} color="#3F3F46" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 12 }}>
+                  {list.length === 0 ? (
+                    <Text style={styles.cmtSheetEmpty}>아직 댓글이 없어요.{'\n'}첫 댓글을 남겨 보세요.</Text>
+                  ) : (
+                    list.map((c) => {
+                      const av = avatarFor(c.user_id);
+                      return (
+                        <View key={String(c.id)} style={styles.cmtSheetRow}>
+                          {av ? (
+                            <Image source={{ uri: av }} style={styles.cmtSheetAvatar} />
+                          ) : (
+                            <View style={[styles.cmtSheetAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                              <Ionicons name="person" size={16} color="#A1A1AA" />
+                            </View>
+                          )}
+                          <View style={{ flex: 1, marginLeft: 10 }}>
+                            <Text style={styles.cmtSheetName}>
+                              {c.authorName || '회원'}
+                              <Text style={styles.cmtSheetDate}>  {c.created_at ? new Date(c.created_at).toLocaleDateString('ko-KR') : ''}</Text>
+                            </Text>
+                            <Text style={styles.cmtSheetText}>{c.content}</Text>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+                <View style={styles.cmtSheetInputRow}>
+                  <TextInput
+                    style={styles.cmtSheetInput}
+                    value={panelCommentText}
+                    onChangeText={setPanelCommentText}
+                    placeholder="댓글 달기..."
+                    placeholderTextColor="#A1A1AA"
+                    onSubmitEditing={sendSheet}
+                    returnKeyType="send"
+                    blurOnSubmit={false}
+                  />
+                  <TouchableOpacity
+                    onPress={sendSheet}
+                    disabled={!panelCommentText.trim() || sheetSending}
+                    style={[styles.cmtSheetSend, (!panelCommentText.trim() || sheetSending) && { opacity: 0.4 }]}
+                  >
+                    {sheetSending ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.cmtSheetSendText}>보내기</Text>}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          );
+        })() : null}
+      </Modal>
+
       <GalleryPicker
         visible={postGalleryOpen}
         onClose={() => setPostGalleryOpen(false)}
@@ -6573,6 +6658,21 @@ const styles = themedStyles({
   glassDividerVertical: { width: 1, height: '100%', backgroundColor: 'rgba(255, 255, 255, 0.35)' },
   glassBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
 
+  cmtSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  cmtSheet: { height: '70%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingBottom: 24 },
+  cmtSheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#D4D4D8', marginTop: 8, marginBottom: 6 },
+  cmtSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderColor: '#F4F4F5', marginBottom: 10 },
+  cmtSheetTitle: { fontSize: 17, fontWeight: '800', color: '#111111' },
+  cmtSheetEmpty: { textAlign: 'center', color: '#A1A1AA', fontSize: 14, lineHeight: 22, marginTop: 40 },
+  cmtSheetRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
+  cmtSheetAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F4F4F5' },
+  cmtSheetName: { fontSize: 13, fontWeight: '700', color: '#111111' },
+  cmtSheetDate: { fontSize: 11, fontWeight: '400', color: '#A1A1AA' },
+  cmtSheetText: { fontSize: 15, color: '#27272A', lineHeight: 21, marginTop: 2 },
+  cmtSheetInputRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderColor: '#F4F4F5' },
+  cmtSheetInput: { flex: 1, height: 46, borderRadius: 23, borderWidth: 1, borderColor: '#E4E4E7', backgroundColor: '#FAFAFA', paddingHorizontal: 16, paddingTop: 0, paddingBottom: 0, fontSize: 15, color: '#111111', textAlignVertical: 'center', includeFontPadding: false },
+  cmtSheetSend: { marginLeft: 8, height: 46, minWidth: 72, paddingHorizontal: 14, borderRadius: 23, backgroundColor: '#3F3F46', alignItems: 'center', justifyContent: 'center' },
+  cmtSheetSendText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   feedCommentOverlay: {
     position: 'absolute', right: 0, top: 0, bottom: 0, width: '52%',
     backgroundColor: 'rgba(0,0,0,0.62)', paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8,
