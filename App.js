@@ -1634,6 +1634,20 @@ export default function App() {
     if (nextM) await bgmPlay(bgmToTrack(nextM));
   };
 
+  // bgm 폴더는 비공개: 저장된 주소에서 파일 위치를 꺼내 로그인한 사람만 쓸 수 있는 임시 주소(6시간)로 바꿈
+  const resolveBgmUri = async (url) => {
+    try {
+      const m = url && url.match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/bgm\/([^?]+)/);
+      if (!m) return url;
+      const path = decodeURIComponent(m[1]);
+      const { data, error } = await supabase.storage.from('bgm').createSignedUrl(path, 60 * 60 * 6);
+      if (error || !data || !data.signedUrl) return url;
+      return data.signedUrl;
+    } catch (e) {
+      return url;
+    }
+  };
+
   const bgmPlay = async (track) => {
     try {
       await Audio.setAudioModeAsync({
@@ -1643,7 +1657,8 @@ export default function App() {
       });
       await bgmUnload();
       setBgmTrack(track);
-      const { sound } = await Audio.Sound.createAsync({ uri: track.url }, { shouldPlay: true, isMuted: bgmMutedRef.current });
+      const playUri = await resolveBgmUri(track.url);
+      const { sound } = await Audio.Sound.createAsync({ uri: playUri }, { shouldPlay: true, isMuted: bgmMutedRef.current });
       soundRef.current = sound;
       setBgmPlaying(true);
       sound.setOnPlaybackStatusUpdate((st) => {
