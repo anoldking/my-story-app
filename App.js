@@ -4876,6 +4876,21 @@ export default function App() {
   const renderGridItem = ({ item }) => {
     const hasImage = item.image_urls && item.image_urls.length > 0;
     const reactionCount = item.reactions?.length || 0;
+    // 누구 게시물인지: 작은 프로필 사진 + 이름
+    const gAuthorName = item.profiles?.nickname || (item.author_id === session.user.id ? profile.nickname : '') || '회원';
+    const gAuthorAvatar = item.profiles?.avatar_url || (item.author_id === session.user.id ? profile.avatar_url : null);
+    const authorChip = (
+      <View style={styles.gridAuthorChip}>
+        {gAuthorAvatar ? (
+          <Image source={{ uri: gAuthorAvatar }} style={styles.gridAuthorAvatar} />
+        ) : (
+          <View style={[styles.gridAuthorAvatar, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#71717A' }]}>
+            <Ionicons name="person" size={9} color="#FFFFFF" />
+          </View>
+        )}
+        <Text style={styles.gridAuthorName} numberOfLines={1}>{gAuthorName}</Text>
+      </View>
+    );
 
     return (
       <TouchableOpacity
@@ -4891,9 +4906,7 @@ export default function App() {
                 <Ionicons name="albums" size={16} color="#FFFFFF" />
               </View>
             ) : null}
-            <View style={styles.gridVisBadge}>
-              <Text style={styles.gridVisBadgeText}>{getVisibilityLabel(item.visibility)}</Text>
-            </View>
+            {authorChip}
             {item.content ? (
               <View style={styles.gridCaptionOverlay}>
                 <Text style={styles.gridCaptionText} numberOfLines={1}>
@@ -4904,12 +4917,9 @@ export default function App() {
           </>
         ) : (
           <View style={styles.gridTextOnlyBox}>
-            <Text style={styles.gridVisBadgeInline}>{getVisibilityLabel(item.visibility)}</Text>
-            <Text style={styles.gridTextOnlyContent} numberOfLines={4}>
+            {authorChip}
+            <Text style={[styles.gridTextOnlyContent, { marginTop: 18 }]} numberOfLines={4}>
               {item.content}
-            </Text>
-            <Text style={styles.gridTextOnlyAuthor} numberOfLines={1}>
-              {item.profiles?.nickname || profile.nickname || '스토리'}
             </Text>
           </View>
         )}
@@ -6917,6 +6927,23 @@ const styles = themedStyles({
   feedCommentSendText: { color: '#60A5FA', fontWeight: '700', fontSize: 13 },
   gridItem: { width: GRID_ITEM_SIZE, height: GRID_ITEM_SIZE, margin: 0.6, backgroundColor: '#2D2D2D' },
   gridImage: { width: '100%', height: '100%' },
+  gridAuthorChip: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    maxWidth: '90%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingLeft: 2,
+    paddingRight: 6,
+    paddingVertical: 2,
+    borderRadius: 7,
+    zIndex: 2,
+  },
+  gridAuthorAvatar: { width: 16, height: 16, borderRadius: 5 },
+  gridAuthorName: { color: '#FFFFFF', fontSize: 10, fontWeight: '700', flexShrink: 1 },
   gridVisBadge: {
     position: 'absolute',
     top: 4,
