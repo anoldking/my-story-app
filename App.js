@@ -46,9 +46,10 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const LEFT_RAIL_WIDTH = 36;
+const LEFT_RAIL_WIDTH = 0; // 메뉴바를 화면 아래로 옮겨서 왼쪽 세로 메뉴 폭은 없음
 const RIGHT_RAIL_WIDTH = 44;
-const RIGHT_MARGIN = 30; // 화면 오른쪽 여백 (사진·글자 모두 이 안쪽에 배치)
+const SIDE_MARGIN = 15; // 화면 좌우 여백 (각 15)
+const RIGHT_MARGIN = SIDE_MARGIN * 2; // 좌우 여백 합계 (사진·글자 폭 계산용)
 const LAST_EMAIL_STORAGE_KEY = '@me_last_login_email';
 const HOME_VIEW_STORAGE_KEY = '@me_home_view_mode';
 const getWindowWidth = () => Dimensions.get('window').width;
@@ -60,6 +61,12 @@ const COVER_HEIGHT = Math.round(CONTENT_WIDTH * (4 / 3));
 const GRID_ITEM_SIZE = (CONTENT_WIDTH - RIGHT_MARGIN - 4) / 3;
 const FEED_MEDIA_WIDTH = Math.max(200, CONTENT_WIDTH - RIGHT_MARGIN);
 const MAX_POST_PHOTOS = 10;
+// 홈 멤버 프로필 줄: 한 화면에 딱 5개가 보이도록 크기 계산
+const STORY_PER_ROW = 5;
+const STORY_GAP = 8;
+const STORY_ITEM_W = Math.floor((CONTENT_WIDTH - RIGHT_MARGIN - 4 - STORY_GAP * (STORY_PER_ROW - 1)) / STORY_PER_ROW);
+const STORY_AVATAR = STORY_ITEM_W - 8; // 테두리(2+1.5)*2 를 뺀 사진 크기
+const STORY_RADIUS = Math.round(STORY_AVATAR * 0.26);
 const FEED_MEDIA_MAX_HEIGHT = Math.round(SCREEN_HEIGHT * 0.72)
 const EXPANDED_CHAT_HEIGHT = Math.max(200, Math.round(SCREEN_HEIGHT * 0.32));
 
@@ -3918,15 +3925,17 @@ export default function App() {
           }}
         >
           <View style={styles.igStoryAvatarWrap}>
-            {profile.avatar_url ? (
-              <Image source={{ uri: profile.avatar_url }} style={styles.igStoryAvatar} />
-            ) : (
-              <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
-                <Ionicons name="person" size={22} color="#64748B" />
-              </View>
-            )}
+            <View style={[styles.igStoryRing, { marginBottom: 0, borderColor: 'transparent' }]}>
+              {profile.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={styles.igStoryAvatar} />
+              ) : (
+                <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
+                  <Ionicons name="person" size={18} color="#64748B" />
+                </View>
+              )}
+            </View>
             <View style={styles.igStoryPlusBadge}>
-              <Ionicons name="add" size={13} color="#FFFFFF" />
+              <Ionicons name="add" size={11} color="#FFFFFF" />
             </View>
           </View>
           <Text style={styles.igStoryName} numberOfLines={1}>내 스토리</Text>
@@ -3955,13 +3964,13 @@ export default function App() {
                   <Image source={{ uri: member.avatar_url }} style={[styles.igStoryAvatar, !isFriendMember && { opacity: 0.75 }]} />
                 ) : (
                   <View style={[styles.igStoryAvatar, styles.ktDefaultAvatar]}>
-                    <Ionicons name="person" size={22} color="#64748B" />
+                    <Ionicons name="person" size={18} color="#64748B" />
                   </View>
                 )}
               </View>
               {isFriendMember && (
                 <View style={styles.igStoryFriendBadge}>
-                  <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                  <Ionicons name="checkmark" size={9} color="#FFFFFF" />
                 </View>
               )}
               {unreadN > 0 && (
@@ -4905,7 +4914,7 @@ export default function App() {
       )}
 
       <View style={styles.mainShellRow}>
-        {/* 화면 왼쪽 세로 메뉴바 */}
+        {/* 화면 맨 아래 가로 메뉴바 */}
         <View style={styles.leftVerticalMenuBar}>
           <TouchableOpacity
             style={styles.leftMenuBtn}
@@ -5762,22 +5771,26 @@ const styles = themedStyles({
 
   mainShellRow: {
     flex: 1,
-    flexDirection: 'row',
+    // 메뉴바(첫 번째 칸)를 화면 맨 아래로 보내기 위해 아래→위 순서로 쌓음
+    flexDirection: 'column-reverse',
     backgroundColor: '#FFFFFF',
   },
 
+  // 화면 맨 아래 가로 메뉴바
   leftVerticalMenuBar: {
-    width: LEFT_RAIL_WIDTH,
+    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    borderRightWidth: 1,
-    borderRightColor: '#F3F4F6',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
+    justifyContent: 'space-around',
+    paddingHorizontal: 6,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
   leftMenuBtn: {
-    width: 34,
-    height: 44,
+    width: 44,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -5816,7 +5829,7 @@ const styles = themedStyles({
   centerContentArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingRight: RIGHT_MARGIN,
+    paddingHorizontal: SIDE_MARGIN,
   },
 
   rightUnreadRailBar: {
@@ -6066,14 +6079,14 @@ const styles = themedStyles({
   igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 10 },
 
   igStoryBarContent: {
-    paddingHorizontal: 8,
-    paddingTop: 4,
-    paddingBottom: 12,
-    gap: 12,
+    paddingHorizontal: 2,
+    paddingTop: 6,
+    paddingBottom: 10,
+    gap: STORY_GAP,
   },
   igStoryItem: {
     alignItems: 'center',
-    width: 58,
+    width: STORY_ITEM_W,
   },
   igStoryAvatarWrap: {
     position: 'relative',
@@ -6081,19 +6094,19 @@ const styles = themedStyles({
   },
   igStoryRing: {
     padding: 2,
-    borderRadius: 32,
+    borderRadius: STORY_RADIUS + 4,
     borderWidth: 1.5,
     borderColor: '#18181B',
     marginBottom: 5,
   },
   igStoryUnreadBadge: {
     position: 'absolute',
-    top: -2,
-    right: -4,
-    minWidth: 20,
-    height: 20,
+    top: -5,
+    right: -5,
+    minWidth: 18,
+    height: 18,
     paddingHorizontal: 4,
-    borderRadius: 10,
+    borderRadius: 9,
     backgroundColor: '#EF4444',
     borderWidth: 2,
     borderColor: '#FFFFFF',
@@ -6106,11 +6119,11 @@ const styles = themedStyles({
   },
   igStoryFriendBadge: {
     position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    right: -3,
+    bottom: -3,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#22C55E',
     borderWidth: 2,
     borderColor: '#FFFFFF',
@@ -6118,17 +6131,17 @@ const styles = themedStyles({
     alignItems: 'center',
   },
   igStoryAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: STORY_AVATAR,
+    height: STORY_AVATAR,
+    borderRadius: STORY_RADIUS,
   },
   igStoryPlusBadge: {
     position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    right: -3,
+    bottom: -3,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#18181B',
     borderWidth: 2,
     borderColor: '#FFFFFF',
