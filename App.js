@@ -1847,6 +1847,8 @@ export default function App() {
   const lastBackPressRef = useRef(0);
 
   const [homeGrid, setHomeGrid] = useState(false);
+  const [memberPostsUser, setMemberPostsUser] = useState(null); // 프로필에서 '게시물'을 누른 멤버
+  const [memberPostsGrid, setMemberPostsGrid] = useState(true); // 격자 보기 / 크게 보기
   const [commentPanelPostId, setCommentPanelPostId] = useState(null);
   const [panelCommentText, setPanelCommentText] = useState('');
   const [panelReplyTarget, setPanelReplyTarget] = useState(null);
@@ -5209,9 +5211,18 @@ export default function App() {
 
                 return (
                   <View style={styles.friendCardActions}>
+                    <TouchableOpacity
+                      style={styles.friendCardActionBtn}
+                      activeOpacity={0.7}
+                      onPress={() => { setMemberPostsGrid(true); setMemberPostsUser(selectedFriend); }}
+                    >
+                      <Ionicons name="grid-outline" size={17} color="#FFFFFF" />
+                      <Text style={styles.friendCardActionLabel}>게시물</Text>
+                    </TouchableOpacity>
+
                     {!isMe && (
                       <TouchableOpacity style={styles.friendCardActionBtn} activeOpacity={0.7} onPress={onFriendPress}>
-                        <Ionicons name={friendIcon} size={19} color={friendColor} />
+                        <Ionicons name={friendIcon} size={17} color={friendColor} />
                         <Text style={[styles.friendCardActionLabel, { color: friendColor }]}>{friendLabel}</Text>
                       </TouchableOpacity>
                     )}
@@ -5225,7 +5236,7 @@ export default function App() {
                         openInlineChatInMessagesTab(target);
                       }}
                     >
-                      <Ionicons name="chatbubble-outline" size={19} color="#FFFFFF" />
+                      <Ionicons name="chatbubble-outline" size={17} color="#FFFFFF" />
                       <Text style={styles.friendCardActionLabel}>1:1 채팅하기</Text>
                     </TouchableOpacity>
 
@@ -5239,7 +5250,7 @@ export default function App() {
                             if (ok) showAlert('차단 해제', `${selectedFriend.nickname || '이 사람'}님의 차단을 해제했어요.`);
                           }}
                         >
-                          <Ionicons name="lock-open-outline" size={19} color="#9CA3AF" />
+                          <Ionicons name="lock-open-outline" size={17} color="#9CA3AF" />
                           <Text style={[styles.friendCardActionLabel, { color: '#9CA3AF' }]}>차단해제</Text>
                         </TouchableOpacity>
                       ) : (
@@ -5248,7 +5259,7 @@ export default function App() {
                           activeOpacity={0.7}
                           onPress={() => blockUser(fid, selectedFriend.nickname, () => setSelectedFriend(null))}
                         >
-                          <Ionicons name="ban-outline" size={19} color="#F87171" />
+                          <Ionicons name="ban-outline" size={17} color="#F87171" />
                           <Text style={[styles.friendCardActionLabel, { color: '#F87171' }]}>차단하기</Text>
                         </TouchableOpacity>
                       )
@@ -5600,6 +5611,78 @@ export default function App() {
           </View>
         </View>
       )}
+
+      {/* 멤버 게시물 전체 보기 (프로필 → 게시물) */}
+      {memberPostsUser && (() => {
+        const mu = memberPostsUser;
+        const list = visiblePosts.filter((p) => p.author_id === mu.id);
+        return (
+          <View style={styles.memberPostsRoot}>
+            <View style={styles.memberPostsHeader}>
+              <TouchableOpacity onPress={() => setMemberPostsUser(null)} hitSlop={10} style={{ width: 40 }}>
+                <Ionicons name="arrow-back" size={24} color="#111111" />
+              </TouchableOpacity>
+              {/* 왼쪽: 프로필 사진 / 오른쪽: 소개글 (길면 끝을 ... 으로 줄임) */}
+              {mu.avatar_url ? (
+                <Image source={{ uri: mu.avatar_url }} style={styles.memberPostsAvatar} />
+              ) : (
+                <View style={[styles.memberPostsAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                  <Ionicons name="person" size={22} color="#A1A1AA" />
+                </View>
+              )}
+              <Text
+                style={[styles.memberPostsBio, !(mu.bio && mu.bio.trim()) && { color: '#A1A1AA' }]}
+                numberOfLines={2}
+                ellipsizeMode="tail"
+              >
+                {mu.bio && mu.bio.trim() ? mu.bio.trim() : '소개글이 등록되지 않았습니다.'}
+              </Text>
+            </View>
+            {mu.bgm_url ? (
+              <View style={{ paddingHorizontal: SIDE_MARGIN, marginBottom: 8 }}>
+                <ProfileMusicBar
+                  track={bgmToTrack(mu)}
+                  playing={!!(bgmPlaying && bgmTrack && bgmTrack.url === mu.bgm_url)}
+                  muted={bgmMuted}
+                  onToggleMute={bgmToggleMute}
+                  onToggle={() => {
+                    if (bgmTrack && bgmTrack.url === mu.bgm_url && soundRef.current) bgmToggle();
+                    else bgmPlay(bgmToTrack(mu));
+                  }}
+                />
+              </View>
+            ) : null}
+            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#EEEEEE' }}>
+              <TouchableOpacity
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: memberPostsGrid ? 2 : 0, borderBottomColor: '#111111' }}
+                onPress={() => setMemberPostsGrid(true)}
+              >
+                <Ionicons name="grid" size={22} color={memberPostsGrid ? '#111111' : '#B0B3B8'} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: memberPostsGrid ? 0 : 2, borderBottomColor: '#111111' }}
+                onPress={() => setMemberPostsGrid(false)}
+              >
+                <Ionicons name="albums" size={22} color={memberPostsGrid ? '#B0B3B8' : '#111111'} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              key={memberPostsGrid ? 'member-grid' : 'member-feed'}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingHorizontal: SIDE_MARGIN, paddingBottom: 30, paddingTop: memberPostsGrid ? 2 : 0 }}
+              data={list}
+              numColumns={memberPostsGrid ? 3 : 1}
+              keyExtractor={(item) => 'm' + String(item.id)}
+              renderItem={memberPostsGrid ? renderGridItem : renderHomeFeedPostItem}
+              ListEmptyComponent={
+                <View style={styles.emptyBox}>
+                  <Text style={[styles.emptyText, { color: '#A1A1AA' }]}>아직 볼 수 있는 게시물이 없어요.</Text>
+                </View>
+              }
+            />
+          </View>
+        );
+      })()}
 
       <PostDetailPopup
         post={selectedPostObj}
@@ -6528,6 +6611,16 @@ const styles = themedStyles({
   ktFriendName: { fontSize: 14, fontWeight: '600', color: '#191919' },
   ktFriendBio: { fontSize: 12, color: '#888888', marginTop: 2 },
 
+  memberPostsRoot: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: '#FFFFFF', zIndex: 1050, paddingTop: 36,
+  },
+  memberPostsHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: SIDE_MARGIN, paddingTop: 6, paddingBottom: 12,
+  },
+  memberPostsAvatar: { width: 52, height: 52, borderRadius: 15, backgroundColor: '#F4F4F5' },
+  memberPostsBio: { flex: 1, marginLeft: 12, fontSize: 14, lineHeight: 20, color: '#3F3F46' },
   friendFullBackdrop: {
     position: 'absolute',
     top: 0,
@@ -6570,20 +6663,18 @@ const styles = themedStyles({
   },
   friendCardName: { fontSize: 18, fontWeight: 'bold', color: '#FFFFFF' },
   friendCardBio: { fontSize: 13, color: '#BBBBBB', marginTop: 4, marginBottom: 18, textAlign: 'center' },
-  friendCardActions: { flexDirection: 'row', gap: 10, width: '100%', marginTop: 'auto' },
+  friendCardActions: { flexDirection: 'row', gap: 6, width: '100%', marginTop: 'auto' },
   friendCardActionBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: '#000000',
-    borderWidth: 1,
-    borderColor: '#3A3A3A',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
   },
   friendCardChatBtn: { backgroundColor: '#FEE500' },
-  friendCardActionLabel: { fontSize: 13, color: '#EEEEEE' },
+  friendCardActionLabel: { fontSize: 11, color: '#EEEEEE' },
   friendCardBlockBtn: {
     flexDirection: 'row',
     alignItems: 'center',
