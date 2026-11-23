@@ -698,7 +698,7 @@ const FullscreenPhotoPopup = ({
   );
 };
 
-// 홈 BGM 안내 글자: 왼쪽에서 오른쪽으로 계속 흘러감
+// 홈 BGM 안내 글자: 오른쪽에서 왼쪽으로 계속 흘러감
 const BgmMarquee = ({ text, color, style }) => {
   const [boxW, setBoxW] = useState(0);
   const [textW, setTextW] = useState(0);
@@ -707,10 +707,11 @@ const BgmMarquee = ({ text, color, style }) => {
   const tw = textW || String(text || '').length * 11;
   useEffect(() => {
     if (!boxW) return;
-    x.setValue(-tw);
+    // 오른쪽 끝에서 시작해서 왼쪽으로 흘러감
+    x.setValue(boxW);
     const anim = Animated.loop(
       Animated.timing(x, {
-        toValue: boxW,
+        toValue: -tw,
         duration: Math.max(4000, (boxW + tw) * 28),
         easing: Easing.linear,
         useNativeDriver: true,
@@ -5495,7 +5496,13 @@ export default function App() {
                     <Ionicons name="close" size={24} color="#3F3F46" />
                   </TouchableOpacity>
                 </View>
-                <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 12 }}>
+                <ScrollView
+                  style={{ flex: 1 }}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{ paddingBottom: 12 }}
+                >
                   {list.length === 0 ? (
                     <Text style={styles.cmtSheetEmpty}>아직 댓글이 없어요.{'\n'}첫 댓글을 남겨 보세요.</Text>
                   ) : (
@@ -6659,11 +6666,11 @@ const styles = themedStyles({
   glassBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
 
   cmtSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-  cmtSheet: { height: '70%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingBottom: 24 },
+  cmtSheet: { height: '40%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingBottom: 24 },
   cmtSheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#D4D4D8', marginTop: 8, marginBottom: 6 },
   cmtSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderColor: '#F4F4F5', marginBottom: 10 },
   cmtSheetTitle: { fontSize: 17, fontWeight: '800', color: '#111111' },
-  cmtSheetEmpty: { textAlign: 'center', color: '#A1A1AA', fontSize: 14, lineHeight: 22, marginTop: 40 },
+  cmtSheetEmpty: { textAlign: 'center', color: '#A1A1AA', fontSize: 14, lineHeight: 22, marginTop: 16 },
   cmtSheetRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
   cmtSheetAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F4F4F5' },
   cmtSheetName: { fontSize: 13, fontWeight: '700', color: '#111111' },
