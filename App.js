@@ -744,14 +744,14 @@ const BgmMarquee = ({ text, color, style }) => {
 };
 
 // 홈 위쪽 배경음악 바
-const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNext }) => (
+const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNext, label }) => (
   <View style={styles.musicBar}>
     <Ionicons name="musical-notes" size={17} color={playing ? '#3F3F46' : '#A1A1AA'} />
     <View style={{ flex: 1, marginLeft: 10, marginRight: 6 }}>
       <Text style={styles.musicTitle} numberOfLines={1}>{track.title || '제목 없음'}</Text>
       {/* 둘째 줄: 재생 중이면 안내 글자가 가로로 흘러감, 멈추면 누구 노래인지 표시 */}
       {playing ? (
-        <BgmMarquee text={`홈 BGM이 재생되고 있습니다.  ·  ${track.ownerLabel || ''}`} color="#71717A" style={{ flex: 0, alignSelf: 'stretch', marginHorizontal: 0, marginTop: 2, height: 20 }} />
+        <BgmMarquee text={`${label || '홈 BGM이 재생되고 있습니다.'}  ·  ${track.ownerLabel || ''}`} color="#71717A" style={{ flex: 0, alignSelf: 'stretch', marginHorizontal: 0, marginTop: 2, height: 20 }} />
       ) : (
         <Text style={styles.musicOwner} numberOfLines={1}>{track.ownerLabel}</Text>
       )}
@@ -1916,6 +1916,12 @@ export default function App() {
         return true;
       }
 
+      if (memberPostsUser) {
+        setSelectedFriend(memberPostsUser);
+        setMemberPostsUser(null);
+        return true;
+      }
+
       if (blockListOpen) {
         setBlockListOpen(false);
         return true;
@@ -1991,6 +1997,7 @@ export default function App() {
     editProfileModal,
     writeModalVisible,
     selectedFriend,
+    memberPostsUser,
     chatAttachMenuOpen,
     chatPartner,
     searchQuery,
@@ -4922,6 +4929,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setMemberPostsUser(null);
               setAccountMenuOpen(false);
               setOnlyFavoritesFeed(false);
               fetchPosts();
@@ -4940,6 +4948,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setMemberPostsUser(null);
               setAccountMenuOpen(false);
               fetchFriendsAndRequests();
               setMainTab('friends');
@@ -4957,6 +4966,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setMemberPostsUser(null);
               setAccountMenuOpen(false);
               fetchFriendsAndRequests();
               fetchUnreadCountsBySender(session.user.id);
@@ -4983,6 +4993,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setMemberPostsUser(null);
               setAccountMenuOpen(false);
               setShowGroupChat(true);
             }}
@@ -5001,6 +5012,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setMemberPostsUser(null);
               setAccountMenuOpen(false);
               setOnlyFavoritesFeed(!onlyFavoritesFeed);
               setMainTab('home');
@@ -5018,6 +5030,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setMemberPostsUser(null);
               setAccountMenuOpen(false);
               setImageUri(null); setPostImages([]);
               setContent('');
@@ -5032,6 +5045,7 @@ export default function App() {
             style={styles.leftMenuBtn}
             onPress={() => {
               setBrandMenuOpen(false);
+              setMemberPostsUser(null);
               setAccountMenuOpen(false);
               setMainTab('story');
             }}
@@ -5050,6 +5064,93 @@ export default function App() {
 
         {/* 중앙 메인 콘텐츠 영역 */}
         <View style={styles.centerContentArea}>
+          {/* 멤버 게시물 화면 (프로필 → 게시물): 홈 화면과 같은 모양, 아래 메뉴바 유지 */}
+          {memberPostsUser && (() => {
+            const mu = memberPostsUser;
+            const list = visiblePosts.filter((p) => p.author_id === mu.id);
+            const hasBio = !!(mu.bio && mu.bio.trim());
+            const header = (
+              <View>
+                <View style={styles.memberPostsHeader}>
+                  <TouchableOpacity
+                    onPress={() => { setSelectedFriend(mu); setMemberPostsUser(null); }}
+                    hitSlop={10}
+                    style={{ width: 34 }}
+                  >
+                    <Ionicons name="arrow-back" size={24} color="#111111" />
+                  </TouchableOpacity>
+                  {mu.avatar_url ? (
+                    <Image source={{ uri: mu.avatar_url }} style={styles.memberPostsAvatar} />
+                  ) : (
+                    <View style={[styles.memberPostsAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                      <Ionicons name="person" size={22} color="#A1A1AA" />
+                    </View>
+                  )}
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.memberPostsName} numberOfLines={1}>
+                      {mu.nickname || '회원'} <Text style={styles.memberPostsCount}>게시물 {list.length}</Text>
+                    </Text>
+                    <Text
+                      style={[styles.memberPostsBio, !hasBio && { color: '#A1A1AA' }]}
+                      numberOfLines={2}
+                      ellipsizeMode="tail"
+                    >
+                      {hasBio ? mu.bio.trim() : '소개글이 등록되지 않았습니다.'}
+                    </Text>
+                  </View>
+                </View>
+                {mu.bgm_url ? (
+                  <MusicBar
+                    track={bgmToTrack(mu)}
+                    playing={!!(bgmPlaying && bgmTrack && bgmTrack.url === mu.bgm_url)}
+                    muted={bgmMuted}
+                    onToggleMute={bgmToggleMute}
+                    hasNext={false}
+                    label="프로필 BGM이 재생되고 있습니다."
+                    onToggle={() => {
+                      if (bgmTrack && bgmTrack.url === mu.bgm_url && soundRef.current) bgmToggle();
+                      else bgmPlay(bgmToTrack(mu));
+                    }}
+                  />
+                ) : null}
+                <View style={{ flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#EEEEEE', marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: memberPostsGrid ? 2 : 0, borderBottomColor: '#111111' }}
+                    onPress={() => setMemberPostsGrid(true)}
+                  >
+                    <Ionicons name="grid" size={22} color={memberPostsGrid ? '#111111' : '#B0B3B8'} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: memberPostsGrid ? 0 : 2, borderBottomColor: '#111111' }}
+                    onPress={() => setMemberPostsGrid(false)}
+                  >
+                    <Ionicons name="albums" size={22} color={memberPostsGrid ? '#B0B3B8' : '#111111'} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+            return (
+              <View style={styles.memberPostsRoot}>
+                <FlatList
+                  key={memberPostsGrid ? 'member-grid' : 'member-feed'}
+                  style={{ flex: 1, backgroundColor: bgc('#FFFFFF') }}
+                  contentContainerStyle={{ paddingBottom: 28 }}
+                  data={list}
+                  numColumns={memberPostsGrid ? 3 : 1}
+                  extraData={homeListWidth}
+                  keyExtractor={(item) => 'm' + String(item.id)}
+                  ListHeaderComponent={header}
+                  renderItem={memberPostsGrid ? renderGridItem : renderHomeFeedPostItem}
+                  ListEmptyComponent={
+                    <View style={styles.emptyBox}>
+                      <Text style={[styles.emptyText, { color: '#A1A1AA' }]}>아직 볼 수 있는 게시물이 없어요.</Text>
+                    </View>
+                  }
+                />
+              </View>
+            );
+          })()}
+
           {mainTab === 'home' && (
             <FlatList
               key={homeGrid ? 'home-grid' : 'home-feed'}
@@ -5214,7 +5315,7 @@ export default function App() {
                     <TouchableOpacity
                       style={styles.friendCardActionBtn}
                       activeOpacity={0.7}
-                      onPress={() => { setMemberPostsGrid(true); setMemberPostsUser(selectedFriend); }}
+                      onPress={() => { setMemberPostsGrid(true); setMemberPostsUser(selectedFriend); setSelectedFriend(null); }}
                     >
                       <Ionicons name="grid-outline" size={17} color="#FFFFFF" />
                       <Text style={styles.friendCardActionLabel}>게시물</Text>
@@ -5612,77 +5713,6 @@ export default function App() {
         </View>
       )}
 
-      {/* 멤버 게시물 전체 보기 (프로필 → 게시물) */}
-      {memberPostsUser && (() => {
-        const mu = memberPostsUser;
-        const list = visiblePosts.filter((p) => p.author_id === mu.id);
-        return (
-          <View style={styles.memberPostsRoot}>
-            <View style={styles.memberPostsHeader}>
-              <TouchableOpacity onPress={() => setMemberPostsUser(null)} hitSlop={10} style={{ width: 40 }}>
-                <Ionicons name="arrow-back" size={24} color="#111111" />
-              </TouchableOpacity>
-              {/* 왼쪽: 프로필 사진 / 오른쪽: 소개글 (길면 끝을 ... 으로 줄임) */}
-              {mu.avatar_url ? (
-                <Image source={{ uri: mu.avatar_url }} style={styles.memberPostsAvatar} />
-              ) : (
-                <View style={[styles.memberPostsAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
-                  <Ionicons name="person" size={22} color="#A1A1AA" />
-                </View>
-              )}
-              <Text
-                style={[styles.memberPostsBio, !(mu.bio && mu.bio.trim()) && { color: '#A1A1AA' }]}
-                numberOfLines={2}
-                ellipsizeMode="tail"
-              >
-                {mu.bio && mu.bio.trim() ? mu.bio.trim() : '소개글이 등록되지 않았습니다.'}
-              </Text>
-            </View>
-            {mu.bgm_url ? (
-              <View style={{ paddingHorizontal: SIDE_MARGIN, marginBottom: 8 }}>
-                <ProfileMusicBar
-                  track={bgmToTrack(mu)}
-                  playing={!!(bgmPlaying && bgmTrack && bgmTrack.url === mu.bgm_url)}
-                  muted={bgmMuted}
-                  onToggleMute={bgmToggleMute}
-                  onToggle={() => {
-                    if (bgmTrack && bgmTrack.url === mu.bgm_url && soundRef.current) bgmToggle();
-                    else bgmPlay(bgmToTrack(mu));
-                  }}
-                />
-              </View>
-            ) : null}
-            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#EEEEEE' }}>
-              <TouchableOpacity
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: memberPostsGrid ? 2 : 0, borderBottomColor: '#111111' }}
-                onPress={() => setMemberPostsGrid(true)}
-              >
-                <Ionicons name="grid" size={22} color={memberPostsGrid ? '#111111' : '#B0B3B8'} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderBottomWidth: memberPostsGrid ? 0 : 2, borderBottomColor: '#111111' }}
-                onPress={() => setMemberPostsGrid(false)}
-              >
-                <Ionicons name="albums" size={22} color={memberPostsGrid ? '#B0B3B8' : '#111111'} />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              key={memberPostsGrid ? 'member-grid' : 'member-feed'}
-              style={{ flex: 1 }}
-              contentContainerStyle={{ paddingHorizontal: SIDE_MARGIN, paddingBottom: 30, paddingTop: memberPostsGrid ? 2 : 0 }}
-              data={list}
-              numColumns={memberPostsGrid ? 3 : 1}
-              keyExtractor={(item) => 'm' + String(item.id)}
-              renderItem={memberPostsGrid ? renderGridItem : renderHomeFeedPostItem}
-              ListEmptyComponent={
-                <View style={styles.emptyBox}>
-                  <Text style={[styles.emptyText, { color: '#A1A1AA' }]}>아직 볼 수 있는 게시물이 없어요.</Text>
-                </View>
-              }
-            />
-          </View>
-        );
-      })()}
 
       <PostDetailPopup
         post={selectedPostObj}
@@ -6613,14 +6643,16 @@ const styles = themedStyles({
 
   memberPostsRoot: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: '#FFFFFF', zIndex: 1050, paddingTop: 36,
+    backgroundColor: '#FFFFFF', zIndex: 50, paddingHorizontal: SIDE_MARGIN,
   },
   memberPostsHeader: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SIDE_MARGIN, paddingTop: 6, paddingBottom: 12,
+    paddingTop: 14, paddingBottom: 12,
   },
+  memberPostsName: { fontSize: 16, fontWeight: '800', color: '#111111' },
+  memberPostsCount: { fontSize: 12, fontWeight: '400', color: '#A1A1AA' },
   memberPostsAvatar: { width: 52, height: 52, borderRadius: 15, backgroundColor: '#F4F4F5' },
-  memberPostsBio: { flex: 1, marginLeft: 12, fontSize: 14, lineHeight: 20, color: '#3F3F46' },
+  memberPostsBio: { fontSize: 13, lineHeight: 19, color: '#3F3F46', marginTop: 2 },
   friendFullBackdrop: {
     position: 'absolute',
     top: 0,
