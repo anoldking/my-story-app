@@ -3173,6 +3173,43 @@ export default function App() {
     }
   };
 
+  // 새 게시물 창의 'BGM 변경' 버튼: 음악 파일을 골라 바로 내 프로필 BGM으로 바꿈
+  const [bgmQuickBusy, setBgmQuickBusy] = useState(false);
+  const quickChangeBgm = async () => {
+    if (bgmQuickBusy) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      const a = result.assets[0];
+      if (a.size && a.size > 15 * 1024 * 1024) {
+        showAlert('파일이 너무 커요', '15MB 이하의 음악 파일을 골라 주세요.');
+        return;
+      }
+      setBgmQuickBusy(true);
+      const name = a.name || 'song.mp3';
+      const ext = ((name.match(/\.([a-zA-Z0-9]+)$/) || [])[1] || 'mp3').toLowerCase();
+      const fileName = `bgm_${Date.now()}.${ext}`;
+      const path = `${session.user.id}/${fileName}`;
+      const resp = await fetch(a.uri);
+      const buf = await resp.arrayBuffer();
+      const up = await supabase.storage.from('bgm').upload(path, buf, { contentType: a.mimeType || 'audio/mpeg', upsert: true });
+      if (up.error) throw up.error;
+      const url = supabase.storage.from('bgm').getPublicUrl(path).data.publicUrl;
+      const title = name.replace(/\.[^.]+$/, '') || '내 노래';
+      const { error } = await supabase.from('profiles').update({ bgm_url: url, bgm_title: title }).eq('id', session.user.id);
+      if (error) throw error;
+      cleanupOldBgmFiles(fileName);
+      setProfile((prev) => ({ ...prev, bgm_url: url, bgm_title: title }));
+      fetchFriendsAndRequests();
+      bgmPlay(bgmToTrack({ id: session.user.id, nickname: profile.nickname, bgm_url: url, bgm_title: title }));
+      setBgmQuickBusy(false);
+      showAlert('BGM 변경 완료', `"${title}"(으)로 바뀌었어요.`);
+    } catch (e) {
+      setBgmQuickBusy(false);
+      showAlert('BGM 변경 실패', `음악을 올리지 못했습니다.\n(${e?.message || e})`);
+    }
+  };
+
   // 내 폴더(bgm/내아이디/)에서 keepName 을 뺀 나머지 음악 파일을 모두 삭제
   const cleanupOldBgmFiles = async (keepName) => {
     try {
@@ -5591,6 +5628,25 @@ export default function App() {
                 사진은 최대 {MAX_POST_PHOTOS}장까지 올릴 수 있어요
               </Text>
             )}
+
+            {/* BGM 변경: 내 프로필 배경음악을 바로 바꿈 */}
+            <TouchableOpacity
+              style={[styles.attachPhotoBtn, { marginTop: 8 }]}
+              onPress={quickChangeBgm}
+              disabled={bgmQuickBusy || loading}
+            >
+              {bgmQuickBusy ? (
+                <ActivityIndicator color="#333333" />
+              ) : (
+                <>
+                  <Ionicons name="musical-notes-outline" size={18} color="#333333" />
+                  <Text style={{ color: '#333', fontWeight: 'bold' }}>BGM 변경</Text>
+                  <Text style={{ color: '#A1A1AA', fontSize: 12, flexShrink: 1 }} numberOfLines={1}>
+                    {profile.bgm_title ? `(지금: ${profile.bgm_title})` : '(설정 안 됨)'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
 
             <View style={styles.modalBtnRow}>
               <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setWriteModalVisible(false)} disabled={loading}>
