@@ -269,7 +269,7 @@ const s = themedStyles({
     circleDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#8A8F98' },
     empty: { textAlign: 'center', marginTop: 60, color: '#A1A1AA', lineHeight: 24 },
     roomRow: { flexDirection: 'row', alignItems: 'center' },
-    roomAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E5E7EB' },
+    roomAvatar: { width: 46, height: 46, borderRadius: 13, backgroundColor: '#E5E7EB' },
     roomAvatarDefault: { alignItems: 'center', justifyContent: 'center' },
     roomSub: { fontSize: 13, color: '#6B7280', marginTop: 3 },
     countBadge: {

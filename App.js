@@ -4367,10 +4367,10 @@ export default function App() {
           }
         >
           <View style={styles.ktSelfBadge}>
-            <Ionicons name="chatbubble" size={16} color="#3C1E1E" />
+            <Ionicons name="chatbubble" size={16} color="#0369A1" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.ktSelfTitle}>나와의 채팅 (개인 메모장)</Text>
+            <Text style={styles.ktSelfTitle}>me · 나와의 채팅 (개인 메모장)</Text>
             <Text style={styles.ktSelfSub} numberOfLines={1}>
               {profile.bio || '나에게 보내는 메시지를 기록해 보세요'}
             </Text>
@@ -4411,7 +4411,7 @@ export default function App() {
         <View style={styles.inlineChatDrawerTop}>
           <Text style={styles.inlineChatDrawerLabel} numberOfLines={1}>
             {isSelfChat
-              ? `${partner.nickname || '나'} (나와의 채팅 · 길게 눌러 삭제)`
+              ? `me (나와의 채팅 · 길게 눌러 삭제)`
               : `${partner.nickname || '대화방'} 대화 (보낸 메시지 길게 눌러 삭제)`}
           </Text>
           <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.inlineChatCollapseBtn}>
@@ -4523,7 +4523,7 @@ export default function App() {
                         onPress={() => handleOpenExternalLink(item.file_url)}
                         onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
                         delayLongPress={400}
-                        style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, styles.fileBubbleBox]}
+                        style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, isMine && isSelfChat && styles.bubbleSelf, styles.fileBubbleBox]}
                       >
                         <View style={styles.fileIconCircle}>
                           <Ionicons name="attach" size={18} color="#333333" />
@@ -4541,7 +4541,7 @@ export default function App() {
                         onPress={detectedUrl ? () => handleOpenExternalLink(detectedUrl) : undefined}
                         onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
                         delayLongPress={400}
-                        style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther]}
+                        style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, isMine && isSelfChat && styles.bubbleSelf]}
                       >
                         <Text
                           style={[styles.bubbleText, detectedUrl && styles.linkBubbleText]}
@@ -4710,7 +4710,7 @@ export default function App() {
                 )}
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.memberName}>{item.nickname || '이름 없음'}</Text>
+                    <Text style={styles.memberName}>{isMe ? 'me' : (item.nickname || '이름 없음')}</Text>
                     {isMe && (
                       <View style={styles.meBadge}>
                         <Text style={styles.meBadgeText}>나와의 채팅</Text>
@@ -5942,7 +5942,7 @@ const styles = themedStyles({
   toastAvatar: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: 10,
   },
   toastSenderText: {
     color: '#FFFFFF',
@@ -6004,7 +6004,7 @@ const styles = themedStyles({
   },
   leftMenuAvatarRing: {
     padding: 1.5,
-    borderRadius: 16,
+    borderRadius: 11,
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
@@ -6014,7 +6014,7 @@ const styles = themedStyles({
   leftMenuAvatarImg: {
     width: 26,
     height: 26,
-    borderRadius: 13,
+    borderRadius: 7,
   },
 
   centerContentArea: {
@@ -6044,7 +6044,7 @@ const styles = themedStyles({
   rightUnreadAvatarWrap: {
     position: 'relative',
     padding: 1.5,
-    borderRadius: 20,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: '#EF4444',
   },
@@ -6054,7 +6054,7 @@ const styles = themedStyles({
   rightUnreadAvatar: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: 9,
   },
   rightUnreadCountPill: {
     position: 'absolute',
@@ -6368,7 +6368,7 @@ const styles = themedStyles({
   igPostAvatar: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: 10,
   },
   igPostAuthorName: {
     fontSize: 14,
@@ -6595,7 +6595,7 @@ const styles = themedStyles({
   fullscreenAuthorAvatar: {
     width: 34,
     height: 34,
-    borderRadius: 17,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
   },
@@ -6683,7 +6683,9 @@ const styles = themedStyles({
     marginHorizontal: 14,
     marginBottom: 12,
     padding: 12,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
     borderRadius: 12,
     gap: 10,
   },
@@ -6691,7 +6693,7 @@ const styles = themedStyles({
     width: 36,
     height: 36,
     borderRadius: 14,
-    backgroundColor: '#FEE500',
+    backgroundColor: '#BAE6FD',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -6715,7 +6717,7 @@ const styles = themedStyles({
     paddingVertical: 9,
     gap: 10,
   },
-  ktFriendAvatar: { width: 44, height: 44, borderRadius: 16 },
+  ktFriendAvatar: { width: 44, height: 44, borderRadius: 12 },
   ktFriendName: { fontSize: 14, fontWeight: '600', color: '#191919' },
   ktFriendBio: { fontSize: 12, color: '#888888', marginTop: 2 },
 
@@ -6765,7 +6767,7 @@ const styles = themedStyles({
   friendCardAvatar: {
     width: 76,
     height: 76,
-    borderRadius: 28,
+    borderRadius: 21,
     borderWidth: 3,
     borderColor: '#000000',
     marginTop: -38,
@@ -6836,7 +6838,7 @@ const styles = themedStyles({
   circularAvatar: {
     width: 62,
     height: 62,
-    borderRadius: 31,
+    borderRadius: 17,
     borderWidth: 2.5,
     borderColor: '#FFFFFF',
     marginBottom: 8,
@@ -6886,7 +6888,7 @@ const styles = themedStyles({
   cmtSheetTitle: { fontSize: 17, fontWeight: '800', color: '#111111' },
   cmtSheetEmpty: { textAlign: 'center', color: '#A1A1AA', fontSize: 14, lineHeight: 22, marginTop: 16 },
   cmtSheetRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
-  cmtSheetAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F4F4F5' },
+  cmtSheetAvatar: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#F4F4F5' },
   cmtSheetName: { fontSize: 13, fontWeight: '700', color: '#111111' },
   cmtSheetDate: { fontSize: 11, fontWeight: '400', color: '#A1A1AA' },
   cmtSheetText: { fontSize: 15, color: '#27272A', lineHeight: 21, marginTop: 2 },
@@ -6995,7 +6997,7 @@ const styles = themedStyles({
     fontSize: 15,
     fontWeight: 'bold',
   },
-  popupSmallAvatar: { width: 34, height: 34, borderRadius: 17 },
+  popupSmallAvatar: { width: 34, height: 34, borderRadius: 10 },
   defaultSmallAvatar: { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' },
   whitePopupMiniBtn: {
     backgroundColor: '#F2F2F2',
@@ -7261,8 +7263,8 @@ const styles = themedStyles({
     overflow: 'hidden',
   },
   pinnedSelfCardGroup: {
-    borderColor: '#FDE047',
-    backgroundColor: '#FEFCE8',
+    borderColor: '#7DD3FC',
+    backgroundColor: '#F0F9FF',
   },
   memberCardGroupExpanded: {
     backgroundColor: '#F8FAFC',
@@ -7279,11 +7281,11 @@ const styles = themedStyles({
     borderBottomColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
   },
-  memberAvatar: { width: 44, height: 44, borderRadius: 16 },
+  memberAvatar: { width: 44, height: 44, borderRadius: 12 },
   memberName: { fontSize: 14, fontWeight: 'bold', color: '#222' },
   memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
-  meBadge: { backgroundColor: '#3C1E1E', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  meBadgeText: { color: '#FEE500', fontSize: 10, fontWeight: 'bold' },
+  meBadge: { backgroundColor: '#BAE6FD', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  meBadgeText: { color: '#075985', fontSize: 10, fontWeight: 'bold' },
   unreadCounterBadge: {
     minWidth: 22,
     height: 22,
@@ -7346,7 +7348,7 @@ const styles = themedStyles({
   inlineChatAvatar: {
     width: 28,
     height: 28,
-    borderRadius: 12,
+    borderRadius: 8,
     marginBottom: 2,
   },
 
@@ -7356,6 +7358,7 @@ const styles = themedStyles({
   chatSenderName: { fontSize: 11, color: '#333', marginBottom: 3, marginLeft: 2 },
   bubbleBox: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 },
   bubbleMine: { backgroundColor: '#FEE500', borderBottomRightRadius: 2 },
+  bubbleSelf: { backgroundColor: '#BAE6FD' }, // 나와의 채팅(me) 말풍선: 하늘색
   bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 2 },
   bubbleText: { fontSize: 13.5, color: '#222', lineHeight: 19 },
   linkBubbleText: {
@@ -7553,7 +7556,7 @@ const styles = themedStyles({
   coverPreview: { width: '100%', height: '100%' },
   pickerPlaceholder: { color: '#777', fontSize: 13, textAlign: 'center', paddingHorizontal: 10 },
   avatarPickerRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginVertical: 4 },
-  avatarPreview: { width: 64, height: 64, borderRadius: 32 },
+  avatarPreview: { width: 64, height: 64, borderRadius: 18 },
   pickerLinkText: { color: '#0288D1', fontWeight: 'bold', fontSize: 14 },
   modalInput: { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 12, fontSize: 14, backgroundColor: '#FAFAFA' },
   modalBtnRow: { flexDirection: 'row', gap: 10, marginTop: 16 },

@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6', fontSize: 15,
   },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
-  avatar: { width: 42, height: 42, borderRadius: 21, marginRight: 12 },
+  avatar: { width: 42, height: 42, borderRadius: 12, marginRight: 12 },
   avatarEmpty: { backgroundColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
   name: { flex: 1, fontSize: 16, color: '#111111' },
   joined: { fontSize: 13, color: '#9CA3AF' },

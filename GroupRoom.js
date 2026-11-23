@@ -514,7 +514,7 @@ const s = themedStyles({
   rowOther: { alignSelf: 'flex-start', alignItems: 'flex-start' },
   name: { fontSize: 12, color: '#71717A', marginBottom: 2, marginLeft: 2 },
   otherRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, maxWidth: '92%', alignSelf: 'flex-start' },
-  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E5E7EB' },
+  avatar: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#E5E7EB' },
   avatarDefault: { alignItems: 'center', justifyContent: 'center' },
   bubbleLine: { flexDirection: 'row', alignItems: 'flex-end' },
   bubble: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 14, maxWidth: '100%', flexShrink: 1 },
