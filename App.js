@@ -4848,7 +4848,7 @@ export default function App() {
                 }
               >
                 <Ionicons name="chatbubble-outline" size={14} color="#FFFFFF" />
-                <Text style={styles.glassBtnText}>나와의 채팅</Text>
+                <Text style={styles.glassBtnText}>me</Text>
               </TouchableOpacity>
               <View style={styles.glassDividerVertical} />
               <TouchableOpacity
