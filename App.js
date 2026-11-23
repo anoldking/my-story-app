@@ -4710,11 +4710,13 @@ export default function App() {
                 )}
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={styles.memberName}>{isMe ? 'me' : (item.nickname || '이름 없음')}</Text>
-                    {isMe && (
+                    {isMe ? (
+                      // 나와의 채팅: '나와의 채팅' 글자 대신 하늘색 'me' 표시 (다른 이름들과 같은 줄 높이)
                       <View style={styles.meBadge}>
-                        <Text style={styles.meBadgeText}>나와의 채팅</Text>
+                        <Text style={[styles.memberName, styles.meBadgeText]}>me</Text>
                       </View>
+                    ) : (
+                      <Text style={styles.memberName}>{item.nickname || '이름 없음'}</Text>
                     )}
                   </View>
                   <Text style={styles.memberBio} numberOfLines={1}>
@@ -7311,8 +7313,8 @@ const styles = themedStyles({
   memberAvatar: { width: 44, height: 44, borderRadius: 12 },
   memberName: { fontSize: 14, fontWeight: 'bold', color: '#222' },
   memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
-  meBadge: { backgroundColor: '#BAE6FD', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  meBadgeText: { color: '#075985', fontSize: 10, fontWeight: 'bold' },
+  meBadge: { backgroundColor: '#BAE6FD', paddingHorizontal: 8, paddingVertical: 0, borderRadius: 6, marginLeft: -8 }, // 글자 시작이 다른 이름들과 같은 위치에 오도록
+  meBadgeText: { color: '#075985' },
   unreadCounterBadge: {
     minWidth: 22,
     height: 22,
