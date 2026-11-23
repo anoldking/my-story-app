@@ -1731,6 +1731,26 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
 
+  // 마지막 접속 시간 기록: 앱을 열 때 + 다른 앱에서 돌아올 때 profiles.last_seen_at 에 저장 (2분에 한 번까지만)
+  const lastSeenSentRef = useRef(0);
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    const markSeen = async () => {
+      const now = Date.now();
+      if (now - lastSeenSentRef.current < 2 * 60 * 1000) return;
+      lastSeenSentRef.current = now;
+      try {
+        await supabase.from('profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', uid);
+      } catch (e) { /* 기록 실패해도 앱 사용에는 문제 없음 */ }
+    };
+    markSeen();
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') markSeen();
+    });
+    return () => sub.remove();
+  }, [session?.user?.id]);
+
   const [mainTab, setMainTab] = useState('home');
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
