@@ -744,8 +744,15 @@ const BgmMarquee = ({ text, color, style }) => {
 };
 
 // 홈 위쪽 배경음악 바
-const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNext, label }) => (
-  <View style={styles.musicBar}>
+const MusicBar = ({ track, playing, muted, onToggle, onNext, onToggleMute, hasNext, label, onChangeBgm }) => (
+  <View style={[styles.musicBar, onChangeBgm && { marginTop: 14 }]}>
+    {/* 재생기 오른쪽 위: BGM 변경 (홈에서만 보임) */}
+    {onChangeBgm ? (
+      <TouchableOpacity style={styles.musicChangeChip} onPress={onChangeBgm} activeOpacity={0.7} hitSlop={6}>
+        <Ionicons name="swap-horizontal" size={11} color="#52525B" />
+        <Text style={styles.musicChangeText}>BGM 변경</Text>
+      </TouchableOpacity>
+    ) : null}
     <Ionicons name="musical-notes" size={17} color={playing ? '#3F3F46' : '#A1A1AA'} />
     <View style={{ flex: 1, marginLeft: 10, marginRight: 6 }}>
       <Text style={styles.musicTitle} numberOfLines={1}>{track.title || '제목 없음'}</Text>
@@ -4054,6 +4061,7 @@ export default function App() {
           hasNext={bgmList.length > 1}
           onToggle={() => bgmToggle(shownBgmTrack)}
           onNext={() => bgmNext(shownBgmTrack)}
+          onChangeBgm={openBgmLibrary}
         />
       ) : null}
 
@@ -6682,6 +6690,13 @@ const styles = themedStyles({
   musicTitle: { fontSize: 13, fontWeight: '700', color: '#27272A' },
   musicOwner: { fontSize: 11, color: '#71717A', marginTop: 1 },
   musicBtn: { padding: 6, marginLeft: 2 },
+  musicChangeChip: {
+    position: 'absolute', top: -10, right: 12, zIndex: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+    backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D4D4D8',
+  },
+  musicChangeText: { fontSize: 11, fontWeight: '700', color: '#52525B' },
   musicMuteBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#3F3F46', alignItems: 'center', justifyContent: 'center', marginLeft: 4, marginRight: 2 },
   musicMarqueeBox: { flex: 1, height: 20, overflow: 'hidden', justifyContent: 'center', marginHorizontal: 4 },
   musicMarqueeText: { fontSize: 12, color: '#71717A', fontWeight: '600' },
