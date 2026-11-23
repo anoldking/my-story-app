@@ -3173,6 +3173,21 @@ export default function App() {
     }
   };
 
+  // 내 폴더(bgm/내아이디/)에서 keepName 을 뺀 나머지 음악 파일을 모두 삭제
+  const cleanupOldBgmFiles = async (keepName) => {
+    try {
+      const folder = session.user.id;
+      const { data, error } = await supabase.storage.from('bgm').list(folder, { limit: 100 });
+      if (error || !Array.isArray(data)) return;
+      const oldPaths = data
+        .filter((f) => f && f.name && f.name !== keepName && f.name !== '.emptyFolderPlaceholder')
+        .map((f) => `${folder}/${f.name}`);
+      if (oldPaths.length > 0) {
+        await supabase.storage.from('bgm').remove(oldPaths);
+      }
+    } catch (e) { /* 정리 실패해도 앱 사용에는 문제 없음 */ }
+  };
+
   const saveProfileSettings = async () => {
     if (!tempNickname.trim()) {
       showAlert('알림', '이름(닉네임)을 입력해 주세요.');
@@ -3192,10 +3207,12 @@ export default function App() {
         cover_url: finalCoverUrl,
       };
 
+      let newBgmFileName = null; // 새로 올린 곡 파일 이름 (옛 파일 정리할 때 이것만 남김)
       if (bgmChanged) {
         if (tempBgmUri) {
           const ext = ((tempBgmName.match(/\.([a-zA-Z0-9]+)$/) || [])[1] || 'mp3').toLowerCase();
-          const path = `${session.user.id}/bgm_${Date.now()}.${ext}`;
+          newBgmFileName = `bgm_${Date.now()}.${ext}`;
+          const path = `${session.user.id}/${newBgmFileName}`;
           const resp = await fetch(tempBgmUri);
           const buf = await resp.arrayBuffer();
           const up = await supabase.storage.from('bgm').upload(path, buf, { contentType: tempBgmMime || 'audio/mpeg', upsert: true });
@@ -3210,6 +3227,11 @@ export default function App() {
 
       const { error } = await supabase.from('profiles').upsert(updates);
       setLoading(false);
+
+      // 곡을 바꾸거나 지웠으면: 서버에 남아 있는 예전 곡 파일을 삭제 (멤버당 1곡만 보관)
+      if (!error && bgmChanged) {
+        cleanupOldBgmFiles(newBgmFileName);
+      }
 
       if (error) {
         showAlert('저장 실패', getKoreanErrorMessage(error));
