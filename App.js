@@ -3226,6 +3226,57 @@ export default function App() {
     }
   };
 
+  // ---- 가족 BGM 모음 (서버의 bgm-library 폴더에 관리자가 올려둔 저작권 걱정 없는 곡들) ----
+  const [bgmLibOpen, setBgmLibOpen] = useState(false);
+  const [bgmLibItems, setBgmLibItems] = useState([]);
+  const [bgmLibLoading, setBgmLibLoading] = useState(false);
+
+  const openBgmLibrary = async () => {
+    setBgmLibOpen(true);
+    setBgmLibLoading(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from('bgm-library')
+        .list('', { limit: 200, sortBy: { column: 'name', order: 'asc' } });
+      if (error) throw error;
+      const items = (data || [])
+        .filter((f) => f && f.name && /\.(mp3|m4a|wav|aac|ogg)$/i.test(f.name))
+        .map((f) => ({
+          name: f.name,
+          // 파일 이름을 곡 제목으로: calm-piano_01.mp3 → calm piano 01
+          title: f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim(),
+          url: supabase.storage.from('bgm-library').getPublicUrl(f.name).data.publicUrl,
+        }));
+      setBgmLibItems(items);
+    } catch (e) {
+      setBgmLibItems([]);
+      showAlert('BGM 모음 오류', `곡 목록을 불러오지 못했습니다.\n(${e?.message || e})`);
+    }
+    setBgmLibLoading(false);
+  };
+
+  const previewLibraryBgm = (it) => {
+    bgmPlay({ url: it.url, title: it.title, ownerId: null, ownerLabel: '미리듣기' });
+  };
+
+  const chooseLibraryBgm = async (it) => {
+    if (bgmQuickBusy) return;
+    setBgmQuickBusy(true);
+    try {
+      const { error } = await supabase.from('profiles').update({ bgm_url: it.url, bgm_title: it.title }).eq('id', session.user.id);
+      if (error) throw error;
+      cleanupOldBgmFiles(null); // 예전에 내가 직접 올린 곡 파일은 정리
+      setProfile((prev) => ({ ...prev, bgm_url: it.url, bgm_title: it.title }));
+      fetchFriendsAndRequests();
+      bgmPlay(bgmToTrack({ id: session.user.id, nickname: profile.nickname, bgm_url: it.url, bgm_title: it.title }));
+      setBgmLibOpen(false);
+      showAlert('BGM 변경 완료', `"${it.title}"(으)로 바뀌었어요.`);
+    } catch (e) {
+      showAlert('BGM 변경 실패', `${e?.message || e}`);
+    }
+    setBgmQuickBusy(false);
+  };
+
   // 내 폴더(bgm/내아이디/)에서 keepName 을 뺀 나머지 음악 파일을 모두 삭제
   const cleanupOldBgmFiles = async (keepName) => {
     try {
@@ -5648,7 +5699,7 @@ export default function App() {
             {/* BGM 변경: 내 프로필 배경음악을 바로 바꿈 */}
             <TouchableOpacity
               style={[styles.attachPhotoBtn, { marginTop: 8 }]}
-              onPress={quickChangeBgm}
+              onPress={openBgmLibrary}
               disabled={bgmQuickBusy || loading}
             >
               {bgmQuickBusy ? (
@@ -5675,6 +5726,65 @@ export default function App() {
           </View>
         </View>
       )}
+
+      {/* 가족 BGM 모음: 곡을 미리 듣고 골라서 내 BGM으로 설정 */}
+      <Modal visible={bgmLibOpen} transparent animationType="slide" onRequestClose={() => setBgmLibOpen(false)}>
+        <TouchableOpacity style={styles.cmtSheetBackdrop} activeOpacity={1} onPress={() => setBgmLibOpen(false)} />
+        <View style={[styles.cmtSheet, { height: '60%' }]}>
+          <View style={styles.cmtSheetHandle} />
+          <View style={styles.cmtSheetHeader}>
+            <Text style={styles.cmtSheetTitle}>BGM 고르기</Text>
+            <TouchableOpacity onPress={() => setBgmLibOpen(false)} hitSlop={10}>
+              <Ionicons name="close" size={24} color="#3F3F46" />
+            </TouchableOpacity>
+          </View>
+          {bgmLibLoading ? (
+            <ActivityIndicator style={{ marginTop: 30 }} color="#3F3F46" />
+          ) : (
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 10 }}>
+              {bgmLibItems.length === 0 ? (
+                <Text style={styles.cmtSheetEmpty}>아직 등록된 곡이 없어요.</Text>
+              ) : (
+                bgmLibItems.map((it) => {
+                  const isPlayingThis = bgmPlaying && bgmTrack && bgmTrack.url === it.url;
+                  const isMine = profile.bgm_url === it.url;
+                  return (
+                    <View key={it.name} style={styles.bgmLibRow}>
+                      <TouchableOpacity
+                        onPress={() => (isPlayingThis ? bgmToggle() : previewLibraryBgm(it))}
+                        hitSlop={8}
+                        style={styles.bgmLibPlayBtn}
+                      >
+                        <Ionicons name={isPlayingThis ? 'pause' : 'play'} size={16} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <Text style={styles.bgmLibTitle} numberOfLines={1}>{it.title}</Text>
+                      {isMine ? (
+                        <Text style={styles.bgmLibMine}>사용 중</Text>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.bgmLibPickBtn}
+                          onPress={() => chooseLibraryBgm(it)}
+                          disabled={bgmQuickBusy}
+                        >
+                          <Text style={styles.bgmLibPickText}>선택</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          )}
+          <TouchableOpacity
+            style={styles.bgmLibOwnBtn}
+            onPress={() => { setBgmLibOpen(false); quickChangeBgm(); }}
+            disabled={bgmQuickBusy}
+          >
+            <Ionicons name="folder-open-outline" size={16} color="#3F3F46" />
+            <Text style={styles.bgmLibOwnText}>내 폰에서 직접 고르기</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* 댓글 팝업: 화면 아래에서 올라옴 */}
       <Modal
@@ -6903,6 +7013,14 @@ const styles = themedStyles({
   glassBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
 
   cmtSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  bgmLibRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderColor: '#F4F4F5' },
+  bgmLibPlayBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#3F3F46', alignItems: 'center', justifyContent: 'center' },
+  bgmLibTitle: { flex: 1, marginLeft: 12, fontSize: 15, color: '#111111' },
+  bgmLibMine: { fontSize: 12, color: '#A1A1AA', marginLeft: 8 },
+  bgmLibPickBtn: { marginLeft: 8, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 14, backgroundColor: '#F4F4F5' },
+  bgmLibPickText: { fontSize: 13, fontWeight: '700', color: '#3F3F46' },
+  bgmLibOwnBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E4E4E7' },
+  bgmLibOwnText: { fontSize: 14, color: '#3F3F46', fontWeight: '600' },
   cmtSheet: { height: '40%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingBottom: 24 },
   cmtSheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#D4D4D8', marginTop: 8, marginBottom: 6 },
   cmtSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderColor: '#F4F4F5', marginBottom: 10 },
