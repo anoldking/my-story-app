@@ -4590,7 +4590,12 @@ export default function App() {
                 <View key={String(item.id)} style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
                   {isMine && (
                     <View style={styles.mineMetaCol}>
-                      {!item.is_read && <Text style={styles.unreadBadgeText}>1</Text>}
+                      {!isSelfChat && (
+                        // 상대가 확인하면 '읽음', 그 전에는 '확인 전'
+                        <Text style={item.is_read ? styles.readStateDone : styles.readStatePending}>
+                          {item.is_read ? '읽음' : '확인 전'}
+                        </Text>
+                      )}
                       <Text style={styles.bubbleTime}>{timeStr}</Text>
                     </View>
                   )}
@@ -7673,6 +7678,8 @@ const styles = themedStyles({
   },
 
   mineMetaCol: { alignItems: 'flex-end', justifyContent: 'flex-end', marginBottom: 2 },
+  readStatePending: { fontSize: 10, fontWeight: '800', color: '#3F3F46', marginBottom: 1 },
+  readStateDone: { fontSize: 10, color: '#A1A1AA', marginBottom: 1 },
   unreadBadgeText: {
     fontSize: 10.5,
     fontWeight: 'bold',
