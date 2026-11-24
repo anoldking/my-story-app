@@ -2363,6 +2363,40 @@ export default function App() {
     }
   };
 
+  // 메시지 목록에서 체크한 대화방을 한꺼번에 나가기
+  const [leaveSelectMode, setLeaveSelectMode] = useState(false);
+  const [leaveSelected, setLeaveSelected] = useState({}); // { 상대id: true }
+  const leaveSelectedIds = Object.keys(leaveSelected).filter((k) => leaveSelected[k]);
+  const toggleLeaveSelect = (id) => setLeaveSelected((prev) => ({ ...prev, [id]: !prev[id] }));
+  const exitLeaveSelect = () => { setLeaveSelectMode(false); setLeaveSelected({}); };
+  const leaveSelectedChats = () => {
+    if (!session || leaveSelectedIds.length === 0) return;
+    const me = session.user.id;
+    const ids = [...leaveSelectedIds];
+    const doLeave = async () => {
+      let failed = 0;
+      for (const other of ids) {
+        const { error } = await supabase
+          .from('messages')
+          .delete()
+          .or('and(sender_id.eq.' + me + ',receiver_id.eq.' + other + '),and(sender_id.eq.' + other + ',receiver_id.eq.' + me + ')');
+        if (error) failed += 1;
+      }
+      if (chatPartner && ids.includes(chatPartner.id)) { setChatMessages([]); setChatPartner(null); }
+      fetchUnreadCountsBySender(me);
+      exitLeaveSelect();
+      if (failed > 0) showAlert('일부 실패', `${failed}개 대화방은 나가지 못했어요. 다시 시도해 주세요.`);
+    };
+    Alert.alert(
+      `대화방 ${ids.length}개 나가기`,
+      '선택한 대화의 모든 내용이 삭제됩니다. 상대방 화면에서도 사라지며 복구할 수 없습니다.',
+      [
+        { text: '취소', style: 'cancel' },
+        { text: '나가기', style: 'destructive', onPress: doLeave },
+      ]
+    );
+  };
+
   const handleLeaveChat = (partner) => {
     if (!partner || !partner.id || !session || !session.user) return;
     const me = session.user.id;
@@ -3759,6 +3793,12 @@ export default function App() {
     fetchPosts();
   };
 
+  // 조회수/방문 기록 (훅은 반드시 아래 'return' 보다 위에 있어야 함)
+  useEffect(() => { if (selectedPostId) recordPostView(selectedPostId); }, [selectedPostId]);
+  useEffect(() => { if (selectedFriend?.id) recordProfileVisit(selectedFriend.id); }, [selectedFriend?.id]);
+  useEffect(() => { if (viewingImage?.postId) recordPostView(viewingImage.postId); }, [viewingImage?.postId]);
+  useEffect(() => { if (commentSheetPost?.id) recordPostView(commentSheetPost.id); }, [commentSheetPost?.id]);
+
   if (!fontsReady) return null;
 
   if (!session) {
@@ -4588,10 +4628,12 @@ export default function App() {
               ? `me (나와의 채팅 · 길게 눌러 삭제)`
               : `${partner.nickname || '대화방'} 대화 (보낸 메시지 길게 눌러 삭제)`}
           </Text>
-          <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.inlineChatCollapseBtn}>
-            <Text style={styles.inlineChatCollapseText}>접기</Text>
-            <Ionicons name="chevron-up" size={14} color="#52525B" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.inlineChatCollapseBtn}>
+              <Text style={styles.inlineChatCollapseText}>접기</Text>
+              <Ionicons name="chevron-up" size={14} color="#52525B" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
@@ -4772,15 +4814,8 @@ export default function App() {
             {sendingMsg ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.inlineChatSendText}>전송</Text>
+              <Text style={styles.inlineChatSendText}>보내기</Text>
             )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={{ marginLeft: 6, paddingHorizontal: 10, height: 36, borderRadius: 18, backgroundColor: '#E53E3E', alignItems: 'center', justifyContent: 'center' }}
-            onPress={() => handleLeaveChat(partner)}
-            disabled={sendingMsg}
-          >
-            <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>나가기</Text>
           </TouchableOpacity>
         </View>
 
@@ -4836,16 +4871,39 @@ export default function App() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.ktHeader}>
-        <Text style={styles.ktPageTitle}>메시지</Text>
-        <TouchableOpacity
-          style={styles.ktIconBtn}
-          onPress={() => {
-            fetchFriendsAndRequests();
-            fetchUnreadCountsBySender(session.user.id);
-          }}
-        >
-          <Ionicons name="refresh-outline" size={20} color="#333333" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={styles.ktPageTitle}>메시지</Text>
+          <TouchableOpacity
+            style={[styles.leaveModeBtn, leaveSelectMode && styles.leaveModeBtnOn]}
+            onPress={() => {
+              if (leaveSelectMode) exitLeaveSelect();
+              else { setChatPartner(null); setLeaveSelectMode(true); }
+            }}
+          >
+            <Text style={[styles.leaveModeText, leaveSelectMode && { color: '#FFFFFF' }]}>
+              {leaveSelectMode ? '취소' : '채팅방 나가기'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        {leaveSelectMode ? (
+          <TouchableOpacity
+            style={[styles.leaveDoBtn, leaveSelectedIds.length === 0 && { opacity: 0.4 }]}
+            disabled={leaveSelectedIds.length === 0}
+            onPress={leaveSelectedChats}
+          >
+            <Text style={styles.leaveDoText}>나가기 {leaveSelectedIds.length > 0 ? `(${leaveSelectedIds.length})` : ''}</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.ktIconBtn}
+            onPress={() => {
+              fetchFriendsAndRequests();
+              fetchUnreadCountsBySender(session.user.id);
+            }}
+          >
+            <Ionicons name="refresh-outline" size={20} color="#333333" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <FlatList
@@ -4859,6 +4917,8 @@ export default function App() {
           chatAttachMenuOpen,
           chatStickerOpen,
           unreadCountBySender,
+          leaveSelectMode,
+          leaveSelected,
         }}
         contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
@@ -4878,8 +4938,13 @@ export default function App() {
               <TouchableOpacity
                 style={[styles.memberRow, isExpanded && styles.memberRowActive]}
                 activeOpacity={0.75}
-                onPress={() => toggleInlineChat(item)}
+                onPress={() => (leaveSelectMode ? toggleLeaveSelect(item.id) : toggleInlineChat(item))}
               >
+                {leaveSelectMode ? (
+                  <View style={[styles.leaveCheck, leaveSelected[item.id] && styles.leaveCheckOn]}>
+                    {leaveSelected[item.id] ? <Ionicons name="checkmark" size={15} color="#FFFFFF" /> : null}
+                  </View>
+                ) : null}
                 {item.avatar_url ? (
                   <Image source={{ uri: item.avatar_url }} style={styles.memberAvatar} />
                 ) : (
@@ -5131,10 +5196,6 @@ export default function App() {
       setSelectedPostId(post.id);
     }
   };
-  useEffect(() => { if (selectedPostId) recordPostView(selectedPostId); }, [selectedPostId]);
-  useEffect(() => { if (selectedFriend?.id) recordProfileVisit(selectedFriend.id); }, [selectedFriend?.id]);
-  useEffect(() => { if (viewingImage?.postId) recordPostView(viewingImage.postId); }, [viewingImage?.postId]);
-  useEffect(() => { if (commentSheetPost?.id) recordPostView(commentSheetPost.id); }, [commentSheetPost?.id]);
   const selectedPostComments = selectedPostId ? (commentsByPost[String(selectedPostId)] || []) : [];
 
   const isHomeActive = mainTab === 'home' && !onlyFavoritesFeed;
@@ -7723,6 +7784,15 @@ const styles = themedStyles({
   },
 
   mineMetaCol: { alignItems: 'flex-end', justifyContent: 'flex-end', marginBottom: 2 },
+  leaveModeBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(63,63,70,0.1)' },
+  leaveModeBtnOn: { backgroundColor: '#52525B' },
+  leaveModeText: { fontSize: 12, fontWeight: '700', color: '#52525B' },
+  leaveDoBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#3F3F46' },
+  leaveDoText: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
+  leaveCheck: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: '#A1A1AA', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  leaveCheckOn: { backgroundColor: '#3F3F46', borderColor: '#3F3F46' },
+  inlineChatLeaveBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(63,63,70,0.12)' },
+  inlineChatLeaveText: { fontSize: 12, fontWeight: '700', color: '#52525B' },
   readStatePending: { fontSize: 10, fontWeight: '800', color: '#3F3F46', marginBottom: 1 },
   readStateDone: { fontSize: 10, color: '#A1A1AA', marginBottom: 1 },
   unreadBadgeText: {
