@@ -1031,6 +1031,12 @@ const PostPhotoViewer = ({
               <Text style={styles.fullscreenActionCount}>{tops.length}</Text>
             </TouchableOpacity>
 
+            {/* 조회수 (게시물을 열었을 때만 보임) */}
+            <View style={styles.fullscreenActionBtn}>
+              <Ionicons name="eye-outline" size={24} color="#FFFFFF" />
+              <Text style={styles.fullscreenActionCount}>{post.view_count || 0}</Text>
+            </View>
+
           </View>
         </View>
       )}
@@ -1305,7 +1311,7 @@ const PostDetailPopup = ({
               </View>
             </View>
             <Text style={{ color: '#777777', fontSize: 11 }}>
-              {new Date(post.created_at).toLocaleString('ko-KR')}
+              {new Date(post.created_at).toLocaleString('ko-KR')}  ·  조회 {post.view_count || 0}
             </Text>
           </View>
         </View>
@@ -1787,8 +1793,8 @@ export default function App() {
     bio: '나만의 스토리를 기록해 보세요 ✨',
     avatar_url: null,
     cover_url: null,
-    today_visits: 1,
-    total_visits: 1,
+    today_visits: 0,
+    total_visits: 0,
   });
 
   const [editProfileModal, setEditProfileModal] = useState(false);
@@ -1876,6 +1882,20 @@ export default function App() {
 
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [viewingImage, setViewingImage] = useState(null);
+  // 게시물 조회수: 다른 사람이 게시물을 열면 1명당 1번만 올라감 (서버 함수 record_post_view)
+  const viewedPostIdsRef = useRef(new Set());
+  const recordPostView = async (postId) => {
+    if (!postId || !session) return;
+    const key = String(postId);
+    if (viewedPostIdsRef.current.has(key)) return;
+    viewedPostIdsRef.current.add(key);
+    try {
+      const { data, error } = await supabase.rpc('record_post_view', { p_post_id: postId });
+      if (!error && typeof data === 'number') {
+        setPosts((prev) => prev.map((p) => (String(p.id) === key ? { ...p, view_count: data } : p)));
+      }
+    } catch (e) { /* 실패해도 앱 사용에는 문제 없음 */ }
+  };
 
   const [unreadCountBySender, setUnreadCountBySender] = useState({});
   const [incomingMsgBanner, setIncomingMsgBanner] = useState(null);
@@ -2667,7 +2687,7 @@ export default function App() {
     const myId = session.user.id;
     let { data: memberData, error: memberErr } = await supabase
       .from('profiles')
-      .select('id, nickname, bio, avatar_url, cover_url, bgm_url, bgm_title')
+      .select('id, nickname, bio, avatar_url, cover_url, bgm_url, bgm_title, today_visits, total_visits, last_visit_date')
       .order('nickname', { ascending: true });
     if (memberErr) {
       const retry = await supabase
@@ -3104,6 +3124,29 @@ export default function App() {
     }
   };
 
+  // 오늘 날짜(한국 시간) 'YYYY-MM-DD'
+  const todayKST = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().split('T')[0];
+  // 화면에 보일 TODAY 숫자: 마지막 방문 날짜가 오늘이 아니면 0
+  const todayVisitsOf = (p) => (p && p.last_visit_date === todayKST() ? p.today_visits || 0 : 0);
+  // 다른 사람 프로필을 열었을 때 그 사람의 방문수 +1 (같은 사람은 앱을 켜 둔 동안 1번만)
+  const [visitCounts, setVisitCounts] = useState({}); // { 프로필id: { today, total } }
+  const visitedProfilesRef = useRef(new Set());
+  const recordProfileVisit = async (profileId) => {
+    if (!profileId || !session || profileId === session.user.id) return;
+    if (visitedProfilesRef.current.has(profileId)) return;
+    visitedProfilesRef.current.add(profileId);
+    try {
+      const { data, error } = await supabase.rpc('record_profile_visit', { p_profile_id: profileId });
+      if (!error && data) setVisitCounts((prev) => ({ ...prev, [profileId]: { today: data.today || 0, total: data.total || 0 } }));
+    } catch (e) { /* 무시 */ }
+  };
+  const visitLabelOf = (m) => {
+    const v = visitCounts[m?.id];
+    const t = v ? v.today : todayVisitsOf(m);
+    const tot = v ? v.total : (m?.total_visits || 0);
+    return `TODAY ${t}  |  TOTAL ${tot}`;
+  };
+
   const loadAndCountProfile = async (user) => {
     const todayStr = new Date().toISOString().split('T')[0];
     const defaultNick = user.email ? user.email.split('@')[0] : '내 스토리';
@@ -3115,25 +3158,13 @@ export default function App() {
       .maybeSingle();
 
     if (!error && data) {
-      const isSameDay = data.last_visit_date === todayStr;
-      const nextToday = isSameDay ? (data.today_visits || 0) + 1 : 1;
-      const nextTotal = (data.total_visits || 0) + 1;
-
+      // TODAY / TOTAL 은 '다른 사람이 내 프로필을 연 횟수' (서버 함수 record_profile_visit 이 올림)
       const updated = {
         ...data,
         nickname: data.nickname || defaultNick,
         bio: data.bio || '나만의 스토리를 기록해 보세요 ✨',
-        today_visits: nextToday,
-        total_visits: nextTotal,
-        last_visit_date: todayStr,
       };
       setProfile(updated);
-
-      await supabase.from('profiles').update({
-        today_visits: nextToday,
-        total_visits: nextTotal,
-        last_visit_date: todayStr,
-      }).eq('id', user.id);
     } else {
       const initialProfile = {
         id: user.id,
@@ -3141,8 +3172,8 @@ export default function App() {
         bio: '나만의 스토리를 기록해 보세요 ✨',
         avatar_url: null,
         cover_url: null,
-        today_visits: 1,
-        total_visits: 1,
+        today_visits: 0,
+        total_visits: 0,
         last_visit_date: todayStr,
       };
       setProfile(initialProfile);
@@ -4386,6 +4417,7 @@ export default function App() {
               <Ionicons name={isPanelOpen ? 'chatbubble' : 'chatbubble-outline'} size={19} color="#18181B" />
               <Text style={styles.minimalStatCount}>{postComments.length}</Text>
             </TouchableOpacity>
+
           </View>
 
           {item.content ? (
@@ -4933,7 +4965,7 @@ export default function App() {
 
           <View style={styles.visitorBadge}>
             <Text style={styles.visitorText}>
-              TODAY {profile.today_visits}  |  TOTAL {profile.total_visits}
+              TODAY {todayVisitsOf(profile)}  |  TOTAL {profile.total_visits || 0}
             </Text>
           </View>
 
@@ -5080,6 +5112,7 @@ export default function App() {
             <Text style={styles.gridHeartText}>{reactionCount}</Text>
           </View>
         )}
+
       </TouchableOpacity>
     );
   };
@@ -5091,12 +5124,17 @@ export default function App() {
 
   // 게시물 열기: 사진이 있으면 검은 화면 사진보기, 글만 있으면 상세 팝업
   const openPostView = (post, index = 0) => {
+    if (post) recordPostView(post.id);
     if (post && post.image_urls && post.image_urls.length > 0) {
       setViewingImage({ postId: post.id, index });
     } else if (post) {
       setSelectedPostId(post.id);
     }
   };
+  useEffect(() => { if (selectedPostId) recordPostView(selectedPostId); }, [selectedPostId]);
+  useEffect(() => { if (selectedFriend?.id) recordProfileVisit(selectedFriend.id); }, [selectedFriend?.id]);
+  useEffect(() => { if (viewingImage?.postId) recordPostView(viewingImage.postId); }, [viewingImage?.postId]);
+  useEffect(() => { if (commentSheetPost?.id) recordPostView(commentSheetPost.id); }, [commentSheetPost?.id]);
   const selectedPostComments = selectedPostId ? (commentsByPost[String(selectedPostId)] || []) : [];
 
   const isHomeActive = mainTab === 'home' && !onlyFavoritesFeed;
@@ -5280,6 +5318,7 @@ export default function App() {
                     >
                       {hasBio ? mu.bio.trim() : '소개글이 등록되지 않았습니다.'}
                     </Text>
+                    <Text style={styles.memberPostsVisit}>{visitLabelOf(mu)}</Text>
                   </View>
                 </View>
                 {mu.bgm_url ? (
@@ -5463,6 +5502,9 @@ export default function App() {
 
               <Text style={styles.friendCardName}>-{selectedFriend.nickname || '친구'}-</Text>
               <Text style={styles.friendCardBio}>{selectedFriend.bio || '상태 메시지가 없습니다.'}</Text>
+              <View style={styles.visitPill}>
+                <Text style={styles.visitPillText}>{visitLabelOf(selectedFriend)}</Text>
+              </View>
 
 
               {/* 프로필 하단 버튼 3개: 친구 / 1:1 채팅 / 차단 */}
@@ -6934,6 +6976,9 @@ const styles = themedStyles({
   memberPostsName: { fontSize: 16, fontWeight: '800', color: '#111111' },
   memberPostsCount: { fontSize: 12, fontWeight: '400', color: '#A1A1AA' },
   memberPostsAvatar: { width: 52, height: 52, borderRadius: 15, backgroundColor: '#F4F4F5' },
+  visitPill: { alignSelf: 'center', marginTop: 8, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' },
+  visitPillText: { color: '#D4D4D8', fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+  memberPostsVisit: { fontSize: 11, color: '#A1A1AA', fontWeight: '700', marginTop: 3, letterSpacing: 0.3 },
   memberPostsBio: { fontSize: 13, lineHeight: 19, color: '#3F3F46', marginTop: 2 },
   friendFullBackdrop: {
     position: 'absolute',
