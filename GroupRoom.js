@@ -22,6 +22,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as MediaLibrary from 'expo-media-library';
 import { Ionicons, themedStyles, hapticTap } from './theme';
 import GalleryPicker from './GalleryPicker';
+import { saveImageToPhone, saveFileToPhone } from './download';
 import StickerPanel, { getSticker, STICKER_LABEL, StickerBubbleImage } from './StickerPanel';
 
 // 단체방 알림음 설정 화면 열기 (안드로이드 알림 채널 설정)
@@ -312,6 +313,23 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     Linking.openURL(url).catch(() => Alert.alert('열기 실패', '파일을 열 수 없습니다.'));
   };
 
+  // 파일 말풍선을 눌렀을 때: 열기 / 폰에 저장
+  const fileActions = (item) => {
+    Alert.alert(item.file_name || '첨부파일', '이 파일을 어떻게 할까요?', [
+      { text: '취소', style: 'cancel' },
+      { text: '열기', onPress: () => openUrl(item.file_url) },
+      { text: '폰에 저장', onPress: () => saveFileToPhone(item.file_url, item.file_name) },
+    ]);
+  };
+
+  // 사진을 길게 눌렀을 때: 갤러리에 저장
+  const imageActions = (url) => {
+    Alert.alert('사진', '이 사진을 폰 갤러리에 저장할까요?', [
+      { text: '취소', style: 'cancel' },
+      { text: '사진 저장', onPress: () => saveImageToPhone(url) },
+    ]);
+  };
+
   const leaveRoom = () => {
     Alert.alert('방 나가기', `"${room.name}" 방에서 나갈까요?\n나가면 대화 내용을 다시 볼 수 없어요.`, [
       { text: '취소', style: 'cancel' },
@@ -337,7 +355,12 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     }
     if (item.image_url) {
       return (
-        <TouchableOpacity activeOpacity={0.85} onPress={() => setViewingImage(item.image_url)}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setViewingImage(item.image_url)}
+          onLongPress={() => imageActions(item.image_url)}
+          delayLongPress={400}
+        >
           <Image source={{ uri: item.image_url }} style={s.photo} resizeMode="cover" />
         </TouchableOpacity>
       );
@@ -346,13 +369,13 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
       return (
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={() => openUrl(item.file_url)}
+          onPress={() => fileActions(item)}
           style={[s.bubble, mine ? s.bubbleMine : s.bubbleOther, s.fileBubble]}
         >
           <Ionicons name="attach" size={18} color='#3F3F46' />
           <View style={{ flexShrink: 1, marginLeft: 6 }}>
             <Text style={mine ? s.textMine : s.textOther} numberOfLines={2}>{item.file_name || '첨부파일'}</Text>
-            <Text style={[s.fileHint, mine && { color: '#52525B' }]}>터치하여 열기 / 저장</Text>
+            <Text style={[s.fileHint, mine && { color: '#52525B' }]}>터치하여 열기 / 폰에 저장</Text>
           </View>
         </TouchableOpacity>
       );
@@ -560,6 +583,11 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
             <Ionicons name="close" size={30} color="#fff" />
           </TouchableOpacity>
           {viewingImage ? <Image source={{ uri: viewingImage }} style={s.viewerImg} resizeMode="contain" /> : null}
+          {/* 사진 저장 버튼 */}
+          <TouchableOpacity style={s.viewerSave} onPress={() => saveImageToPhone(viewingImage)} activeOpacity={0.8}>
+            <Ionicons name="download-outline" size={18} color="#FFFFFF" />
+            <Text style={s.viewerSaveText}>사진 저장</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
     </SafeAreaView>
@@ -644,5 +672,10 @@ const s = themedStyles({
   grayBtnLightText: { color: '#3F3F46', fontWeight: '700', fontSize: 14 },
   viewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center' },
   viewerImg: { width: '100%', height: '80%' },
+  viewerSave: {
+    position: 'absolute', bottom: 48, alignSelf: 'center', flexDirection: 'row', alignItems: 'center',
+    gap: 6, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22,
+  },
+  viewerSaveText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   viewerClose: { position: 'absolute', top: 44, right: 20, zIndex: 2, padding: 6 },
 });

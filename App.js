@@ -28,6 +28,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import GroupChat, { ensureGroupChannel } from './GroupChat';
 import GalleryPicker from './GalleryPicker';
+import { saveImageToPhone, saveFileToPhone } from './download';
 import * as MediaLibrary from 'expo-media-library';
 import StickerPanel, { getSticker, STICKER_LABEL, StickerBubbleImage } from './StickerPanel';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -628,6 +629,11 @@ const FullscreenPhotoPopup = ({
 
       <TouchableOpacity style={styles.fullscreenBackBtn} onPress={onClose} activeOpacity={0.8}>
         <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {/* 사진 저장(다운로드) 버튼 */}
+      <TouchableOpacity style={styles.fullscreenSaveBtn} onPress={() => saveImageToPhone(photoInfo.uri)} activeOpacity={0.8}>
+        <Ionicons name="download-outline" size={22} color="#FFFFFF" />
       </TouchableOpacity>
 
       <View style={styles.fullscreenBottomOverlay} pointerEvents="box-none">
@@ -2347,6 +2353,26 @@ export default function App() {
     bannerTimerRef.current = setTimeout(() => {
       setIncomingMsgBanner(null);
     }, 4000);
+  };
+
+  // 1:1 채팅 파일 말풍선을 눌렀을 때: 열기 / 폰에 저장
+  const chatFileActions = (msg) => {
+    Alert.alert(msg.file_name || '첨부파일', '이 파일을 어떻게 할까요?', [
+      { text: '취소', style: 'cancel' },
+      { text: '열기', onPress: () => handleOpenExternalLink(msg.file_url) },
+      { text: '폰에 저장', onPress: () => saveFileToPhone(msg.file_url, msg.file_name) },
+    ]);
+  };
+
+  // 1:1 채팅 사진·파일을 길게 눌렀을 때: 저장 (내 메시지면 삭제도)
+  const chatMediaActions = (msg, mine) => {
+    const save = msg.image_url
+      ? { text: '사진 저장', onPress: () => saveImageToPhone(msg.image_url) }
+      : { text: '폰에 저장', onPress: () => saveFileToPhone(msg.file_url, msg.file_name) };
+    const buttons = [{ text: '취소', style: 'cancel' }];
+    if (mine) buttons.push({ text: '삭제', style: 'destructive', onPress: () => handleDeleteSentMessage(msg) });
+    buttons.push(save);
+    Alert.alert(msg.image_url ? '사진' : (msg.file_name || '첨부파일'), '', buttons);
   };
 
   const handleOpenExternalLink = async (rawUrl) => {
@@ -4728,7 +4754,7 @@ export default function App() {
                             isLikedByMe: false,
                           })
                         }
-                        onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
+                        onLongPress={() => chatMediaActions(item, isMine)}
                         delayLongPress={400}
                         style={styles.chatPhotoBubble}
                       >
@@ -4741,8 +4767,8 @@ export default function App() {
                     ) : item.file_url ? (
                       <TouchableOpacity
                         activeOpacity={0.85}
-                        onPress={() => handleOpenExternalLink(item.file_url)}
-                        onLongPress={isMine ? () => handleDeleteSentMessage(item) : undefined}
+                        onPress={() => chatFileActions(item)}
+                        onLongPress={() => chatMediaActions(item, isMine)}
                         delayLongPress={400}
                         style={[styles.bubbleBox, isMine ? styles.bubbleMine : styles.bubbleOther, isMine && isSelfChat && styles.bubbleSelf, styles.fileBubbleBox]}
                       >
@@ -4753,7 +4779,7 @@ export default function App() {
                           <Text style={styles.fileBubbleName} numberOfLines={2}>
                             {item.file_name || '첨부파일'}
                           </Text>
-                          <Text style={styles.fileBubbleHint}>터치하여 파일 열기 / 저장</Text>
+                          <Text style={styles.fileBubbleHint}>터치하여 열기 / 폰에 저장</Text>
                         </View>
                       </TouchableOpacity>
                     ) : (
@@ -4983,13 +5009,25 @@ export default function App() {
               </TouchableOpacity>
 
             {isExpanded && (
-              <Modal visible animationType="slide" onRequestClose={() => setChatPartner(null)}>
+              <Modal
+                visible
+                animationType="slide"
+                onRequestClose={() => (viewingImage && !viewingImage.postId ? setViewingImage(null) : setChatPartner(null))}
+              >
                 <View style={{ flex: 1, backgroundColor: bgc('#fff'), paddingTop: 36 }}>
                   {/* 키보드가 올라오면 가려지는 만큼 아래 여백을 줘서 입력창·메시지가 키보드 위로 올라오게 함 */}
                   <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
                     {renderInlineChatDrawer(item)}
                   </KeyboardAvoidingView>
                 </View>
+                {/* 채팅 사진 크게 보기 (채팅창 위에 보이도록 이 안에서 띄움) */}
+                {viewingImage && !viewingImage.postId ? (
+                  <FullscreenPhotoPopup
+                    photoInfo={viewingImage}
+                    currentUserId={session.user.id}
+                    onClose={() => setViewingImage(null)}
+                  />
+                ) : null}
               </Modal>
             )}
             </View>
@@ -6128,7 +6166,7 @@ export default function App() {
       ) : null}
 
       <FullscreenPhotoPopup
-        photoInfo={viewingPost ? null : viewingImage}
+        photoInfo={viewingPost || (chatPartner && mainTab === 'chats') ? null : viewingImage}
         currentUserId={session.user.id}
         onClose={() => setViewingImage(null)}
         onToggleReaction={toggleReaction}
@@ -6852,6 +6890,18 @@ const styles = themedStyles({
   viewerCmtInput: { flex: 1, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 16, paddingTop: 0, paddingBottom: 0, fontSize: 15, color: '#FFFFFF', textAlignVertical: 'center', includeFontPadding: false },
   viewerCmtSend: { marginLeft: 8, height: 44, minWidth: 68, paddingHorizontal: 14, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   viewerCmtSendText: { color: '#111111', fontSize: 15, fontWeight: '800' },
+  fullscreenSaveBtn: {
+    position: 'absolute',
+    top: 18,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1220,
+  },
   fullscreenViewerRoot: {
     position: 'absolute',
     top: 0,
