@@ -2084,6 +2084,25 @@ export default function App() {
     }
   }, [session]);
 
+  // 앱을 껐다가(뒤로가기·홈버튼) 다시 열었을 때도 새 멤버·새 글·안 읽은 메시지를 다시 불러옴
+  // (최근 앱 목록에서 지우지 않아도 최신 상태로 보이게)
+  const lastRefreshRef = useRef(0);
+  useEffect(() => {
+    if (!session || !supabase) return;
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active') return;
+      const now = Date.now();
+      if (now - lastRefreshRef.current < 15 * 1000) return; // 15초 안에 여러 번은 생략
+      lastRefreshRef.current = now;
+      fetchFriendsAndRequests();
+      fetchUnreadCountsBySender(session.user.id);
+      fetchBlocks();
+      fetchPosts();
+      fetchAllComments();
+    });
+    return () => sub.remove();
+  }, [session]);
+
   useEffect(() => {
     if (!supabase || !session) return;
     const reqChannel = supabase
