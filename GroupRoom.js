@@ -374,8 +374,13 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 12 }}
-          ListEmptyComponent={<Text style={[s.empty, { transform: [{ scaleY: -1 }] }]}>첫 메시지를 보내 보세요.</Text>}
         />
+        {/* 메시지가 없을 때 안내: 뒤집힌 목록 밖에 따로 띄워서 글자가 거꾸로 보이지 않게 함 */}
+        {messages.length === 0 ? (
+          <View pointerEvents="none" style={s.emptyWrap}>
+            <Text style={s.emptyText}>첫 메시지를 보내 보세요.</Text>
+          </View>
+        ) : null}
         <View style={s.inputBar}>
           <TouchableOpacity
             style={[s.plusBtn, menuOpen && s.plusBtnOn]}
@@ -509,6 +514,8 @@ const s = themedStyles({
   leaveText: { color: '#3F3F46', fontSize: 15, fontWeight: '600' },
   headerRight: { width: 110, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
   empty: { textAlign: 'center', marginTop: 60, color: '#A1A1AA' },
+  emptyWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 70, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { color: '#A1A1AA', fontSize: 14 },
   msgRow: { marginBottom: 10, maxWidth: '85%' },
   rowMine: { alignSelf: 'flex-end', alignItems: 'flex-end' },
   rowOther: { alignSelf: 'flex-start', alignItems: 'flex-start' },
