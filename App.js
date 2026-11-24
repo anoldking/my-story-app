@@ -3895,19 +3895,26 @@ export default function App() {
 
       {accountMenuOpen && (
         <View style={styles.accountPopoverMenu}>
-          <View style={styles.accountPopoverHeader}>
+          {/* 이름 줄을 누르면 내 프로필 화면 (아래 메뉴바의 프로필 버튼 대신) */}
+          <TouchableOpacity
+            style={styles.accountPopoverHeader}
+            activeOpacity={0.7}
+            onPress={() => {
+              setAccountMenuOpen(false);
+              setMemberPostsUser(null);
+              setMainTab('story');
+            }}
+          >
             <Ionicons name="person-circle-outline" size={18} color="#18181B" />
             <View style={{ flex: 1 }}>
               <Text style={styles.accountPopoverName} numberOfLines={1}>
                 {currentAccountName}
               </Text>
-              {currentAccountEmail ? (
-                <Text style={styles.accountPopoverEmail} numberOfLines={1}>
-                  {currentAccountEmail}
-                </Text>
-              ) : null}
+              <Text style={styles.accountPopoverEmail} numberOfLines={1}>
+                {currentAccountEmail ? `${currentAccountEmail} · ` : ''}내 프로필 보기 ›
+              </Text>
             </View>
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.igDropdownDivider} />
 
@@ -4093,12 +4100,10 @@ export default function App() {
         <TouchableOpacity
           style={styles.igStoryItem}
           onPress={() => {
+            // '나': 내 프로필 편집 화면 바로 열기 (새 게시물은 아래 ＋ 버튼)
             setBrandMenuOpen(false);
             setAccountMenuOpen(false);
-            setImageUri(null); setPostImages([]);
-            setContent('');
-            setVisibility('public');
-            setWriteModalVisible(true);
+            openProfileEditor();
           }}
         >
           <View style={styles.igStoryAvatarWrap}>
@@ -4111,11 +4116,8 @@ export default function App() {
                 </View>
               )}
             </View>
-            <View style={styles.igStoryPlusBadge}>
-              <Ionicons name="add" size={11} color="#FFFFFF" />
-            </View>
           </View>
-          <Text style={styles.igStoryName} numberOfLines={1}>내 스토리</Text>
+          <Text style={styles.igStoryName} numberOfLines={1}>나</Text>
         </TouchableOpacity>
 
         {(memberFilterFriends ? otherMembers.filter((m) => acceptedFriendIds.includes(m.id)) : otherMembers).map((member) => {
@@ -5204,25 +5206,6 @@ export default function App() {
             <Ionicons name="add" size={25} color="#111111" />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.leftMenuBtn}
-            onPress={() => {
-              setBrandMenuOpen(false);
-              setMemberPostsUser(null);
-              setAccountMenuOpen(false);
-              setMainTab('story');
-            }}
-          >
-            <View style={[styles.leftMenuAvatarRing, isStoryActive && styles.leftMenuAvatarRingActive]}>
-              {profile.avatar_url ? (
-                <Image source={{ uri: profile.avatar_url }} style={styles.leftMenuAvatarImg} />
-              ) : (
-                <View style={[styles.leftMenuAvatarImg, styles.ktDefaultAvatar]}>
-                  <Ionicons name="person" size={14} color="#64748B" />
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
         </View>
 
         {/* 중앙 메인 콘텐츠 영역 */}
