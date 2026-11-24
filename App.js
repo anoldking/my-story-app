@@ -814,6 +814,9 @@ const TextBtn = ({ label, onPress, color = '#374151', pressedColor = '#2563EB' }
 );
 
 // 게시물 사진 보기 (검은 배경): 여러 장 넘겨보기 + 반응(따봉) 선택 + 댓글 작성
+// 사진 보기 화면 안의 '확대 화면'을 폰 뒤로가기로 먼저 닫기 위한 연결 고리
+const viewerBackHook = { handler: null };
+
 const PostPhotoViewer = ({
   post,
   startIndex,
@@ -839,6 +842,19 @@ const PostPhotoViewer = ({
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomIdx, setZoomIdx] = useState(null);
   const [zoomRatio, setZoomRatio] = useState(1);
+
+  // 폰 뒤로가기: 확대 화면이 열려 있으면 X 와 똑같이 확대 화면만 닫음
+  useEffect(() => {
+    viewerBackHook.handler = () => {
+      if (zoomIdx !== null) {
+        setZoomIdx(null);
+        setIsZoomed(false);
+        return true;
+      }
+      return false;
+    };
+    return () => { viewerBackHook.handler = null; };
+  }, [zoomIdx]);
 
   const openZoom = (i) => {
     setReactOpen(false);
@@ -937,7 +953,7 @@ const PostPhotoViewer = ({
             fillHeight
             onZoomStateChange={setIsZoomed}
           />
-          <TouchableOpacity style={[styles.fullscreenBackBtn, { zIndex: 1260 }]} onPress={() => setZoomIdx(null)} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.fullscreenBackBtn, { zIndex: 1260 }]} onPress={() => { setZoomIdx(null); setIsZoomed(false); }} activeOpacity={0.8}>
             <Ionicons name="close" size={24} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.viewerZoomHint}>
@@ -1990,6 +2006,11 @@ export default function App() {
           return true;
         }
         return false;
+      }
+
+      // 1번째 뒤로: 확대 화면 닫기 → 2번째 뒤로: 사진 보기 닫고 홈 화면으로
+      if (viewerBackHook.handler && viewerBackHook.handler()) {
+        return true;
       }
 
       if (viewingImage) {
