@@ -5893,7 +5893,7 @@ export default function App() {
         <View style={[styles.cmtSheet, { height: '60%' }]}>
           <View style={styles.cmtSheetHandle} />
           <View style={styles.cmtSheetHeader}>
-            <Text style={styles.cmtSheetTitle}>BGM 고르기</Text>
+            <Text style={styles.cmtSheetTitle}>BGM 고르기 <Text style={styles.bgmLibNote}>(앱내부 곡은 저작권없음)</Text></Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
               {/* 미리듣기용 음소거 버튼 (홈 음악바와 같은 상태) */}
               <TouchableOpacity onPress={bgmToggleMute} hitSlop={10} style={styles.bgmLibMuteBtn}>
@@ -5948,7 +5948,7 @@ export default function App() {
             disabled={bgmQuickBusy}
           >
             <Ionicons name="folder-open-outline" size={16} color="#3F3F46" />
-            <Text style={styles.bgmLibOwnText}>내 폰에서 직접 고르기</Text>
+            <Text style={styles.bgmLibOwnText}>내 폰에서 직접 고르기 <Text style={styles.bgmLibNote}>(저작권 주의)</Text></Text>
           </TouchableOpacity>
         </View>
       </Modal>
@@ -7199,6 +7199,7 @@ const styles = themedStyles({
   bgmLibPickBtn: { marginLeft: 8, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 14, backgroundColor: '#F4F4F5' },
   bgmLibPickText: { fontSize: 13, fontWeight: '700', color: '#3F3F46' },
   bgmLibOwnBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E4E4E7' },
+  bgmLibNote: { fontSize: 12, color: '#8A8F98', fontWeight: '400' },
   bgmLibOwnText: { fontSize: 14, color: '#3F3F46', fontWeight: '600' },
   cmtSheet: { height: '40%', backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingBottom: 24 },
   cmtSheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#D4D4D8', marginTop: 8, marginBottom: 6 },
