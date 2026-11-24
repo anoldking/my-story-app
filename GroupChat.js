@@ -11,6 +11,7 @@ import {
   Alert,
   SafeAreaView,
   StyleSheet,
+  AppState,
 } from 'react-native';
 import { Text, TextInput } from './fonts';
 import * as Notifications from 'expo-notifications';
@@ -109,6 +110,13 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
     }, [supabase, me]);
 
   useEffect(() => { loadRooms(); }, [loadRooms]);
+
+  // 앱을 다시 열거나, 앱을 보는 중 푸시가 오면 단체방 목록(안 읽은 숫자 등)을 바로 새로 불러옴
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') loadRooms(); });
+    const recv = Notifications.addNotificationReceivedListener(() => loadRooms());
+    return () => { sub.remove(); recv?.remove(); };
+  }, [loadRooms]);
 
   const startCreate = () => {
     setPicked({});

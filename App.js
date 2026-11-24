@@ -2087,20 +2087,32 @@ export default function App() {
   // 앱을 껐다가(뒤로가기·홈버튼) 다시 열었을 때도 새 멤버·새 글·안 읽은 메시지를 다시 불러옴
   // (최근 앱 목록에서 지우지 않아도 최신 상태로 보이게)
   const lastRefreshRef = useRef(0);
+  const chatPartnerRef = useRef(null); // 지금 열려 있는 1:1 대화 상대 (알림 반영용)
+  useEffect(() => { chatPartnerRef.current = chatPartner; }, [chatPartner]);
+  // 메시지 관련(안 읽은 숫자, 열려 있는 대화)은 앱이 켜질 때마다 '항상' 바로 새로 불러옴
+  const refreshMessagesNow = () => {
+    if (!session) return;
+    fetchUnreadCountsBySender(session.user.id);
+    if (chatPartnerRef.current?.id) fetchChatMessages(chatPartnerRef.current.id);
+  };
   useEffect(() => {
     if (!session || !supabase) return;
     const sub = AppState.addEventListener('change', (st) => {
       if (st !== 'active') return;
+      refreshMessagesNow();
       const now = Date.now();
-      if (now - lastRefreshRef.current < 15 * 1000) return; // 15초 안에 여러 번은 생략
+      if (now - lastRefreshRef.current < 15 * 1000) return; // 게시물·멤버는 15초 안에 여러 번은 생략
       lastRefreshRef.current = now;
       fetchFriendsAndRequests();
-      fetchUnreadCountsBySender(session.user.id);
       fetchBlocks();
       fetchPosts();
       fetchAllComments();
     });
-    return () => sub.remove();
+    // 앱을 보고 있는 중에 푸시 알림이 오면 숫자와 대화를 바로 반영
+    const recvSub = Notifications.addNotificationReceivedListener(() => {
+      refreshMessagesNow();
+    });
+    return () => { sub.remove(); recvSub?.remove(); };
   }, [session]);
 
   useEffect(() => {

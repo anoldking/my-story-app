@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Platform,
   ScrollView,
+  AppState,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { Text, TextInput } from './fonts';
@@ -167,7 +168,20 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     // 실시간 연결이 안 될 때를 대비해 15초마다 한 번 다시 확인
     const timer = setInterval(() => { if (alive) loadReads(); }, 15000);
 
-    return () => { alive = false; clearInterval(timer); supabase.removeChannel(ch); };
+    // 앱을 껐다 다시 켰을 때: 그 사이에 온 메시지와 읽음 상태를 바로 다시 불러옴
+    const reload = async () => {
+      const res = await supabase
+        .from('group_messages').select('*')
+        .eq('room_id', room.id)
+        .order('created_at', { ascending: true })
+        .limit(300);
+      if (alive && !res.error) setMessages(res.data || []);
+      loadReads();
+      markRead();
+    };
+    const appSub = AppState.addEventListener('change', (st) => { if (st === 'active') reload(); });
+
+    return () => { alive = false; clearInterval(timer); appSub.remove(); supabase.removeChannel(ch); };
   }, [supabase, room.id, addMessage, markRead, loadReads]);
 
   // 이 메시지를 아직 안 읽은 멤버 수 (보낸 사람 제외)
