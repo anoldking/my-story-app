@@ -7693,7 +7693,7 @@ const styles = themedStyles({
   bubbleRowOther: { justifyContent: 'flex-start' },
   chatSenderName: { fontSize: 11, color: '#333', marginBottom: 3, marginLeft: 2 },
   bubbleBox: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 },
-  bubbleMine: { backgroundColor: '#FEE500', borderBottomRightRadius: 2 },
+  bubbleMine: { backgroundColor: '#D6EEFB', borderBottomRightRadius: 2 }, // 내 말풍선: 연한 하늘색
   bubbleSelf: { backgroundColor: '#BAE6FD' }, // 나와의 채팅(me) 말풍선: 하늘색
   bubbleOther: { backgroundColor: '#FFFFFF', borderBottomLeftRadius: 2 },
   bubbleText: { fontSize: 13.5, color: '#222', lineHeight: 19 },

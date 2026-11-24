@@ -349,10 +349,10 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           onPress={() => openUrl(item.file_url)}
           style={[s.bubble, mine ? s.bubbleMine : s.bubbleOther, s.fileBubble]}
         >
-          <Ionicons name="attach" size={18} color={mine ? '#FFFFFF' : '#3F3F46'} />
+          <Ionicons name="attach" size={18} color='#3F3F46' />
           <View style={{ flexShrink: 1, marginLeft: 6 }}>
             <Text style={mine ? s.textMine : s.textOther} numberOfLines={2}>{item.file_name || '첨부파일'}</Text>
-            <Text style={[s.fileHint, mine && { color: '#E4E4E7' }]}>터치하여 열기 / 저장</Text>
+            <Text style={[s.fileHint, mine && { color: '#52525B' }]}>터치하여 열기 / 저장</Text>
           </View>
         </TouchableOpacity>
       );
@@ -588,9 +588,9 @@ const s = themedStyles({
   avatarDefault: { alignItems: 'center', justifyContent: 'center' },
   bubbleLine: { flexDirection: 'row', alignItems: 'flex-end' },
   bubble: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 14, maxWidth: '100%', flexShrink: 1 },
-  bubbleMine: { backgroundColor: '#52525B' },
+  bubbleMine: { backgroundColor: '#D6EEFB' }, // 내 말풍선: 연한 하늘색
   bubbleOther: { backgroundColor: '#EEEEEE' },
-  textMine: { color: '#FFFFFF', fontSize: 16 },
+  textMine: { color: '#111111', fontSize: 16 },
   textOther: { color: '#111111', fontSize: 16 },
   time: { fontSize: 11, color: '#A1A1AA', marginHorizontal: 6 },
   unreadNum: { fontSize: 11, fontWeight: '800', color: '#3F3F46', marginHorizontal: 6, marginBottom: 1 }, // 안 읽은 사람 수
