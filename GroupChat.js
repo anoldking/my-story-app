@@ -60,6 +60,26 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
   // 체크해서 여러 방 한꺼번에 나가기 (1:1 메시지 목록과 같은 방식)
   const [leaveSelectMode, setLeaveSelectMode] = useState(false);
   const [leaveSelected, setLeaveSelected] = useState({}); // { roomId: true }
+  const [unreadByRoom, setUnreadByRoom] = useState({}); // { roomId: 안 읽은 메시지 수 }
+
+  // 방마다 '내가 마지막으로 읽은 시간' 이후에 다른 사람이 보낸 메시지 수 세기
+  const loadUnread = async (list, myReads) => {
+    try {
+      const out = {};
+      await Promise.all(list.map(async (r) => {
+        let q = supabase
+          .from('group_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('room_id', r.id)
+          .neq('sender_id', me);
+        const lr = myReads[r.id];
+        if (lr) q = q.gt('created_at', lr);
+        const { count, error } = await q;
+        if (!error) out[r.id] = count || 0;
+      }));
+      setUnreadByRoom(out);
+    } catch (e) { /* 숫자만 못 보일 뿐, 목록은 정상 */ }
+  };
 
   // 각 방의 참여 인원 수와 대표 멤버(나를 뺀 첫 번째 사람) 불러오기
   const loadRoomInfo = async (list) => {
@@ -67,9 +87,12 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
       if (!list.length) { setRoomInfo({}); return; }
       const mem = await supabase
         .from('chat_room_members')
-        .select('room_id, user_id')
+        .select('room_id, user_id, last_read_at')
         .in('room_id', list.map((r) => r.id));
       if (mem.error || !mem.data) return;
+      const myReads = {};
+      mem.data.forEach((m) => { if (m.user_id === me) myReads[m.room_id] = m.last_read_at; });
+      loadUnread(list, myReads);
       const uids = [...new Set(mem.data.map((m) => m.user_id))];
       const pr = await supabase.from('profiles').select('id, nickname, avatar_url').in('id', uids);
       const pmap = {};
@@ -84,8 +107,8 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
     } catch (e) { /* 표시만 못 할 뿐, 목록은 정상 */ }
   };
 
-  const loadRooms = useCallback(async () => {
-      setLoading(true);
+  const loadRooms = useCallback(async (quiet) => {
+      if (quiet !== true) setLoading(true);
       const { data, error } = await supabase
       .from('chat_room_members')
       .select('room_id, chat_rooms(id, name, created_at)')
@@ -116,9 +139,18 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
 
   // 앱을 다시 열거나, 앱을 보는 중 푸시가 오면 단체방 목록(안 읽은 숫자 등)을 바로 새로 불러옴
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') loadRooms(); });
-    const recv = Notifications.addNotificationReceivedListener(() => loadRooms());
-    return () => { sub.remove(); recv?.remove(); };
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') loadRooms(true); });
+    const recv = Notifications.addNotificationReceivedListener(() => loadRooms(true));
+    // 목록을 보고 있는 동안 새 단체 메시지가 오면 안 읽은 숫자를 바로 다시 셈
+    let timer = null;
+    const ch = supabase
+      .channel('group-list-unread-' + me)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' }, () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => loadRooms(true), 600);
+      })
+      .subscribe();
+    return () => { sub.remove(); recv?.remove(); if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
   }, [loadRooms]);
 
   const leaveSelectedIds = Object.keys(leaveSelected).filter((k) => leaveSelected[k]);
@@ -187,7 +219,7 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
       supabase={supabase}
       me={me}
       room={activeRoom}
-      onBack={() => { setActiveRoom(null); loadRooms(); }}
+      onBack={() => { setActiveRoom(null); loadRooms(true); }}
       onLeft={() => { setActiveRoom(null); loadRooms(); }}
       />
     );
@@ -284,7 +316,7 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
         <FlatList
         data={rooms}
         keyExtractor={(r) => r.id}
-        extraData={{ leaveSelectMode, leaveSelected, roomInfo }}
+        extraData={{ leaveSelectMode, leaveSelected, roomInfo, unreadByRoom }}
         contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 40 }}
         ListEmptyComponent={<Text style={s.empty}>아직 단체방이 없어요.{'\n'}오른쪽 위 ＋를 눌러 보세요.</Text>}
         renderItem={({ item }) => {
@@ -316,6 +348,11 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
                     {rep ? `${rep.nickname || '멤버'}${count > 2 ? ` 외 ${count - 2}명` : ''}` : '터치하여 대화하기'}
                   </Text>
                 </View>
+                {unreadByRoom[item.id] > 0 ? (
+                  <View style={s.unreadBadge}>
+                    <Text style={s.unreadBadgeText}>{unreadByRoom[item.id] >= 100 ? '많음' : unreadByRoom[item.id]}</Text>
+                  </View>
+                ) : null}
                 {count > 0 ? (
                   <View style={s.countBadge}>
                     <Ionicons name="person" size={10} color="#71717A" />
@@ -379,6 +416,11 @@ const s = themedStyles({
     pickAvatar: { width: 40, height: 40, borderRadius: 11, backgroundColor: '#E5E7EB', marginRight: 12 },
     roomAvatarDefault: { alignItems: 'center', justifyContent: 'center' },
     roomSub: { fontSize: 13, color: '#6B7280', marginTop: 3 },
+    unreadBadge: {
+      minWidth: 22, height: 22, paddingHorizontal: 6, borderRadius: 11, backgroundColor: '#EF4444',
+      alignItems: 'center', justifyContent: 'center', marginLeft: 8,
+    },
+    unreadBadgeText: { color: '#FFFFFF', fontSize: 11.5, fontWeight: 'bold' },
     countBadge: {
       flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F4F5',
       borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4, marginLeft: 8,
