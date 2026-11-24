@@ -49,6 +49,7 @@ function hhmm(iso) {
 
 export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite }) {
   const [messages, setMessages] = useState([]);
+  const [reads, setReads] = useState({}); // 멤버별 마지막으로 읽은 시간 { user_id: last_read_at }
   const [names, setNames] = useState({});
   const [avatars, setAvatars] = useState({});
   const [text, setText] = useState('');
@@ -89,10 +90,22 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     setNoticeOpen(false);
   };
 
+  // 멤버들의 '마지막으로 읽은 시간' 불러오기 (안 읽은 사람 수 계산용)
+  const loadReads = useCallback(async () => {
+    const r = await supabase.from('chat_room_members').select('user_id, last_read_at').eq('room_id', room.id);
+    if (r.data) {
+      const map = {};
+      r.data.forEach((m) => { map[m.user_id] = m.last_read_at; });
+      setReads(map);
+    }
+  }, [supabase, room.id]);
+
   const markRead = useCallback(() => {
+    const nowIso = new Date().toISOString();
+    setReads((prev) => ({ ...prev, [me]: nowIso }));
     supabase
       .from('chat_room_members')
-      .update({ last_read_at: new Date().toISOString() })
+      .update({ last_read_at: nowIso })
       .eq('room_id', room.id)
       .eq('user_id', me)
       .then(() => {});
@@ -106,8 +119,13 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     let alive = true;
     (async () => {
       const mem = await supabase
-        .from('chat_room_members').select('user_id').eq('room_id', room.id);
+        .from('chat_room_members').select('user_id, last_read_at').eq('room_id', room.id);
       const ids = (mem.data || []).map((r) => r.user_id);
+      if (alive && mem.data) {
+        const rmap = {};
+        mem.data.forEach((m) => { rmap[m.user_id] = m.last_read_at; });
+        setReads(rmap);
+      }
       if (ids.length) {
         const pr = await supabase.from('profiles').select('id, nickname, avatar_url').in('id', ids);
         if (alive && pr.data) {
@@ -135,10 +153,34 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `room_id=eq.${room.id}` },
         (payload) => { addMessage(payload.new); markRead(); }
       )
+      // 다른 멤버가 읽으면 숫자가 바로 줄어들게
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'chat_room_members', filter: `room_id=eq.${room.id}` },
+        (payload) => {
+          const n = payload.new;
+          if (n && n.user_id) setReads((prev) => ({ ...prev, [n.user_id]: n.last_read_at }));
+        }
+      )
       .subscribe();
 
-    return () => { alive = false; supabase.removeChannel(ch); };
-  }, [supabase, room.id, addMessage, markRead]);
+    // 실시간 연결이 안 될 때를 대비해 15초마다 한 번 다시 확인
+    const timer = setInterval(() => { if (alive) loadReads(); }, 15000);
+
+    return () => { alive = false; clearInterval(timer); supabase.removeChannel(ch); };
+  }, [supabase, room.id, addMessage, markRead, loadReads]);
+
+  // 이 메시지를 아직 안 읽은 멤버 수 (보낸 사람 제외)
+  const unreadCountOf = (item) => {
+    const t = Date.parse(item.created_at);
+    let n = 0;
+    Object.keys(reads).forEach((uid) => {
+      if (uid === item.sender_id) return;
+      const r = reads[uid] ? Date.parse(reads[uid]) : 0;
+      if (!r || r < t) n += 1;
+    });
+    return n;
+  };
 
   // 메시지 한 건 저장 + 푸시 요청 (글, 사진, 파일 공통)
   const postMessage = async (fields) => {
@@ -315,7 +357,10 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         <View style={[s.msgRow, s.rowMine]}>
           <View style={[s.bubbleLine, { flexDirection: 'row-reverse' }]}>
             {renderBody(item, true)}
-            <Text style={s.time}>{hhmm(item.created_at)}</Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              {unreadCountOf(item) > 0 ? <Text style={s.unreadNum}>{unreadCountOf(item)}</Text> : null}
+              <Text style={s.time}>{hhmm(item.created_at)}</Text>
+            </View>
           </View>
         </View>
       );
@@ -334,7 +379,10 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           <Text style={s.name}>{names[item.sender_id] || '알 수 없음'}</Text>
           <View style={s.bubbleLine}>
             {renderBody(item, false)}
-            <Text style={s.time}>{hhmm(item.created_at)}</Text>
+            <View style={{ alignItems: 'flex-start' }}>
+              {unreadCountOf(item) > 0 ? <Text style={s.unreadNum}>{unreadCountOf(item)}</Text> : null}
+              <Text style={s.time}>{hhmm(item.created_at)}</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -370,6 +418,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         <FlatList
           ref={listRef}
           data={[...messages].reverse()}
+          extraData={reads}
           inverted
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
@@ -530,6 +579,7 @@ const s = themedStyles({
   textMine: { color: '#FFFFFF', fontSize: 16 },
   textOther: { color: '#111111', fontSize: 16 },
   time: { fontSize: 11, color: '#A1A1AA', marginHorizontal: 6 },
+  unreadNum: { fontSize: 11, fontWeight: '800', color: '#3F3F46', marginHorizontal: 6, marginBottom: 1 }, // 안 읽은 사람 수
   photo: { width: 200, height: 200, borderRadius: 14, backgroundColor: '#eee' },
   fileBubble: { flexDirection: 'row', alignItems: 'center' },
   fileHint: { fontSize: 11, color: '#71717A', marginTop: 2 },
