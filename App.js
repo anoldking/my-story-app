@@ -4883,7 +4883,8 @@ export default function App() {
             {isExpanded && (
               <Modal visible animationType="slide" onRequestClose={() => setChatPartner(null)}>
                 <View style={{ flex: 1, backgroundColor: bgc('#fff'), paddingTop: 36 }}>
-                  <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                  {/* 키보드가 올라오면 가려지는 만큼 아래 여백을 줘서 입력창·메시지가 키보드 위로 올라오게 함 */}
+                  <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
                     {renderInlineChatDrawer(item)}
                   </KeyboardAvoidingView>
                 </View>
@@ -5869,7 +5870,7 @@ export default function App() {
             setSheetSending(false);
           };
           return (
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
               <TouchableOpacity style={styles.cmtSheetBackdrop} activeOpacity={1} onPress={closeSheet} />
               <View style={styles.cmtSheet}>
                 <View style={styles.cmtSheetHandle} />
