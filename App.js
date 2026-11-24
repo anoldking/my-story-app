@@ -4949,7 +4949,7 @@ export default function App() {
                   <Image source={{ uri: item.avatar_url }} style={styles.memberAvatar} />
                 ) : (
                   <View style={[styles.memberAvatar, styles.ktDefaultAvatar]}>
-                    <Ionicons name="person" size={20} color="#64748B" />
+                    <Ionicons name="person" size={17} color="#64748B" />
                   </View>
                 )}
                 <View style={{ flex: 1 }}>
@@ -4976,7 +4976,7 @@ export default function App() {
                   )}
                   <Ionicons
                     name={isExpanded ? 'chevron-up' : 'chatbubble-outline'}
-                    size={18}
+                    size={16}
                     color={isExpanded ? '#18181B' : '#2B6CB0'}
                   />
                 </View>
@@ -7591,7 +7591,7 @@ const styles = themedStyles({
   emptyText: { color: '#AAA', textAlign: 'center', lineHeight: 22, fontSize: 13 },
 
   memberCardGroup: {
-    marginBottom: 10,
+    marginBottom: 6,
     backgroundColor: '#FAFAFA',
     borderRadius: 12,
     borderWidth: 1,
@@ -7609,7 +7609,8 @@ const styles = themedStyles({
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
     gap: 10,
   },
   memberRowActive: {
@@ -7617,9 +7618,9 @@ const styles = themedStyles({
     borderBottomColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
   },
-  memberAvatar: { width: 44, height: 44, borderRadius: 12 },
-  memberName: { fontSize: 14, fontWeight: 'bold', color: '#222' },
-  memberBio: { fontSize: 12, color: '#777', marginTop: 2 },
+  memberAvatar: { width: 36, height: 36, borderRadius: 10 },
+  memberName: { fontSize: 13.5, fontWeight: 'bold', color: '#222' },
+  memberBio: { fontSize: 11.5, color: '#777', marginTop: 1 },
   meBadge: { backgroundColor: '#BAE6FD', paddingHorizontal: 8, paddingVertical: 0, borderRadius: 6, marginLeft: -8 }, // 글자 시작이 다른 이름들과 같은 위치에 오도록
   meBadgeText: { color: '#075985' },
   unreadCounterBadge: {
