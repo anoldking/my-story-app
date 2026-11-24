@@ -1,12 +1,13 @@
 // 채팅에서 받은 사진·파일을 폰에 저장하는 도구 (1:1 채팅, 단체방 공통)
-// - 사진: 폰 갤러리(사진첩)에 저장
-// - 파일: 처음 한 번 저장할 폴더(예: Download)를 고르면, 다음부터는 그 폴더에 바로 저장
+// - 사진: 폰 갤러리의 'me' 앨범(Pictures/me 폴더)에 저장
+// - 파일: 처음 한 번 저장할 폴더(예: Download)를 고르면, 그 안에 'me' 폴더를 만들어 다음부터 바로 저장
 import { Alert, Platform, Linking } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DIR_KEY = 'download_dir_uri_v1';
+const DIR_KEY = 'download_dir_uri_v2_me';
+const ALBUM = 'me';
 
 const MIME = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic',
@@ -44,7 +45,9 @@ const downloadToCache = async (url, ext) => {
 export const saveImageToPhone = async (url) => {
   if (!url) return;
   try {
-    const perm = await MediaLibrary.requestPermissionsAsync(true);
+    let perm;
+    try { perm = await MediaLibrary.requestPermissionsAsync(false, ['photo']); }
+    catch (e) { perm = await MediaLibrary.requestPermissionsAsync(); }
     if (!perm.granted) {
       Alert.alert('권한 필요', '사진을 저장하려면 사진 접근 권한을 허용해 주세요.', [
         { text: '취소', style: 'cancel' },
@@ -54,9 +57,17 @@ export const saveImageToPhone = async (url) => {
     }
     const ext = extOf(url) || 'jpg';
     const local = await downloadToCache(url, ext);
-    await MediaLibrary.saveToLibraryAsync(local);
+    // 갤러리에 사진을 만들고 'me' 앨범으로 옮김 (앨범이 없으면 새로 만듦)
+    const asset = await MediaLibrary.createAssetAsync(local);
+    let inAlbum = false;
+    try {
+      const album = await MediaLibrary.getAlbumAsync(ALBUM);
+      if (album) await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      else await MediaLibrary.createAlbumAsync(ALBUM, asset, false);
+      inAlbum = true;
+    } catch (e) { /* 앨범 정리에 실패해도 사진은 갤러리에 저장됨 */ }
     FileSystem.deleteAsync(local, { idempotent: true }).catch(() => {});
-    Alert.alert('저장 완료', '사진을 갤러리에 저장했어요.');
+    Alert.alert('저장 완료', inAlbum ? "사진을 갤러리의 'me' 앨범에 저장했어요." : '사진을 갤러리에 저장했어요.');
   } catch (e) {
     Alert.alert('저장 실패', '사진을 저장하지 못했어요.\n(' + (e && e.message ? e.message : e) + ')');
   }
@@ -89,8 +100,15 @@ export const saveFileToPhone = async (url, fileName) => {
       try { initial = SAF.getUriForDirectoryInRoot('Download'); } catch (e) { initial = undefined; }
       const p = await SAF.requestDirectoryPermissionsAsync(initial);
       if (!p.granted) return null;
-      await AsyncStorage.setItem(DIR_KEY, p.directoryUri);
-      return p.directoryUri;
+      // 고른 폴더 안에 'me' 폴더를 찾거나 새로 만들어 그곳에 저장
+      let target = p.directoryUri;
+      try {
+        const list = await SAF.readDirectoryAsync(p.directoryUri);
+        const found = (list || []).find((u) => decodeURIComponent(u).replace(/\/+$/, '').endsWith('/' + ALBUM));
+        target = found || (await SAF.makeDirectoryAsync(p.directoryUri, ALBUM));
+      } catch (e) { target = p.directoryUri; }
+      await AsyncStorage.setItem(DIR_KEY, target);
+      return target;
     };
 
     let dir = await AsyncStorage.getItem(DIR_KEY);
@@ -99,7 +117,7 @@ export const saveFileToPhone = async (url, fileName) => {
       const ok = await new Promise((resolve) => {
         Alert.alert(
           '저장할 폴더 고르기',
-          '다음 화면에서 저장할 폴더(예: Download)를 고르고 "이 폴더 사용"을 눌러 주세요.\n한 번만 고르면 다음부터는 바로 저장돼요.',
+          '다음 화면에서 저장할 폴더(예: Download)를 고르고 "이 폴더 사용"을 눌러 주세요.\n그 안에 me 폴더가 만들어지고, 다음부터는 바로 저장돼요.',
           [
             { text: '취소', style: 'cancel', onPress: () => resolve(false) },
             { text: '폴더 고르기', onPress: () => resolve(true) },
@@ -128,7 +146,7 @@ export const saveFileToPhone = async (url, fileName) => {
       if (!dir) return;
       await writeTo(dir);
     }
-    Alert.alert('저장 완료', '"' + base + '" 파일을 저장했어요.\n파일 앱(내 파일)에서 확인할 수 있어요.');
+    Alert.alert('저장 완료', '"' + base + '" 파일을 me 폴더에 저장했어요.\n내 파일 앱에서 고른 폴더(예: Download) 안의 me 폴더를 열어 보세요.');
   } catch (e) {
     Alert.alert('저장 실패', '파일을 저장하지 못했어요.\n(' + (e && e.message ? e.message : e) + ')');
   } finally {
