@@ -4872,7 +4872,7 @@ export default function App() {
     >
       <View style={styles.ktHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Text style={styles.ktPageTitle}>메시지</Text>
+          <Text style={styles.ktPageTitle}>1:1</Text>
           <TouchableOpacity
             style={[styles.leaveModeBtn, leaveSelectMode && styles.leaveModeBtnOn]}
             onPress={() => {

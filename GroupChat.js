@@ -57,6 +57,9 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
   const [saving, setSaving] = useState(false);
   const [activeRoom, setActiveRoom] = useState(null);
   const [roomInfo, setRoomInfo] = useState({}); // roomId -> { count, rep }
+  // 체크해서 여러 방 한꺼번에 나가기 (1:1 메시지 목록과 같은 방식)
+  const [leaveSelectMode, setLeaveSelectMode] = useState(false);
+  const [leaveSelected, setLeaveSelected] = useState({}); // { roomId: true }
 
   // 각 방의 참여 인원 수와 대표 멤버(나를 뺀 첫 번째 사람) 불러오기
   const loadRoomInfo = async (list) => {
@@ -117,6 +120,31 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
     const recv = Notifications.addNotificationReceivedListener(() => loadRooms());
     return () => { sub.remove(); recv?.remove(); };
   }, [loadRooms]);
+
+  const leaveSelectedIds = Object.keys(leaveSelected).filter((k) => leaveSelected[k]);
+  const toggleLeaveSelect = (id) => setLeaveSelected((prev) => ({ ...prev, [id]: !prev[id] }));
+  const exitLeaveSelect = () => { setLeaveSelectMode(false); setLeaveSelected({}); };
+  const leaveSelectedRooms = () => {
+    const ids = [...leaveSelectedIds];
+    if (ids.length === 0) return;
+    Alert.alert('단체방 나가기', `선택한 ${ids.length}개 방에서 나갈까요?\n나가면 대화 내용을 다시 볼 수 없어요.`, [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '나가기',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await supabase
+            .from('chat_room_members')
+            .delete()
+            .in('room_id', ids)
+            .eq('user_id', me);
+          if (error) Alert.alert('나가기 실패', error.message);
+          exitLeaveSelect();
+          loadRooms();
+        },
+      },
+    ]);
+  };
 
   const startCreate = () => {
     setPicked({});
@@ -216,14 +244,39 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
 
   return (
     <SafeAreaView style={s.wrap}>
-    <View style={s.header}>
-    <TouchableOpacity onPress={onClose}>
-    <Text style={s.link}>닫기</Text>
-    </TouchableOpacity>
-    <Text style={s.title}>단체방</Text>
-    <TouchableOpacity onPress={startCreate}>
-    <Text style={s.link}>＋새 방</Text>
-    </TouchableOpacity>
+    {/* 1:1 화면과 같은 모양의 머리줄: [단체방][채팅방 나가기] ........ [＋][✕] */}
+    <View style={s.ktHeader}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Text style={s.ktPageTitle}>단체방</Text>
+        {rooms.length > 0 ? (
+          <TouchableOpacity
+            style={[s.leaveModeBtn, leaveSelectMode && s.leaveModeBtnOn]}
+            onPress={() => (leaveSelectMode ? exitLeaveSelect() : setLeaveSelectMode(true))}
+          >
+            <Text style={[s.leaveModeText, leaveSelectMode && { color: '#FFFFFF' }]}>
+              {leaveSelectMode ? '취소' : '채팅방 나가기'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      {leaveSelectMode ? (
+        <TouchableOpacity
+          style={[s.leaveDoBtn, leaveSelectedIds.length === 0 && { opacity: 0.4 }]}
+          onPress={leaveSelectedRooms}
+          disabled={leaveSelectedIds.length === 0}
+        >
+          <Text style={s.leaveDoText}>나가기 {leaveSelectedIds.length > 0 ? `(${leaveSelectedIds.length})` : ''}</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <TouchableOpacity style={s.ktIconBtn} onPress={startCreate} hitSlop={6}>
+            <Ionicons name="add-outline" size={24} color="#333333" />
+          </TouchableOpacity>
+          <TouchableOpacity style={s.ktIconBtn} onPress={onClose} hitSlop={6}>
+            <Ionicons name="close-outline" size={24} color="#333333" />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
     {loading ? (
         <ActivityIndicator style={{ marginTop: 30 }} />
@@ -231,28 +284,46 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
         <FlatList
         data={rooms}
         keyExtractor={(r) => r.id}
-        ListEmptyComponent={<Text style={s.empty}>아직 단체방이 없어요.{'\n'}오른쪽 위 ＋새 방을 눌러 보세요.</Text>}
+        extraData={{ leaveSelectMode, leaveSelected, roomInfo }}
+        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 40 }}
+        ListEmptyComponent={<Text style={s.empty}>아직 단체방이 없어요.{'\n'}오른쪽 위 ＋를 눌러 보세요.</Text>}
         renderItem={({ item }) => {
             const info = roomInfo[item.id];
             const count = info ? info.count : 0;
             const rep = info ? info.rep : null;
+            const checked = !!leaveSelected[item.id];
             return (
-              <TouchableOpacity style={[s.row, s.roomRow]} onPress={() => setActiveRoom(item)}>
+              <TouchableOpacity
+                style={s.card}
+                activeOpacity={0.75}
+                onPress={() => (leaveSelectMode ? toggleLeaveSelect(item.id) : setActiveRoom(item))}
+              >
+                {leaveSelectMode ? (
+                  <View style={[s.leaveCheck, checked && s.leaveCheckOn]}>
+                    {checked ? <Ionicons name="checkmark" size={15} color="#FFFFFF" /> : null}
+                  </View>
+                ) : null}
                 {rep && rep.avatar_url ? (
                   <Image source={{ uri: rep.avatar_url }} style={s.roomAvatar} />
                 ) : (
                   <View style={[s.roomAvatar, s.roomAvatarDefault]}>
-                    <Ionicons name="people" size={22} color="#A1A1AA" />
+                    <Ionicons name="people" size={17} color="#A1A1AA" />
                   </View>
                 )}
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={s.rowText} numberOfLines={1}>{item.name}</Text>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={s.cardName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={s.cardSub} numberOfLines={1}>
+                    {rep ? `${rep.nickname || '멤버'}${count > 2 ? ` 외 ${count - 2}명` : ''}` : '터치하여 대화하기'}
+                  </Text>
                 </View>
                 {count > 0 ? (
                   <View style={s.countBadge}>
-                    <Ionicons name="person" size={11} color="#71717A" />
+                    <Ionicons name="person" size={10} color="#71717A" />
                     <Text style={s.countText}>{count}명</Text>
                   </View>
+                ) : null}
+                {!leaveSelectMode ? (
+                  <Ionicons name="chatbubble-outline" size={16} color="#2B6CB0" style={{ marginLeft: 8 }} />
                 ) : null}
               </TouchableOpacity>
             );
@@ -284,7 +355,27 @@ const s = themedStyles({
     circleDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#8A8F98' },
     empty: { textAlign: 'center', marginTop: 60, color: '#A1A1AA', lineHeight: 24 },
     roomRow: { flexDirection: 'row', alignItems: 'center' },
-    roomAvatar: { width: 46, height: 46, borderRadius: 13, backgroundColor: '#E5E7EB' },
+    roomAvatar: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#E5E7EB' },
+    card: {
+      flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 10,
+      marginBottom: 6, backgroundColor: '#FAFAFA', borderRadius: 12, borderWidth: 1, borderColor: '#EEEEEE', gap: 0,
+    },
+    cardName: { fontSize: 13.5, fontWeight: '700', color: '#222222' },
+    cardSub: { fontSize: 11.5, color: '#777777', marginTop: 1 },
+    ktHeader: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingTop: 14, paddingBottom: 10, backgroundColor: '#FFFFFF',
+    },
+    ktPageTitle: { fontSize: 20, fontWeight: 'bold', color: '#191919' },
+    ktIconBtn: { padding: 6 },
+    toolRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: 10 },
+    leaveModeBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(63,63,70,0.1)' },
+    leaveModeBtnOn: { backgroundColor: '#52525B' },
+    leaveModeText: { fontSize: 12, fontWeight: '700', color: '#52525B' },
+    leaveDoBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, backgroundColor: '#3F3F46' },
+    leaveDoText: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
+    leaveCheck: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.5, borderColor: '#A1A1AA', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+    leaveCheckOn: { backgroundColor: '#3F3F46', borderColor: '#3F3F46' },
     pickAvatar: { width: 40, height: 40, borderRadius: 11, backgroundColor: '#E5E7EB', marginRight: 12 },
     roomAvatarDefault: { alignItems: 'center', justifyContent: 'center' },
     roomSub: { fontSize: 13, color: '#6B7280', marginTop: 3 },
