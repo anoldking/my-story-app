@@ -103,7 +103,7 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
   const loadUsers = useCallback(async () => {
       const { data, error } = await supabase
       .from('profiles')
-      .select('id, nickname')
+      .select('id, nickname, avatar_url')
       .neq('id', me);
       if (error) Alert.alert('사용자 오류', error.message);
       else setUsers(data || []);
@@ -197,7 +197,14 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
             <View style={s.circle}>
             {on ? <View style={s.circleDot} /> : null}
             </View>
-            <Text style={s.rowText}>{item.nickname || '이름없음'}</Text>
+            {item.avatar_url ? (
+              <Image source={{ uri: item.avatar_url }} style={s.pickAvatar} />
+            ) : (
+              <View style={[s.pickAvatar, s.roomAvatarDefault]}>
+                <Ionicons name="person" size={18} color="#A1A1AA" />
+              </View>
+            )}
+            <Text style={s.rowText} numberOfLines={1}>{item.nickname || '이름없음'}</Text>
             </View>
             </TouchableOpacity>
           );
@@ -266,7 +273,7 @@ const s = themedStyles({
     link: { fontSize: 16, color: '#3F3F46' },
     input: { margin: 16, padding: 12, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, fontSize: 16 },
     sub: { marginHorizontal: 16, marginBottom: 6, color: '#71717A' },
-    row: { paddingVertical: 16, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: '#f0f0f0' },
+    row: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: '#f0f0f0' },
     rowOn: { backgroundColor: '#F5F6F8' },
     rowText: { fontSize: 16, color: '#111111' },
     rowInner: { flexDirection: 'row', alignItems: 'center' },
@@ -278,6 +285,7 @@ const s = themedStyles({
     empty: { textAlign: 'center', marginTop: 60, color: '#A1A1AA', lineHeight: 24 },
     roomRow: { flexDirection: 'row', alignItems: 'center' },
     roomAvatar: { width: 46, height: 46, borderRadius: 13, backgroundColor: '#E5E7EB' },
+    pickAvatar: { width: 40, height: 40, borderRadius: 11, backgroundColor: '#E5E7EB', marginRight: 12 },
     roomAvatarDefault: { alignItems: 'center', justifyContent: 'center' },
     roomSub: { fontSize: 13, color: '#6B7280', marginTop: 3 },
     countBadge: {
