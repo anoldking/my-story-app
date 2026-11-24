@@ -1723,6 +1723,17 @@ export default function App() {
     ownerLabel: m.id === session?.user?.id ? '내 노래' : `${m.nickname || '회원'}님의 노래`,
   });
 
+  // 앱을 열거나 다시 볼 때 앱 아이콘의 빨간 숫자(배지)와 알림창의 알림을 지움
+  useEffect(() => {
+    const clearBadge = () => {
+      Notifications.setBadgeCountAsync(0).catch(() => {});
+      Notifications.dismissAllNotificationsAsync().catch(() => {});
+    };
+    clearBadge();
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') clearBadge(); });
+    return () => sub.remove();
+  }, []);
+
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => {
       if (st !== 'active' && soundRef.current && bgmPlayingRef.current) {
@@ -2496,6 +2507,56 @@ export default function App() {
       // 무시
     }
   };
+
+  // 단체방 전체에서 아직 안 읽은 메시지 수 (아래 메뉴 단체방 아이콘에 표시)
+  const [groupUnreadTotal, setGroupUnreadTotal] = useState(0);
+  const fetchGroupUnreadTotal = async (myId) => {
+    if (!myId) return;
+    try {
+      const { data: mem, error } = await supabase
+        .from('chat_room_members')
+        .select('room_id, last_read_at')
+        .eq('user_id', myId);
+      if (error || !Array.isArray(mem)) return;
+      let total = 0;
+      await Promise.all(mem.map(async (m) => {
+        let q = supabase
+          .from('group_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('room_id', m.room_id)
+          .neq('sender_id', myId);
+        if (m.last_read_at) q = q.gt('created_at', m.last_read_at);
+        const { count } = await q;
+        total += count || 0;
+      }));
+      setGroupUnreadTotal(total);
+    } catch {
+      // 숫자만 못 보일 뿐, 앱 사용에는 문제 없음
+    }
+  };
+  useEffect(() => {
+    const myId = session?.user?.id;
+    if (!myId) return;
+    fetchGroupUnreadTotal(myId);
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') fetchGroupUnreadTotal(myId); });
+    const recv = Notifications.addNotificationReceivedListener(() => fetchGroupUnreadTotal(myId));
+    let timer = null;
+    const ch = supabase
+      .channel('group-unread-total-' + myId + '-' + Date.now())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' }, () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => fetchGroupUnreadTotal(myId), 800);
+      })
+      .subscribe();
+    const iv = setInterval(() => fetchGroupUnreadTotal(myId), 30000);
+    return () => {
+      sub.remove();
+      recv?.remove();
+      if (timer) clearTimeout(timer);
+      clearInterval(iv);
+      supabase.removeChannel(ch);
+    };
+  }, [session?.user?.id]);
 
   const acceptedFriendIds = Object.entries(friendRelationMap)
     .filter(([, rel]) => rel?.status === 'accepted')
@@ -5358,10 +5419,21 @@ export default function App() {
               <Ionicons name="chatbubble" size={17} color="#111111" style={{ position: 'absolute', right: 0, top: 0, opacity: 0.28 }} />
               <Ionicons name="chatbubble" size={19} color="#FFFFFF" style={{ position: 'absolute', left: 0, bottom: 0 }} />
               <Ionicons name="chatbubble-outline" size={19} color="#111111" style={{ position: 'absolute', left: 0, bottom: 0, opacity: showGroupChat ? 1 : 0.7 }} />
+              {groupUnreadTotal > 0 && (
+                <View style={[styles.leftRailUnreadBadge, { top: -8, right: -8 }]}>
+                  <Text style={styles.leftRailUnreadText}>
+                    {groupUnreadTotal > 99 ? '…' : groupUnreadTotal}
+                  </Text>
+                </View>
+              )}
             </View>
           </TouchableOpacity>
           {showGroupChat && session ? (
-            <GroupChat supabase={supabase} me={session.user.id} onClose={() => setShowGroupChat(false)} />
+            <GroupChat
+              supabase={supabase}
+              me={session.user.id}
+              onClose={() => { setShowGroupChat(false); fetchGroupUnreadTotal(session.user.id); }}
+            />
           ) : null}
 
 
