@@ -290,6 +290,10 @@ const openStorePage = () => {
     Linking.openURL(`https://play.google.com/store/apps/details?id=${STORE_PKG}`).catch(() => {});
   });
 };
+// 국내 항공권: 제주행 (김포, 인천, 김해 출발)
+const JEJU_ORIGINS = ['GMP', 'ICN', 'PUS'];
+const ORIGIN_KO = { GMP: '김포', ICN: '인천', PUS: '김해' };
+const JEJU_DEST = TRAVEL_DOMESTIC.find((d) => d.iata === 'CJU');
 const airlineName = (code) => (code ? AIRLINE_KO[code] || code : '');
 // 날짜 → 'YYYY-MM-DD'
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -2920,8 +2924,14 @@ export default function App() {
     if (travelGroup === 'ovs') {
       weightedDailyPick(TRAVEL_OVERSEAS, 2, dayKeyNum() + travelShuffle * 13 + 7).forEach((d) => want.push([flightFrom, d.iata]));
     }
+    if (travelGroup === 'dom') {
+      JEJU_ORIGINS.forEach((o) => want.push([o, 'CJU']));
+    }
     if (travelDetail && travelDetail.iata && TRAVEL_OVERSEAS.includes(travelDetail)) {
       want.push(['ICN', travelDetail.iata], ['PUS', travelDetail.iata]);
+    }
+    if (travelDetail && travelDetail.iata === 'CJU') {
+      JEJU_ORIGINS.forEach((o) => want.push([o, 'CJU']));
     }
     const need = want.filter(([o, d], i) => !flightLive[`${o}-${d}-${a}-${b}`] && want.findIndex((x) => x[0] === o && x[1] === d) === i);
     if (!need.length) return;
@@ -5174,6 +5184,16 @@ export default function App() {
               </View>
             ) : null}
 
+            {/* 제주면 김포·인천·김해 출발 최저가 */}
+            {d.iata === 'CJU' ? (
+              <View style={styles.tdTipBox}>
+                <Text style={styles.tdTipTitle}><Ionicons name="airplane-outline" size={14} color="#18181B" /> 제주 항공권 최저가</Text>
+                {renderFlightDateBar('detail')}
+                {JEJU_ORIGINS.map((o, i) => renderFlightRow(o, d, i === JEJU_ORIGINS.length - 1))}
+                <Text style={[styles.hMuted, { marginTop: 4 }]}>왕복 · 1인 · 최근 검색 기준</Text>
+              </View>
+            ) : null}
+
             {e.outro ? <Text style={styles.tdBody}>{e.outro}</Text> : null}
             <Text style={styles.tdSign}>— {TRAVEL_SIGN}</Text>
           </View>
@@ -5344,7 +5364,7 @@ export default function App() {
     }
     const dep = info ? info.dep : hasRange ? flightRange.start : null;
     const ret = info ? info.ret : hasRange ? flightRange.end : null;
-    const route = `${origin} → ${d.city} ${d.iata}`;
+    const route = `${ORIGIN_KO[origin] ? ORIGIN_KO[origin] + ' ' : ''}${origin} → ${d.city} ${d.iata}`;
     const tr = info && typeof info.transfers === 'number' ? info.transfers : null;
     return (
       <TouchableOpacity
@@ -5711,7 +5731,7 @@ export default function App() {
             </View>
           </View>
 
-          {/* 추천 여행지 항공권 최저가 (5%): 해외 탭에서만 */}
+          {/* 추천 여행지 항공권 최저가 (5%): 해외 탭 */}
           {travelGroup === 'ovs' ? (
             <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.05)' }]}>
               <View style={styles.hSecHead}>
@@ -5730,6 +5750,21 @@ export default function App() {
               </View>
               {renderFlightDateBar('home')}
               {dests.map((d, i) => renderFlightRow(flightFrom, d, i === dests.length - 1))}
+              <Text style={[styles.hMuted, { marginTop: 6 }]}>
+                왕복 · 1인 · 최근 검색 기준 · 누르면 항공권 검색
+              </Text>
+            </View>
+          ) : null}
+
+          {/* 국내 탭: 제주 항공권 최저가 (김포 · 인천 · 김해 출발) */}
+          {travelGroup === 'dom' && JEJU_DEST ? (
+            <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.05)' }]}>
+              <View style={styles.hSecHead}>
+                <Text style={styles.hSecTitle}>제주 항공권 최저가</Text>
+              </View>
+              <Text style={[styles.hMuted, { marginBottom: 6 }]}>국내 탭에서는 제주행만 보여줘요</Text>
+              {renderFlightDateBar('home')}
+              {JEJU_ORIGINS.map((o, i) => renderFlightRow(o, JEJU_DEST, i === JEJU_ORIGINS.length - 1))}
               <Text style={[styles.hMuted, { marginTop: 6 }]}>
                 왕복 · 1인 · 최근 검색 기준 · 누르면 항공권 검색
               </Text>
