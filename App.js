@@ -2643,6 +2643,7 @@ export default function App() {
   const [wishModalOpen, setWishModalOpen] = useState(false);
   const [wishDraft, setWishDraft] = useState({ place: '', memo: '' });
   const [flightPrices, setFlightPrices] = useState([]);
+  const [travelPhotos, setTravelPhotos] = useState({}); // { 도시: { image_url, photographer, ... } }
   const [flightFrom, setFlightFrom] = useState('ICN');
   const [travelShuffle, setTravelShuffle] = useState(0);
   const [travelGroup, setTravelGroup] = useState('dom'); // 'dom' 국내 / 'ovs' 해외
@@ -2657,13 +2658,14 @@ export default function App() {
     if (!uid) return;
     try {
       const since = new Date(Date.now() - 8 * 86400000).toISOString();
-      const [n, sc, w, wl, fp, me] = await Promise.all([
+      const [n, sc, w, wl, fp, me, tp] = await Promise.all([
         supabase.from('home_notices').select('*').order('created_at', { ascending: false }).limit(300),
         supabase.from('family_schedules').select('*').gte('starts_at', since).order('starts_at', { ascending: true }).limit(200),
         supabase.from('travel_wishes').select('*').order('created_at', { ascending: false }).limit(300),
         supabase.from('travel_wish_likes').select('wish_id, user_id'),
         supabase.from('flight_prices').select('*'),
         supabase.from('profiles').select('is_admin').eq('id', uid).maybeSingle(),
+        supabase.from('travel_photos').select('*'),
       ]);
       if (!n.error) setHomeNotices(n.data || []);
       if (!sc.error) setSchedules(sc.data || []);
@@ -2671,6 +2673,11 @@ export default function App() {
       if (!wl.error) setWishLikes(wl.data || []);
       if (!fp.error) setFlightPrices(fp.data || []);
       if (!me.error && me.data) setIsAdmin(!!me.data.is_admin);
+      if (tp && !tp.error && Array.isArray(tp.data)) {
+        const map = {};
+        tp.data.forEach((r) => { if (r && r.city) map[r.city] = r; });
+        setTravelPhotos(map);
+      }
     } catch {
       // 무시
     }
@@ -4717,10 +4724,10 @@ export default function App() {
             </TouchableOpacity>
           )}
 
-          {/* 오늘의 회원 (3%) */}
+          {/* 오늘의 주인공 (3%) */}
           <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.03)', borderWidth: 1, borderColor: 'rgba(24,24,27,0.06)' }]}>
             <View style={styles.hSecHead}>
-              <Text style={styles.hSecTitle}>오늘의 회원</Text>
+              <Text style={styles.hSecTitle}><Ionicons name="trophy-outline" size={14} color="#3F3F46" /> 오늘의 주인공</Text>
               {motdPool.length > 1 ? (
                 <TouchableOpacity onPress={() => setMemberOfDayShuffle(memberOfDayShuffle + 1)} hitSlop={8}>
                   <Text style={styles.hSecAction}><Ionicons name="refresh" size={11} color="#A1A1AA" /> 다시 뽑기</Text>
@@ -4825,7 +4832,11 @@ export default function App() {
                   onPress={() => setTravelOpenCity(travelOpenCity === d.city ? null : d.city)}
                 >
                   <View style={[styles.hDestBox, travelOpenCity === d.city && { backgroundColor: 'rgba(24,24,27,0.18)' }]}>
-                    <Ionicons name="image-outline" size={20} color="#71717A" />
+                    {travelPhotos[d.city] && travelPhotos[d.city].image_url ? (
+                      <Image source={{ uri: travelPhotos[d.city].image_url }} style={styles.hDestImg} resizeMode="cover" />
+                    ) : (
+                      <Ionicons name="image-outline" size={20} color="#71717A" />
+                    )}
                     <View style={styles.hDestRegion}><Text style={styles.hDestRegionText}>{d.region}</Text></View>
                     {isTravelSeason(d) ? (
                       <View style={styles.hDestBest}><Text style={styles.hDestBestText}>지금 딱</Text></View>
@@ -4833,6 +4844,18 @@ export default function App() {
                   </View>
                   <Text style={styles.hDestCity}>{d.city}</Text>
                   <Text style={styles.hDestTitle} numberOfLines={1}>{d.title}</Text>
+                  {travelPhotos[d.city] && travelPhotos[d.city].photographer ? (
+                    <Text
+                      style={styles.hPhotoCredit}
+                      numberOfLines={1}
+                      onPress={() => {
+                        const u = travelPhotos[d.city].photographer_url || travelPhotos[d.city].photo_page;
+                        if (u) Linking.openURL(u).catch(() => {});
+                      }}
+                    >
+                      사진: {travelPhotos[d.city].photographer} / Unsplash
+                    </Text>
+                  ) : null}
                   {d.flight ? (
                     <Text style={styles.hMuted} numberOfLines={1}><Ionicons name="airplane-outline" size={10} color="#A1A1AA" /> {d.flight}</Text>
                   ) : null}
@@ -7922,13 +7945,15 @@ const styles = themedStyles({
   hWeekDate: { fontSize: 12, fontWeight: '700', color: '#18181B' },
   hWeekDot: { fontSize: 7, color: '#3F3F46', height: 10 },
   hDestBox: {
-    height: 58, borderRadius: 9, backgroundColor: 'rgba(24,24,27,0.10)',
-    alignItems: 'center', justifyContent: 'center',
+    height: 84, borderRadius: 9, backgroundColor: 'rgba(24,24,27,0.10)',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
   hDestRegion: { position: 'absolute', left: 5, bottom: 5, backgroundColor: 'rgba(255,255,255,0.88)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   hDestRegionText: { fontSize: 10, color: '#52525B' },
   hDestCity: { fontSize: 13, fontWeight: '700', color: '#18181B', marginTop: 5 },
   hDestTitle: { fontSize: 11, color: '#71717A', marginTop: 1 },
+  hDestImg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 9 },
+  hPhotoCredit: { fontSize: 9.5, color: '#A1A1AA', marginTop: 1 },
   hDestBest: { position: 'absolute', right: 5, top: 5, backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 },
   hDestBestText: { fontSize: 9.5, color: '#FFFFFF', fontWeight: '700' },
   hDestDetail: { marginTop: 10, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)', padding: 11 },
