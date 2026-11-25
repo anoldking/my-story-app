@@ -16,6 +16,7 @@ import {
   AppState,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Text, TextInput } from './fonts';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -117,6 +118,56 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
   }, []);
 
+  // ---- 대화 삭제 ----
+  // ① 내 메시지 삭제: 모든 멤버 화면에서 사라짐
+  // ② 대화 내용 지우기: 내 화면에서만 지금까지의 대화를 숨김 (다른 멤버는 그대로)
+  const clearKey = `group_cleared_at_${me}_${room.id}`;
+  const [clearedAt, setClearedAt] = useState(null);
+  useEffect(() => {
+    AsyncStorage.getItem(clearKey).then((v) => { if (v) setClearedAt(v); }).catch(() => {});
+  }, [clearKey]);
+
+  const deleteMyMessage = (item) => {
+    Alert.alert('메시지 삭제', '이 메시지를 삭제할까요?\n모든 멤버의 화면에서 사라지고 되돌릴 수 없어요.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await supabase.from('group_messages').delete().eq('id', item.id).eq('sender_id', me);
+          if (error) { Alert.alert('삭제 실패', error.message); return; }
+          setMessages((prev) => prev.filter((x) => x.id !== item.id));
+        },
+      },
+    ]);
+  };
+
+  // 메시지를 길게 눌렀을 때 나오는 메뉴
+  const messageActions = (item, mine) => {
+    const buttons = [{ text: '취소', style: 'cancel' }];
+    if (mine) buttons.push({ text: '삭제', style: 'destructive', onPress: () => deleteMyMessage(item) });
+    if (item.image_url) buttons.push({ text: '사진 저장', onPress: () => saveImageToPhone(item.image_url) });
+    else if (item.file_url) buttons.push({ text: '폰에 저장', onPress: () => saveFileToPhone(item.file_url, item.file_name) });
+    if (buttons.length === 1) return; // 할 수 있는 게 없으면 메뉴를 띄우지 않음
+    Alert.alert(item.image_url ? '사진' : item.file_url ? (item.file_name || '첨부파일') : '메시지', '', buttons);
+  };
+
+  const clearMyChatView = () => {
+    setSettingsOpen(false);
+    Alert.alert('대화 내용 지우기', '지금까지의 대화를 내 화면에서 지울까요?\n다른 멤버의 화면에는 그대로 남아요.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '지우기',
+        style: 'destructive',
+        onPress: async () => {
+          const now = new Date().toISOString();
+          setClearedAt(now);
+          try { await AsyncStorage.setItem(clearKey, now); } catch (e) { /* 무시 */ }
+        },
+      },
+    ]);
+  };
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -154,6 +205,15 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `room_id=eq.${room.id}` },
         (payload) => { addMessage(payload.new); markRead(); }
+      )
+      // 다른 멤버가 메시지를 삭제하면 내 화면에서도 바로 사라지게
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'group_messages' },
+        (payload) => {
+          const oldId = payload.old && payload.old.id;
+          if (oldId) setMessages((prev) => prev.filter((x) => x.id !== oldId));
+        }
       )
       // 다른 멤버가 읽으면 숫자가 바로 줄어들게
       .on(
@@ -351,14 +411,18 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
 
   const renderBody = (item, mine) => {
     if (getSticker(item)) {
-      return <StickerBubbleImage url={getSticker(item)} />;
+      return (
+        <TouchableOpacity activeOpacity={0.9} onLongPress={() => messageActions(item, mine)} delayLongPress={400}>
+          <StickerBubbleImage url={getSticker(item)} />
+        </TouchableOpacity>
+      );
     }
     if (item.image_url) {
       return (
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => setViewingImage(item.image_url)}
-          onLongPress={() => imageActions(item.image_url)}
+          onLongPress={() => messageActions(item, mine)}
           delayLongPress={400}
         >
           <Image source={{ uri: item.image_url }} style={s.photo} resizeMode="cover" />
@@ -370,6 +434,8 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => fileActions(item)}
+          onLongPress={() => messageActions(item, mine)}
+          delayLongPress={400}
           style={[s.bubble, mine ? s.bubbleMine : s.bubbleOther, s.fileBubble]}
         >
           <Ionicons name="attach" size={18} color='#3F3F46' />
@@ -381,9 +447,14 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
       );
     }
     return (
-      <View style={[s.bubble, mine ? s.bubbleMine : s.bubbleOther]}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onLongPress={() => messageActions(item, mine)}
+        delayLongPress={400}
+        style={[s.bubble, mine ? s.bubbleMine : s.bubbleOther]}
+      >
         <Text style={mine ? s.textMine : s.textOther}>{item.content}</Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -454,7 +525,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
           ref={listRef}
-          data={[...messages].reverse()}
+          data={(clearedAt ? messages.filter((m) => Date.parse(m.created_at) > Date.parse(clearedAt)) : messages).slice().reverse()}
           extraData={reads}
           inverted
           keyExtractor={(m) => m.id}
@@ -462,7 +533,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
           contentContainerStyle={{ padding: 12 }}
         />
         {/* 메시지가 없을 때 안내: 뒤집힌 목록 밖에 따로 띄워서 글자가 거꾸로 보이지 않게 함 */}
-        {messages.length === 0 ? (
+        {(clearedAt ? messages.filter((m) => Date.parse(m.created_at) > Date.parse(clearedAt)) : messages).length === 0 ? (
           <View pointerEvents="none" style={s.emptyWrap}>
             <Text style={s.emptyText}>첫 메시지를 보내 보세요.</Text>
           </View>
@@ -537,6 +608,12 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
             <TouchableOpacity style={s.sheetRow} onPress={() => { setSettingsOpen(false); openGroupSound(); }}>
               <Ionicons name="notifications-outline" size={20} color="#3F3F46" />
               <Text style={s.sheetRowText}>알림음</Text>
+              <Ionicons name="chevron-forward" size={18} color="#A1A1AA" />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.sheetRow} onPress={clearMyChatView}>
+              <Ionicons name="trash-outline" size={20} color="#3F3F46" />
+              <Text style={s.sheetRowText}>대화 내용 지우기</Text>
+              <Text style={s.sheetRowSub} numberOfLines={1}>내 화면에서만</Text>
               <Ionicons name="chevron-forward" size={18} color="#A1A1AA" />
             </TouchableOpacity>
             <TouchableOpacity style={s.sheetClose} onPress={() => setSettingsOpen(false)}>
