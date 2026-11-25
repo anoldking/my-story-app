@@ -149,6 +149,8 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     if (item.image_url) buttons.push({ text: '사진 저장', onPress: () => saveImageToPhone(item.image_url) });
     else if (item.file_url) buttons.push({ text: '폰에 저장', onPress: () => saveFileToPhone(item.file_url, item.file_name) });
     if (buttons.length === 1) return; // 할 수 있는 게 없으면 메뉴를 띄우지 않음
+    // 글 메시지처럼 '삭제' 하나뿐이면 메뉴를 건너뛰고 바로 삭제 확인 창을 띄움
+    if (mine && !item.image_url && !item.file_url) { deleteMyMessage(item); return; }
     Alert.alert(item.image_url ? '사진' : item.file_url ? (item.file_name || '첨부파일') : '메시지', '', buttons);
   };
 
