@@ -265,6 +265,25 @@ const monthsText = (ms) => {
   }
   return out.join(' · ');
 };
+// 항공사 코드 → 한글 이름 (목록에 없으면 코드만 보여줌)
+const AIRLINE_KO = {
+  KE: '대한항공', OZ: '아시아나항공', '7C': '제주항공', LJ: '진에어', TW: '티웨이항공', BX: '에어부산',
+  RS: '에어서울', ZE: '이스타항공', YP: '에어프레미아', RF: '에어로케이', JL: '일본항공', NH: 'ANA 전일본공수',
+  MM: '피치항공', GK: '젯스타재팬', BC: '스카이마크', CI: '중화항공', BR: '에바항공', IT: '타이거에어 타이완',
+  JX: '스타럭스항공', VJ: '비엣젯항공', VN: '베트남항공', QH: '뱀부항공', TG: '타이항공', FD: '타이에어아시아',
+  XJ: '타이에어아시아X', PR: '필리핀항공', Z2: '필리핀에어아시아', '5J': '세부퍼시픽', SQ: '싱가포르항공',
+  TR: '스쿠트', CX: '캐세이퍼시픽', UO: '홍콩익스프레스', HX: '홍콩항공', MU: '중국동방항공', CA: '중국국제항공',
+  CZ: '중국남방항공', '9C': '춘추항공', MH: '말레이시아항공', AK: '에어아시아', D7: '에어아시아X', OD: '바틱에어',
+};
+const airlineName = (code) => (code ? AIRLINE_KO[code] || code : '');
+// 날짜 → 'YYYY-MM-DD'
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// 'YYYY-MM-DD' → Date
+const fromYmd = (t) => {
+  if (!t) return null;
+  const [a, b, c] = String(t).slice(0, 10).split('-').map(Number);
+  return a ? new Date(a, b - 1, c) : null;
+};
 // 이번 달이 가기 좋은 곳인지
 const isTravelSeason = (d) => (d.months || []).includes(new Date().getMonth() + 1);
 // 날마다 바뀌는 무작위 뽑기 (가기 좋은 달이면 2배 더 잘 뽑힘)
@@ -2836,6 +2855,55 @@ export default function App() {
   const [travelOpenCity, setTravelOpenCity] = useState(null); // 눌러서 펼친 여행지
   const [travelDetail, setTravelDetail] = useState(null); // 전체 화면으로 연 여행지
   const [destLikes, setDestLikes] = useState([]); // [{ city, user_id }] '가고 싶어요'
+  // 항공권 날짜 변경
+  const [flightRange, setFlightRange] = useState({ start: null, end: null }); // 적용된 날짜 (없으면 '가장 싼 날')
+  const [flightDraft, setFlightDraft] = useState({ start: null, end: null }); // 달력에서 고르는 중
+  const [flightCalWhere, setFlightCalWhere] = useState(null); // 'home' | 'detail' | null(닫힘)
+  const [flightCalMonth, setFlightCalMonth] = useState({ y: new Date().getFullYear(), m: new Date().getMonth() });
+  const [flightLive, setFlightLive] = useState({}); // { 'ICN-KIX-2026-12-24-2026-12-27': { price, airline, transfers } | { none: true } }
+  const [flightLiveErr, setFlightLiveErr] = useState('');
+  // 날짜를 고르면 그 날짜 가격을 서버에 물어보기 (홈 2곳 + 상세 화면)
+  useEffect(() => {
+    const st = flightRange.start;
+    const en = flightRange.end;
+    if (!st || !en || !session?.user?.id || !supabase) return;
+    const a = ymd(st);
+    const b = ymd(en);
+    const want = [];
+    if (travelGroup === 'ovs') {
+      weightedDailyPick(TRAVEL_OVERSEAS, 2, dayKeyNum() + travelShuffle * 13 + 7).forEach((d) => want.push([flightFrom, d.iata]));
+    }
+    if (travelDetail && travelDetail.iata && TRAVEL_OVERSEAS.includes(travelDetail)) {
+      want.push(['ICN', travelDetail.iata], ['PUS', travelDetail.iata]);
+    }
+    const need = want.filter(([o, d], i) => !flightLive[`${o}-${d}-${a}-${b}`] && want.findIndex((x) => x[0] === o && x[1] === d) === i);
+    if (!need.length) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('flight-price-search', {
+          body: { depart: a, ret: b, routes: need.map(([o, d]) => ({ origin: o, destination: d })) },
+        });
+        if (!alive) return;
+        if (error || !data || !Array.isArray(data.results)) {
+          setFlightLiveErr('가격을 불러오지 못했어요. 잠시 후 다시 해 보세요.');
+          return;
+        }
+        setFlightLiveErr('');
+        setFlightLive((prev) => {
+          const next = { ...prev };
+          need.forEach(([o, d]) => {
+            const r = data.results.find((x) => x.origin === o && x.destination === d);
+            next[`${o}-${d}-${a}-${b}`] = r && r.price ? r : { none: true };
+          });
+          return next;
+        });
+      } catch {
+        if (alive) setFlightLiveErr('가격을 불러오지 못했어요. 잠시 후 다시 해 보세요.');
+      }
+    })();
+    return () => { alive = false; };
+  }, [flightRange.start, flightRange.end, flightFrom, travelGroup, travelShuffle, travelDetail, session?.user?.id]);
   const [memberOfDayShuffle, setMemberOfDayShuffle] = useState(0);
   const [homeSaving, setHomeSaving] = useState(false);
 
@@ -4986,16 +5054,11 @@ export default function App() {
             {/* 해외면 오늘 항공권 최저가 */}
             {d.iata && TRAVEL_OVERSEAS.includes(d) ? (
               <View style={styles.tdTipBox}>
-                <Text style={styles.tdTipTitle}><Ionicons name="airplane-outline" size={14} color="#18181B" /> 오늘의 항공권 최저가</Text>
-                {[['ICN', '인천'], ['PUS', '김해']].map(([code, label]) => {
-                  const fp = flightPrices.find((f) => f.origin === code && f.destination === d.iata);
-                  return (
-                    <TouchableOpacity key={code} style={styles.tdFlightRow} activeOpacity={0.7} onPress={() => openFlightSearch(code, d.iata)}>
-                      <Text style={styles.tdTipText}>{label} → {d.city} · 왕복 1인</Text>
-                      <Text style={styles.tdFlightPrice}>{fp && fp.price ? `${Number(fp.price).toLocaleString('ko-KR')}원~` : '검색 ›'}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                <Text style={styles.tdTipTitle}><Ionicons name="airplane-outline" size={14} color="#18181B" /> 항공권 최저가</Text>
+                {renderFlightDateBar('detail')}
+                {renderFlightRow('ICN', d, false)}
+                {renderFlightRow('PUS', d, true)}
+                <Text style={[styles.hMuted, { marginTop: 4 }]}>왕복 · 1인 · 최근 검색 기준</Text>
               </View>
             ) : null}
 
@@ -5033,9 +5096,188 @@ export default function App() {
     ]);
   };
 
-  const openFlightSearch = (from, iata) => {
-    const url = `https://www.skyscanner.co.kr/transport/flights/${from.toLowerCase()}/${iata.toLowerCase()}/`;
+  const openFlightSearch = (from, iata, dep, ret) => {
+    const yymmdd = (d) => (d ? ymd(d).slice(2).replace(/-/g, '') : '');
+    const dates = dep && ret ? `${yymmdd(dep)}/${yymmdd(ret)}/` : '';
+    const url = `https://www.skyscanner.co.kr/transport/flights/${from.toLowerCase()}/${iata.toLowerCase()}/${dates}`;
     Linking.openURL(url).catch(() => Alert.alert('열기 실패', '항공권 검색 화면을 열 수 없어요.'));
+  };
+
+  // ---- 항공권: 날짜 바 · 달력 · 가격 줄 ----
+  const flightRangeText = (r) => {
+    if (!r.start) return '날짜 고르기';
+    if (!r.end) return `${mdw(r.start)} ~ 귀국일 고르기`;
+    const n = Math.round((dayStart(r.end) - dayStart(r.start)) / 86400000);
+    return `${mdw(r.start)} ~ ${mdw(r.end)} · ${n}박${n + 1}일`;
+  };
+  const openFlightCal = (where) => {
+    if (flightCalWhere === where) { setFlightCalWhere(null); return; }
+    const base = flightRange.start || new Date();
+    setFlightDraft({ start: flightRange.start, end: flightRange.end });
+    setFlightCalMonth({ y: base.getFullYear(), m: base.getMonth() });
+    setFlightCalWhere(where);
+  };
+  const pickFlightDay = (d) => {
+    setFlightDraft((prev) => {
+      if (!prev.start || prev.end) return { start: d, end: null };
+      if (dayNum(d) <= dayNum(prev.start)) return { start: d, end: null };
+      return { start: prev.start, end: d };
+    });
+  };
+  const applyFlightDates = () => {
+    if (!flightDraft.start || !flightDraft.end) {
+      Alert.alert('날짜', '출발일과 귀국일을 차례로 눌러 주세요.');
+      return;
+    }
+    setFlightLiveErr('');
+    setFlightRange({ start: flightDraft.start, end: flightDraft.end });
+    setFlightCalWhere(null);
+  };
+  const resetFlightDates = () => {
+    setFlightRange({ start: null, end: null });
+    setFlightDraft({ start: null, end: null });
+    setFlightLiveErr('');
+    setFlightCalWhere(null);
+  };
+  const renderFlightDateBar = (where) => (
+    <>
+      <TouchableOpacity style={styles.fDateBar} activeOpacity={0.8} onPress={() => openFlightCal(where)}>
+        <Ionicons name="calendar-outline" size={16} color="#3F3F46" />
+        <Text style={styles.fDateText} numberOfLines={1}>
+          {flightRange.start && flightRange.end ? flightRangeText(flightRange) : '가장 싼 날 (이번 달~다음 달)'}
+        </Text>
+        <Text style={styles.hMuted}>날짜 변경 ›</Text>
+      </TouchableOpacity>
+      {flightCalWhere === where ? renderFlightCalendar() : null}
+      {flightLiveErr && flightRange.start ? <Text style={[styles.hMuted, { marginBottom: 6 }]}>{flightLiveErr}</Text> : null}
+    </>
+  );
+  const renderFlightCalendar = () => {
+    const { y, m } = flightCalMonth;
+    const first = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    const todayN = dayNum(new Date());
+    const st = flightDraft.start ? dayNum(flightDraft.start) : null;
+    const en = flightDraft.end ? dayNum(flightDraft.end) : null;
+    const cells = [];
+    for (let i = 0; i < first; i++) cells.push(null);
+    for (let d = 1; d <= days; d++) cells.push(new Date(y, m, d));
+    while (cells.length % 7) cells.push(null);
+    const move = (k) => {
+      let nm = m + k;
+      let ny = y;
+      if (nm < 0) { nm = 11; ny -= 1; }
+      if (nm > 11) { nm = 0; ny += 1; }
+      setFlightCalMonth({ y: ny, m: nm });
+    };
+    return (
+      <View style={styles.hCal}>
+        <View style={styles.hCalHead}>
+          <TouchableOpacity onPress={() => move(-1)} hitSlop={10}><Ionicons name="chevron-back" size={18} color="#3F3F46" /></TouchableOpacity>
+          <Text style={styles.hCalTitle}>{y}년 {m + 1}월</Text>
+          <TouchableOpacity onPress={() => move(1)} hitSlop={10}><Ionicons name="chevron-forward" size={18} color="#3F3F46" /></TouchableOpacity>
+        </View>
+        <View style={styles.hCalRow}>
+          {WEEK_KO.map((w) => <Text key={w} style={styles.hCalDow}>{w}</Text>)}
+        </View>
+        {Array.from({ length: cells.length / 7 }, (_, r) => (
+          <View key={r} style={styles.hCalRow}>
+            {cells.slice(r * 7, r * 7 + 7).map((d, i) => {
+              if (!d) return <View key={i} style={styles.hCalCell} />;
+              const k = dayNum(d);
+              const past = k < todayN;
+              const isEdge = k === st || k === en;
+              const isIn = st && en && k > st && k < en;
+              return (
+                <TouchableOpacity
+                  key={i}
+                  disabled={past}
+                  style={[styles.hCalCell, isIn && styles.hCalIn, isEdge && styles.hCalEdge, k === todayN && !isEdge && styles.hCalToday]}
+                  onPress={() => pickFlightDay(d)}
+                >
+                  <Text style={[styles.hCalDay, past && { color: '#D4D4D8' }, isEdge && { color: '#FFFFFF', fontWeight: '700' }]}>{d.getDate()}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ))}
+        <Text style={[styles.hMuted, { marginTop: 6 }]}>
+          {!flightDraft.start ? '출발일을 눌러요' : !flightDraft.end ? '귀국일을 눌러요' : flightRangeText(flightDraft)}
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+          <TouchableOpacity style={[styles.fCalBtn, { backgroundColor: 'rgba(24,24,27,0.06)' }]} onPress={resetFlightDates}>
+            <Text style={[styles.fCalBtnText, { color: '#52525B' }]}>가장 싼 날로</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.fCalBtn, { backgroundColor: 'rgba(24,24,27,0.78)' }]} onPress={applyFlightDates}>
+            <Text style={[styles.fCalBtnText, { color: '#FFFFFF' }]}>이 날짜로 조회</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+  // 가격 한 줄: 항공사 · 직항/경유 · 날짜 · 가격
+  const renderFlightRow = (origin, d, last) => {
+    const hasRange = !!(flightRange.start && flightRange.end);
+    let info = null; // { price, airline, transfers, dep, ret }
+    let state = 'ok'; // 'ok' | 'loading' | 'none'
+    if (hasRange) {
+      const live = flightLive[`${origin}-${d.iata}-${ymd(flightRange.start)}-${ymd(flightRange.end)}`];
+      if (!live) state = flightLiveErr ? 'none' : 'loading';
+      else if (live.none) state = 'none';
+      else info = { price: live.price, airline: live.airline, transfers: live.transfers, dep: flightRange.start, ret: flightRange.end };
+    } else {
+      const fp = flightPrices.find((f) => f.origin === origin && f.destination === d.iata);
+      if (fp && fp.price) info = { price: fp.price, airline: fp.airline, transfers: fp.transfers, dep: fromYmd(fp.depart_date), ret: fromYmd(fp.return_date) };
+      else state = 'none';
+    }
+    const dep = info ? info.dep : hasRange ? flightRange.start : null;
+    const ret = info ? info.ret : hasRange ? flightRange.end : null;
+    const route = `${origin} → ${d.city} ${d.iata}`;
+    const tr = info && typeof info.transfers === 'number' ? info.transfers : null;
+    return (
+      <TouchableOpacity
+        key={`${origin}-${d.iata}`}
+        style={[styles.fRow, last && { borderBottomWidth: 0 }]}
+        activeOpacity={0.7}
+        onPress={() => openFlightSearch(origin, d.iata, dep, ret)}
+      >
+        <View style={styles.fCodeBox}>
+          {info && info.airline ? (
+            <Text style={styles.fCodeText}>{info.airline}</Text>
+          ) : state === 'loading' ? (
+            <ActivityIndicator size="small" color="#A1A1AA" />
+          ) : (
+            <Ionicons name={info ? 'airplane-outline' : 'search'} size={15} color="#A1A1AA" />
+          )}
+        </View>
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          {info ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={styles.fAirline} numberOfLines={1}>{info.airline ? airlineName(info.airline) : '항공권'}</Text>
+              {tr !== null ? (
+                <View style={[styles.fTag, tr === 0 && { backgroundColor: '#52525B' }]}>
+                  <Text style={[styles.fTagText, tr === 0 && { color: '#FFFFFF' }]}>{tr === 0 ? '직항' : `경유 ${tr}회`}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={[styles.fAirline, { color: '#71717A' }]}>
+              {state === 'loading' ? '가격 찾는 중…' : hasRange ? '이 날짜 가격 정보 없음' : '가격 정보 없음'}
+            </Text>
+          )}
+          <Text style={styles.fSub} numberOfLines={1}>
+            {route}{!hasRange && dep && ret ? ` · ${mdw(dep)}~${mdw(ret)}` : ''}
+          </Text>
+        </View>
+        {info ? (
+          <View style={styles.hPricePill}>
+            <Text style={styles.hPriceText}>{Number(info.price).toLocaleString('ko-KR')}원~</Text>
+          </View>
+        ) : state === 'none' ? (
+          <View style={styles.fSearchBtn}><Text style={styles.fSearchText}>직접 검색 ›</Text></View>
+        ) : null}
+      </TouchableOpacity>
+    );
   };
 
   // 일정 추가 창의 작은 달력
@@ -5132,7 +5374,6 @@ export default function App() {
     // 추천 여행지 2곳 (매일 바뀜) + 같은 곳 항공권
     const travelList = travelGroup === 'dom' ? TRAVEL_DOMESTIC : TRAVEL_OVERSEAS;
     const dests = weightedDailyPick(travelList, 2, dayKey + travelShuffle * 13 + (travelGroup === 'dom' ? 0 : 7));
-    const priceOf = (iata) => flightPrices.find((f) => f.origin === flightFrom && f.destination === iata);
 
     // 희망 여행지: 하루 안에 새로 등록된 게 있으면 그것, 아니면 날마다 하나
     const likeCount = (id) => wishLikes.filter((l) => l.wish_id === id).length;
@@ -5321,23 +5562,10 @@ export default function App() {
                   </TouchableOpacity>
                 ))}
               </View>
-              {dests.map((d) => {
-                const fp = priceOf(d.iata);
-                return (
-                  <TouchableOpacity key={d.iata} style={styles.hFlightRow} activeOpacity={0.7} onPress={() => openFlightSearch(flightFrom, d.iata)}>
-                    <Text style={styles.hFlightRoute} numberOfLines={1}>
-                      {flightFrom} → {d.city} <Text style={styles.hMuted}>{d.iata}</Text>
-                    </Text>
-                    <View style={styles.hPricePill}>
-                      <Text style={styles.hPriceText}>
-                        {fp && fp.price ? `${Number(fp.price).toLocaleString('ko-KR')}원~` : '최저가 검색 ›'}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+              {renderFlightDateBar('home')}
+              {dests.map((d, i) => renderFlightRow(flightFrom, d, i === dests.length - 1))}
               <Text style={[styles.hMuted, { marginTop: 6 }]}>
-                왕복 · 1인 · {flightPrices.length ? '최근 검색 기준' : '누르면 오늘 최저가 검색 화면이 열려요'}
+                왕복 · 1인 · 최근 검색 기준 · 누르면 항공권 검색
               </Text>
             </View>
           ) : null}
@@ -8493,6 +8721,19 @@ const styles = themedStyles({
   hCalFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   hCalOk: { backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
   hCalOkText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  fDateBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)', marginBottom: 8 },
+  fDateText: { flex: 1, fontSize: 13, color: '#18181B' },
+  fCalBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
+  fCalBtnText: { fontSize: 12, fontWeight: '700' },
+  fRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: 'rgba(24,24,27,0.07)' },
+  fCodeBox: { width: 38, height: 38, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.07)', alignItems: 'center', justifyContent: 'center' },
+  fCodeText: { fontSize: 12, fontWeight: '700', color: '#3F3F46' },
+  fAirline: { fontSize: 14, fontWeight: '700', color: '#18181B', flexShrink: 1 },
+  fTag: { marginLeft: 5, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8, backgroundColor: 'rgba(24,24,27,0.08)' },
+  fTagText: { fontSize: 10, color: '#52525B' },
+  fSub: { fontSize: 12, color: '#71717A', marginTop: 1 },
+  fSearchBtn: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(24,24,27,0.15)' },
+  fSearchText: { fontSize: 12, color: '#3F3F46' },
   hFieldLabel: { fontSize: 12, color: '#71717A', marginBottom: 5 },
   hTimeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
   hTimeChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(24,24,27,0.06)' },
