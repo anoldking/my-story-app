@@ -99,6 +99,22 @@ jobs:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
 
+      # 플레이스토어 요구: Android 16 (API 36) 대상으로 빌드
+      - name: Target API 36
+        run: |
+          node -e '
+            const fs = require("fs");
+            const f = "android/build.gradle";
+            let g = fs.readFileSync(f, "utf8");
+            const mark = g.search(/apply plugin:\s*["\x27]expo-root-project["\x27]/);
+            if (mark < 0) { console.log("expo-root-project 줄을 못 찾음"); process.exit(1); }
+            const ext = "ext {\n    compileSdkVersion = 36\n    targetSdkVersion = 36\n}\n";
+            g = g.slice(0, mark) + ext + g.slice(mark);
+            fs.writeFileSync(f, g);
+            console.log("API 36 설정 완료");
+          '
+          echo "android.suppressUnsupportedCompileSdk=36" >> android/gradle.properties
+
       # 업로드 열쇠로 서명하도록 설정
       - name: Set up upload key
         env:
