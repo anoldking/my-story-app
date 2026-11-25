@@ -5350,6 +5350,23 @@ export default function App() {
     const motd = motdPool.length ? seededPick(motdPool, 1, dayKey + memberOfDayShuffle * 7)[0] : null;
     const motdAuthor = motd ? (motd.profiles?.nickname || memberById(motd.author_id)?.nickname || '회원') : '';
     const motdAvatar = motd ? (motd.profiles?.avatar_url || memberById(motd.author_id)?.avatar_url || null) : null;
+    // 회원 최근 글 3개 (최신 순)
+    const recentPosts = [...visiblePosts]
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+      .slice(0, 3);
+    const agoText = (t) => {
+      const diff = Math.max(0, Date.now() - Date.parse(t));
+      const min = Math.floor(diff / 60000);
+      if (min < 1) return '방금';
+      if (min < 60) return `${min}분 전`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `${hr}시간 전`;
+      const day = Math.floor(hr / 24);
+      if (day === 1) return '어제';
+      if (day < 7) return `${day}일 전`;
+      const d = new Date(t);
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    };
 
     // 스케줄: 메인(별표 우선, 없으면 가장 가까운 일정) + 서브 3개 + 이번 주
     // 아직 안 끝난 일정 (여러 날 일정은 끝나는 날까지)
@@ -5410,16 +5427,14 @@ export default function App() {
             </TouchableOpacity>
           )}
 
-          {/* 오늘의 주인공 (3%) */}
-          <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.03)', borderWidth: 1, borderColor: 'rgba(24,24,27,0.06)' }]}>
-            <View style={styles.hSecHead}>
-              <Text style={styles.hSecTitle}><Ionicons name="trophy-outline" size={14} color="#3F3F46" /> 오늘의 주인공</Text>
-            </View>
-            {motd ? (
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }} activeOpacity={0.8} onPress={() => openPostView(motd, 0)}>
-                <Image source={{ uri: motd.image_urls[0] }} style={styles.hMotdImg} />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* 오늘의 주인공 (왼쪽) + 회원 최근 글 (오른쪽) */}
+          <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.03)', borderWidth: 1, borderColor: 'rgba(24,24,27,0.06)', flexDirection: 'row' }]}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.hSecTitle, { marginBottom: 8 }]}><Ionicons name="trophy-outline" size={14} color="#3F3F46" /> 오늘의 주인공</Text>
+              {motd ? (
+                <TouchableOpacity activeOpacity={0.8} onPress={() => openPostView(motd, 0)}>
+                  <Image source={{ uri: motd.image_urls[0] }} style={styles.hMotdBig} resizeMode="cover" />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
                     {motdAvatar ? (
                       <Image source={{ uri: motdAvatar }} style={styles.hMiniAvatar} />
                     ) : (
@@ -5429,15 +5444,54 @@ export default function App() {
                     )}
                     <Text style={styles.hMotdName} numberOfLines={1}>{motdAuthor}</Text>
                   </View>
-                  <Text style={styles.hMotdText} numberOfLines={2}>{motd.content || '사진 게시물'}</Text>
-                  <Text style={styles.hMuted}>
+                  <Text style={styles.hRecentText} numberOfLines={1}>{motd.content || '사진 게시물'}</Text>
+                  <Text style={styles.hRecentTime}>
                     {new Date(motd.created_at).toLocaleDateString('ko-KR')} · 하트 {(motd.reactions || []).length}
                   </Text>
-                </View>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.hMuted}>아직 사진 게시물이 없어요.</Text>
-            )}
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.hMuted}>아직 사진 게시물이 없어요.</Text>
+              )}
+            </View>
+
+            <View style={styles.hRecentCol}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <Text style={styles.hSecTitle}><Ionicons name="time-outline" size={14} color="#3F3F46" /> 최근 글</Text>
+                <TouchableOpacity onPress={() => { setPostsMemberId(null); fetchPosts(); setMainTab('posts'); }} hitSlop={8}>
+                  <Text style={styles.hSecAction}>더보기 ›</Text>
+                </TouchableOpacity>
+              </View>
+              {recentPosts.length ? recentPosts.map((rp, i) => {
+                const who = rp.profiles?.nickname || memberById(rp.author_id)?.nickname || '회원';
+                const av = rp.profiles?.avatar_url || memberById(rp.author_id)?.avatar_url || null;
+                const thumb = rp.image_urls && rp.image_urls.length ? rp.image_urls[0] : null;
+                return (
+                  <TouchableOpacity
+                    key={rp.id}
+                    style={[styles.hRecentRow, i === recentPosts.length - 1 && { borderBottomWidth: 0 }]}
+                    activeOpacity={0.7}
+                    onPress={() => openPostView(rp, 0)}
+                  >
+                    {av ? (
+                      <Image source={{ uri: av }} style={styles.hRecentAvatar} />
+                    ) : (
+                      <View style={[styles.hRecentAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                        <Ionicons name="person" size={11} color="#A1A1AA" />
+                      </View>
+                    )}
+                    <View style={{ flex: 1, minWidth: 0, marginLeft: 6 }}>
+                      <Text style={styles.hRecentWho} numberOfLines={1}>
+                        {who} <Text style={styles.hRecentTime}>· {agoText(rp.created_at)}</Text>
+                      </Text>
+                      <Text style={styles.hRecentText} numberOfLines={1}>{rp.content || '사진 게시물'}</Text>
+                    </View>
+                    {thumb ? <Image source={{ uri: thumb }} style={styles.hRecentThumb} /> : null}
+                  </TouchableOpacity>
+                );
+              }) : (
+                <Text style={styles.hMuted}>아직 올라온 글이 없어요.</Text>
+              )}
+            </View>
           </View>
 
           {/* 예정된 스케줄 (5%) */}
@@ -8618,6 +8672,14 @@ const styles = themedStyles({
   hSecAction: { fontSize: 11.5, color: '#A1A1AA' },
   hMuted: { fontSize: 11, color: '#A1A1AA' },
   hMotdImg: { width: 68, height: 68, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.12)' },
+  hMotdBig: { width: '100%', aspectRatio: 1.25, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.12)' },
+  hRecentCol: { flex: 1.15, minWidth: 0, marginLeft: 10, paddingLeft: 10, borderLeftWidth: 1, borderLeftColor: 'rgba(24,24,27,0.08)' },
+  hRecentRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(24,24,27,0.06)' },
+  hRecentAvatar: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(24,24,27,0.12)' },
+  hRecentWho: { fontSize: 12, fontWeight: '700', color: '#18181B' },
+  hRecentTime: { fontSize: 10, fontWeight: '400', color: '#A1A1AA' },
+  hRecentText: { fontSize: 11, color: '#52525B', marginTop: 1 },
+  hRecentThumb: { width: 32, height: 32, borderRadius: 6, marginLeft: 6, backgroundColor: 'rgba(24,24,27,0.1)' },
   hMiniAvatar: { width: 20, height: 20, borderRadius: 6, backgroundColor: 'rgba(24,24,27,0.12)', marginRight: 6 },
   hMotdName: { fontSize: 13, fontWeight: '700', color: '#18181B', flexShrink: 1 },
   hMotdText: { fontSize: 12, color: '#52525B', marginTop: 4, lineHeight: 17 },
