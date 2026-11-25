@@ -22,6 +22,7 @@ import {
   AppState,
   Animated,
   Easing,
+  Share,
 } from 'react-native';
 import { Text, TextInput, useAppFonts } from './fonts';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -98,6 +99,172 @@ const TRAVEL_OVERSEAS = [
     title: '아이 데리고 편하게 다니기 좋은 도시',
     body: '깨끗하고 안전해서 마음 놓고 다닐 수 있어요. 밤에 가든스 바이 더 베이 나무 조명 쇼는 꼭 보세요. 센토사 섬에서 하루 놀고, 저녁은 호커센터에서 여러 가지 시켜서 나눠 먹으면 재밌어요. 길에서 껌 씹거나 쓰레기 버리면 벌금이 있으니 조심하세요.' },
 ];
+// 추천 여행지 상세 글 (전체 화면 에세이). 도시 이름이 TRAVEL_DOMESTIC / TRAVEL_OVERSEAS 와 같아야 함
+const TRAVEL_ESSAYS = {
+  '제주': {
+    days: '2박 3일',
+    intro: '제주는 몇 번을 가도 또 가고 싶은 곳이에요. 공항 문을 나서는 순간 불어오는 바람부터가 달라요. 짠 내음 섞인 그 바람을 맞으면 "아, 여행 왔구나" 싶어요.',
+    sections: [
+      { h: '해 뜨는 성산, 해 지는 협재', p: '첫날 아침은 조금 부지런을 떨어서 성산일출봉에 올라 보세요. 숨이 조금 차오를 때쯤 정상에 서면, 바다 위로 해가 쑥 올라오는 걸 볼 수 있어요. 저녁엔 반대편 협재나 금능 바다로 가세요. 물빛이 투명해서 발만 담가도 기분이 맑아져요.' },
+      { h: '비 오는 날의 제주도 괜찮아요', p: '제주 날씨는 정말 변덕스러워요. 그래도 걱정 마세요. 아쿠아플라넷이나 박물관, 바다 보이는 카페가 곳곳에 있어서 비 오는 날은 그 나름대로 운치가 있어요. 창밖으로 비 오는 바다 보면서 귤 하나 까 먹는 시간, 저는 그게 제일 좋았어요.' },
+    ],
+    tips: ['렌터카는 봄가을 주말이면 금방 동나요. 미리 잡아 두세요', '동쪽·서쪽을 하루씩 나눠 돌면 덜 피곤해요', '흑돼지는 저녁 시간 피해서 조금 일찍 가세요'],
+    outro: '돌아오는 비행기에서 벌써 다음 제주를 생각하게 될 거예요.',
+  },
+  '부산': {
+    days: '1박 2일',
+    intro: '부산은 바다도 있고, 야경도 있고, 먹을 것도 있는 욕심 많은 도시예요. 어디를 골라도 반은 성공이에요.',
+    sections: [
+      { h: '광안리의 밤', p: '해가 지면 광안리 해변에 그냥 앉아 보세요. 광안대교에 불이 하나둘 켜지면 파도 소리랑 같이 하루가 천천히 정리돼요. 주말 밤엔 드론 쇼를 하는 날도 있으니 운 좋으면 덤으로 구경할 수 있어요.' },
+      { h: '골목과 시장 사이', p: '낮에는 감천문화마을의 알록달록한 골목을 걸어 보세요. 사진 찍을 곳이 정말 많아요. 그다음엔 자갈치시장이랑 국제시장으로 가서 어묵, 씨앗호떡, 비빔당면을 하나씩 맛보면 배가 금방 불러요. 해운대 블루라인 해변열차는 아이들이 정말 좋아해요.' },
+    ],
+    tips: ['지하철이 잘 돼 있어서 차 없이도 충분해요', '해변열차는 주말이면 미리 예매하는 게 좋아요', '밀면이랑 돼지국밥은 꼭 한 번씩'],
+    outro: '부산 사투리 섞인 "또 온나" 한마디가 귀에 오래 남는 곳이에요.',
+  },
+  '강릉': {
+    days: '1박 2일',
+    intro: '갑자기 바다가 보고 싶은 날이 있잖아요. 그럴 때 마음먹고 바로 떠날 수 있는 곳이 강릉이에요.',
+    sections: [
+      { h: '커피 한잔과 바다', p: '안목해변 커피 거리에 가면 바다를 바라보는 카페가 줄지어 있어요. 창가 자리에 앉아 커피 한잔 마시면서 파도 보는 것, 그거면 충분해요. 강릉 여행은 바쁘게 다니지 않는 게 포인트예요.' },
+      { h: '경포호 산책, 그리고 해돋이', p: '오후엔 경포호를 한 바퀴 천천히 걸어 보세요. 바람이 선선해서 산책하기 딱 좋아요. 다음 날 조금 일찍 일어날 수 있다면 정동진에서 해돋이를 보세요. 기차역 바로 앞이 바다인 풍경이 꽤 낭만적이에요.' },
+    ],
+    tips: ['여름 성수기엔 해변 근처 주차가 정말 힘들어요', '초당순두부는 아침으로 먹으면 속이 편해요', '중앙시장 닭강정은 포장해서 숙소에서'],
+    outro: '짧게 다녀와도 마음이 한참 넉넉해지는 바다예요.',
+  },
+  '경주': {
+    days: '1박 2일',
+    intro: '경주는 도시 전체가 박물관이에요. 그냥 걷기만 해도 천 년 전 이야기가 발밑에 깔려 있어요. 아이들이랑 가면 살아 있는 역사책이 돼요.',
+    sections: [
+      { h: '자전거 타고 천 년 산책', p: '대릉원 근처에서 자전거를 빌려 첨성대, 계림 쪽으로 천천히 달려 보세요. 큰 고분들 사이를 지나가면 아이들이 "이게 다 무덤이야?" 하고 눈이 동그래져요. 황리단길 골목에서 간식 하나 사 먹고 쉬어 가는 것도 좋아요.' },
+      { h: '물에 비친 동궁과 월지', p: '경주 여행의 하이라이트는 밤이에요. 해가 지면 동궁과 월지에 불이 들어오는데, 연못에 비친 모습이 정말 그림 같아요. 낮에는 불국사랑 석굴암을 꼭 들르세요. 교과서에서만 보던 걸 직접 보면 느낌이 완전히 달라요.' },
+    ],
+    tips: ['봄 벚꽃, 가을 단풍 때가 제일 예뻐요', '동궁과 월지는 해 질 무렵 들어가면 낮과 밤을 다 볼 수 있어요', '편한 운동화는 필수예요'],
+    outro: '아이 손 잡고 걷다 보면 어른도 같이 배우게 되는 여행이에요.',
+  },
+  '여수': {
+    days: '1박 2일',
+    intro: '해가 지고 나서야 여수가 진짜 얼굴을 보여줘요. 돌산대교에 불이 하나둘 켜지면, 바다 위로 조명이 번지는 게 꼭 누가 일부러 그려 놓은 그림 같아요.',
+    sections: [
+      { h: '바다 위를 건너는 케이블카', p: '해상 케이블카는 꼭 타 보세요. 바닥이 투명한 칸을 타면 발밑으로 바다가 지나가서 아이들이 소리를 질러요. 해 질 무렵에 타면 노을까지 덤으로 볼 수 있어요.' },
+      { h: '낮에는 오동도, 밤에는 낭만포차', p: '오전엔 오동도 동백숲길을 천천히 걸어 보세요. 바닷바람이 시원해서 걷기 좋아요. 저녁엔 낭만포차 거리에서 해물삼합 한 접시면 하루가 완성돼요. 게장 백반이랑 갓김치도 빼먹지 마시고요.' },
+    ],
+    tips: ['케이블카는 해 질 녘 30분 전 탑승이 제일 예뻐요', '낭만포차는 주말 저녁 7시 전에 가야 자리 있어요', '하루 더 있으면 순천만 국가정원까지 묶어 보세요'],
+    outro: '다음엔 꼭 가족들 다 같이 밤바다 보러 가요.',
+  },
+  '오사카': {
+    days: '3박 4일',
+    intro: '오사카는 먹으러 가는 여행이에요. "먹다가 망한다"는 말이 있을 정도니까요. 배를 조금 비우고 가세요.',
+    sections: [
+      { h: '도톤보리 먹방 산책', p: '글리코 간판 앞에서 사진 한 장 찍고, 골목마다 타코야키, 오코노미야키, 쿠시카츠를 하나씩 사 먹으면서 걸어 보세요. 그게 오사카 여행의 반이에요. 밤이 되면 네온사인이 강물에 비쳐서 더 화려해져요.' },
+      { h: '하루는 아이들을 위해', p: '아이들이 있다면 유니버설 스튜디오는 하루를 통째로 잡으세요. 놀이기구 줄이 길어서 반나절로는 부족해요. 어른들끼리라면 전철로 한 시간 거리인 교토에 다녀와 보세요. 오사카랑은 전혀 다른 조용한 일본을 만날 수 있어요.' },
+    ],
+    tips: ['간사이 교통 패스 하나면 이동이 정말 편해요', '유니버설 스튜디오는 익스프레스 패스를 미리 생각해 두세요', '구로몬 시장은 오전에 가야 신선해요'],
+    outro: '돌아와서도 한동안 타코야키 생각이 날 거예요.',
+  },
+  '후쿠오카': {
+    days: '2박 3일',
+    intro: '비행기 타고 한 시간 반이면 도착하는 일본이에요. 공항에서 시내까지도 지하철로 금방이라 도착하자마자 바로 여행이 시작돼요.',
+    sections: [
+      { h: '포장마차의 밤', p: '저녁엔 나카스 강가 포장마차에 가 보세요. 좁은 자리에 옆 사람과 어깨를 붙이고 앉아 먹는 돈코츠 라멘 한 그릇이 이상하게 더 맛있어요. 하카타 모츠나베도 꼭 한 번 드셔 보세요.' },
+      { h: '유후인에서의 하루', p: '짧은 일정이어도 온천 마을 유후인은 꼭 넣으셨으면 해요. 긴린코 호수 주변을 아침 일찍 걸으면 물안개가 피어올라서 정말 예뻐요. 료칸에서 온천하고 하룻밤 자면 쌓였던 피로가 싹 풀려요.' },
+    ],
+    tips: ['유후인은 버스 예약을 미리 해 두세요', '캐널시티는 비 오는 날 가기 좋아요', '명란은 선물용으로 인기 많아요'],
+    outro: '주말 하루 연차만 내도 다녀올 수 있는, 가까워서 더 좋은 곳이에요.',
+  },
+  '삿포로': {
+    days: '3박 4일',
+    intro: '삿포로는 겨울에 가야 진짜예요. 하얀 눈이 펑펑 내리는 거리를 걷다 보면 동화 속에 들어온 것 같아요.',
+    sections: [
+      { h: '눈의 도시', p: '2월 초 눈축제 때는 오도리 공원에 거대한 눈 조각들이 늘어서요. 밤에 조명이 켜지면 더 멋있어요. 축제 기간이 아니어도 하얗게 덮인 시내 풍경만으로 충분히 설레요.' },
+      { h: '오타루의 저녁', p: '기차 타고 오타루로 가서 운하를 걸어 보세요. 해가 지고 가스등이 켜지면 정말 영화 같아요. 오르골당에서 작은 오르골 하나 사 오는 것도 좋은 추억이 돼요. 추운 날엔 수프카레랑 징기스칸으로 몸을 녹이세요.' },
+    ],
+    tips: ['미끄럼 방지 신발은 필수예요', '여름엔 라벤더 밭 보러 가는 것도 추천해요', '눈축제 기간엔 숙소를 아주 일찍 잡아야 해요'],
+    outro: '눈 위를 뽀드득 걷는 소리가 한참 귀에 남는 여행이에요.',
+  },
+  '오키나와': {
+    days: '3박 4일',
+    intro: '일본인데 바다 색은 동남아 같은 곳이에요. 처음 바다를 보면 "이게 진짜 일본이야?" 소리가 절로 나와요.',
+    sections: [
+      { h: '해안 도로 드라이브', p: '오키나와는 렌터카로 다니는 게 제일이에요. 고우리 대교를 건널 때 양옆으로 펼쳐지는 에메랄드빛 바다는 정말 감탄이 나와요. 마음에 드는 해변이 보이면 그냥 차 세우고 쉬어 가세요.' },
+      { h: '고래상어를 만나는 날', p: '츄라우미 수족관의 커다란 수조 앞에 서면 고래상어가 머리 위로 천천히 지나가요. 아이들은 넋을 놓고 봐요. 수족관 옆 에메랄드 비치도 같이 들르면 하루 코스로 딱이에요.' },
+    ],
+    tips: ['운전하실 분은 국제운전면허증을 꼭 챙기세요', '8~9월은 태풍이 잦으니 피하는 게 좋아요', '국제거리에서 기념품 쇼핑하기 좋아요'],
+    outro: '가까운 곳에서 휴양다운 휴양을 하고 싶을 때 딱이에요.',
+  },
+  '타이베이': {
+    days: '2박 3일',
+    intro: '야시장을 좋아한다면 무조건 여기예요. 해가 지면 야시장 가는 게 하루 일과가 돼요.',
+    sections: [
+      { h: '야시장에서 저녁 먹기', p: '스린 야시장에 가면 지파이, 굴전, 버블티까지 먹을 게 끝이 없어요. 조금씩 나눠 사서 가족끼리 이것저것 맛보는 재미가 있어요. 사람이 많으니 아이들 손은 꼭 잡고 다니세요.' },
+      { h: '등불 켜지는 지우펀', p: '지우펀은 해 질 무렵에 가야 해요. 산비탈 골목에 홍등이 하나둘 켜지면 정말 영화 속 한 장면 같아요. 찻집에 앉아 따뜻한 차 한잔하면서 내려다보는 풍경이 오래 기억에 남아요.' },
+    ],
+    tips: ['이지카드 하나면 지하철·버스·편의점까지 다 돼요', '지우펀은 주말을 피하면 훨씬 여유로워요', '딘타이펑 본점은 대기표 먼저 받아 두세요'],
+    outro: '가깝고 물가도 부담 없어서 가족 여행으로 딱 좋은 곳이에요.',
+  },
+  '다낭': {
+    days: '3박 5일',
+    intro: '다낭은 아무것도 안 해도 좋은 곳이에요. 리조트 수영장이랑 바다만 왔다 갔다 해도 하루가 행복하게 지나가요.',
+    sections: [
+      { h: '미케 해변의 아침', p: '아침에 일찍 일어나 미케 해변을 걸어 보세요. 모래사장이 넓고 깨끗해서 아이들 놀기 정말 좋아요. 낮에는 수영장에서 쉬고, 저녁엔 해변 식당에서 해산물 한 상 차려 먹으면 그만이에요.' },
+      { h: '등불의 마을 호이안', p: '저녁엔 호이안 옛 마을에 꼭 가 보세요. 거리마다 알록달록한 등불이 켜지고, 강 위로 소원 등을 띄우는 풍경이 정말 예뻐요. 하루 시간이 더 있다면 바나힐 케이블카도 타 볼 만해요.' },
+    ],
+    tips: ['10~12월은 비가 많으니 피하세요', '그랩 앱 하나면 택시 걱정 없어요', '호이안은 해 질 무렵 도착하게 출발하세요'],
+    outro: '쉬러 갔다가 진짜로 푹 쉬고 오는, 드문 여행지예요.',
+  },
+  '나트랑': {
+    days: '3박 5일',
+    intro: '다낭보다 조금 더 조용한 바다를 원한다면 나트랑이에요. 사람이 덜 붐벼서 여유 있게 쉬기 좋아요.',
+    sections: [
+      { h: '섬 하나가 통째로 놀이공원', p: '빈원더스는 섬 전체가 놀이공원이에요. 케이블카 타고 바다를 건너가는 것부터가 아이들한테는 모험이에요. 워터파크도 같이 있어서 하루가 금방 가요.' },
+      { h: '머드 온천에서 쉬는 하루', p: '어른들은 머드 온천을 더 좋아해요. 따뜻한 진흙 욕조에 몸을 담그고 있으면 피로가 스르르 녹아요. 저녁엔 해변 식당에서 랍스터나 새우를 저렴하게 즐길 수 있어요.' },
+    ],
+    tips: ['공항에서 시내까지 시간이 좀 걸리니 픽업을 미리 알아보세요', '선크림은 넉넉히 챙기세요', '반미는 길거리 가게가 더 맛있어요'],
+    outro: '조용한 바다와 느린 시간이 필요할 때 생각나는 곳이에요.',
+  },
+  '방콕': {
+    days: '3박 5일',
+    intro: '방콕은 볼거리, 먹거리, 쇼핑까지 다 되는 도시예요. 며칠을 있어도 지루할 틈이 없어요.',
+    sections: [
+      { h: '황금빛 사원들', p: '왕궁이랑 왓아룬은 사진보다 훨씬 화려해요. 햇빛을 받아 반짝이는 장식들을 보면 입이 벌어져요. 왓아룬은 강 건너편에서 해 질 녘에 바라볼 때가 제일 예뻐요.' },
+      { h: '시장과 강 위의 밤', p: '주말이면 짜뚜짝 시장 구경을 꼭 해 보세요. 없는 게 없어요. 저녁엔 짜오프라야 강 디너 크루즈를 타면서 야경을 보는 것도 추천해요. 더운 낮엔 시원한 쇼핑몰로 피신하면 돼요.' },
+    ],
+    tips: ['사원에 갈 땐 어깨와 무릎을 가리는 옷을 입으세요', '팟타이랑 망고밥은 꼭 드셔 보세요', '마사지는 하루 한 번 꼭 받으세요'],
+    outro: '정신없이 즐겁고, 돌아오면 또 그리워지는 도시예요.',
+  },
+  '세부': {
+    days: '3박 5일',
+    intro: '바닷속이 궁금하다면 세부예요. 물에 얼굴만 넣어도 바로 눈앞으로 물고기 떼가 지나가요.',
+    sections: [
+      { h: '호핑 투어 하는 날', p: '배를 타고 섬 사이를 돌아다니며 스노클링을 하는 호핑 투어는 꼭 해 보세요. 아이들한테는 평생 기억에 남을 경험이 돼요. 바다 위에서 먹는 점심도 꿀맛이에요.' },
+      { h: '리조트에서의 느린 하루', p: '막탄 섬 리조트에 묵으면 수영장이랑 바다를 오가며 하루가 금방 가요. 해 질 녘 바닷가에 앉아 노을 보는 시간이 이 여행에서 제일 좋은 순간이에요.' },
+    ],
+    tips: ['래시가드랑 아쿠아슈즈는 꼭 챙기세요', '망고는 실컷 드세요. 정말 달아요', '호핑 투어는 아침 일찍 출발하는 걸로 고르세요'],
+    outro: '파란 바다를 실컷 보고 싶을 때, 생각나는 곳이에요.',
+  },
+  '싱가포르': {
+    days: '3박 4일',
+    intro: '싱가포르는 아이 데리고 편하게 다니기 좋은 도시예요. 깨끗하고 안전해서 마음을 놓고 다닐 수 있어요.',
+    sections: [
+      { h: '빛나는 나무들의 밤', p: '밤에 가든스 바이 더 베이에 가면 슈퍼트리에 조명이 켜지고 음악에 맞춰 쇼가 시작돼요. 바닥에 누워서 올려다보면 정말 다른 행성에 온 것 같아요. 마리나 베이 야경도 같이 즐겨 보세요.' },
+      { h: '센토사와 호커센터', p: '하루는 센토사 섬에서 놀이공원과 해변을 즐겨 보세요. 저녁은 호커센터에서 치킨라이스, 사테, 락사를 여러 개 시켜 나눠 먹으면 재밌어요. 저렴하고 맛있어서 매일 가게 돼요.' },
+    ],
+    tips: ['길에서 껌 씹거나 쓰레기 버리면 벌금이 있어요', '실내는 에어컨이 세서 얇은 겉옷이 필요해요', '지하철이 잘 돼 있어서 이동이 편해요'],
+    outro: '처음 해외여행 가는 아이들에게도 자신 있게 추천하는 곳이에요.',
+  },
+};
+// 가기 좋은 달을 '4~6월 · 9~10월'처럼
+const monthsText = (ms) => {
+  const a = [...(ms || [])].sort((x, y) => x - y);
+  const out = [];
+  let i = 0;
+  while (i < a.length) {
+    let j = i;
+    while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++;
+    out.push(i === j ? `${a[i]}월` : `${a[i]}~${a[j]}월`);
+    i = j + 1;
+  }
+  return out.join(' · ');
+};
 // 이번 달이 가기 좋은 곳인지
 const isTravelSeason = (d) => (d.months || []).includes(new Date().getMonth() + 1);
 // 날마다 바뀌는 무작위 뽑기 (가기 좋은 달이면 2배 더 잘 뽑힘)
@@ -120,6 +287,22 @@ const seededPick = (arr, count, seed) => {
   return a.slice(0, count).map((o) => o.x);
 };
 const WEEK_KO = ['일', '월', '화', '수', '목', '금', '토'];
+// 일정 시간 버튼
+const SCHED_TIMES = [['종일', null], ['아침 9:00', '09:00'], ['점심 12:00', '12:00'], ['오후 3:00', '15:00'], ['저녁 6:00', '18:00'], ['직접 입력', 'custom']];
+const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const dayNum = (d) => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+const mdw = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WEEK_KO[d.getDay()]})`;
+// 일정 날짜 글자: 하루면 '12/7(토) 18:00', 여러 날이면 '12/30(수) ~ 1/2(토) · 3박4일'
+const schedWhenText = (s) => {
+  const a = new Date(s.starts_at);
+  const b = s.ends_at ? new Date(s.ends_at) : null;
+  const time = s.all_day ? '' : ` ${pad2(a.getHours())}:${pad2(a.getMinutes())}`;
+  if (b && dayNum(b) > dayNum(a)) {
+    const n = Math.round((dayStart(b) - dayStart(a)) / 86400000);
+    return `${mdw(a)} ~ ${mdw(b)} · ${n}박${n + 1}일`;
+  }
+  return `${mdw(a)}${time}`;
+};
 const pad2 = (n) => String(n).padStart(2, '0');
 
 const LEFT_RAIL_WIDTH = 44; // 왼쪽 세로 색인 메뉴 폭(42) + 내용 칸 테두리(2)
@@ -2637,7 +2820,10 @@ export default function App() {
   const [noticeDraft, setNoticeDraft] = useState('');
   const [schedules, setSchedules] = useState([]);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
-  const [schedDraft, setSchedDraft] = useState({ title: '', date: '', time: '', place: '', isMain: false });
+  // 일정 추가: 달력으로 시작일~끝나는 날 고르기, 시간은 버튼으로
+  const [schedDraft, setSchedDraft] = useState({ title: '', start: null, end: null, timeSel: '종일', customTime: '', place: '', isMain: false });
+  const [schedCalOpen, setSchedCalOpen] = useState(true);
+  const [schedCalMonth, setSchedCalMonth] = useState({ y: new Date().getFullYear(), m: new Date().getMonth() });
   const [wishes, setWishes] = useState([]);
   const [wishLikes, setWishLikes] = useState([]);
   const [wishModalOpen, setWishModalOpen] = useState(false);
@@ -2648,6 +2834,8 @@ export default function App() {
   const [travelShuffle, setTravelShuffle] = useState(0);
   const [travelGroup, setTravelGroup] = useState('dom'); // 'dom' 국내 / 'ovs' 해외
   const [travelOpenCity, setTravelOpenCity] = useState(null); // 눌러서 펼친 여행지
+  const [travelDetail, setTravelDetail] = useState(null); // 전체 화면으로 연 여행지
+  const [destLikes, setDestLikes] = useState([]); // [{ city, user_id }] '가고 싶어요'
   const [memberOfDayShuffle, setMemberOfDayShuffle] = useState(0);
   const [homeSaving, setHomeSaving] = useState(false);
 
@@ -2658,7 +2846,7 @@ export default function App() {
     if (!uid) return;
     try {
       const since = new Date(Date.now() - 8 * 86400000).toISOString();
-      const [n, sc, w, wl, fp, me, tp] = await Promise.all([
+      const [n, sc, w, wl, fp, me, tp, dl] = await Promise.all([
         supabase.from('home_notices').select('*').order('created_at', { ascending: false }).limit(300),
         supabase.from('family_schedules').select('*').gte('starts_at', since).order('starts_at', { ascending: true }).limit(200),
         supabase.from('travel_wishes').select('*').order('created_at', { ascending: false }).limit(300),
@@ -2666,6 +2854,7 @@ export default function App() {
         supabase.from('flight_prices').select('*'),
         supabase.from('profiles').select('is_admin').eq('id', uid).maybeSingle(),
         supabase.from('travel_photos').select('*'),
+        supabase.from('travel_dest_likes').select('city, user_id'),
       ]);
       if (!n.error) setHomeNotices(n.data || []);
       if (!sc.error) setSchedules(sc.data || []);
@@ -2678,6 +2867,7 @@ export default function App() {
         tp.data.forEach((r) => { if (r && r.city) map[r.city] = r; });
         setTravelPhotos(map);
       }
+      if (dl && !dl.error) setDestLikes(dl.data || []);
     } catch {
       // 무시
     }
@@ -4559,23 +4749,56 @@ export default function App() {
   // ---- 스케줄 ----
   const openScheduleAdd = () => {
     const d = new Date();
-    setSchedDraft({ title: '', date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`, time: '', place: '', isMain: false });
+    setSchedDraft({ title: '', start: dayStart(d), end: null, timeSel: '종일', customTime: '', place: '', isMain: false });
+    setSchedCalMonth({ y: d.getFullYear(), m: d.getMonth() });
+    setSchedCalOpen(true);
     setScheduleModalOpen(true);
+  };
+  // 달력에서 날짜 누르기: 첫 번째 = 시작일, 두 번째 = 끝나는 날
+  const pickSchedDay = (d) => {
+    setSchedDraft((prev) => {
+      if (!prev.start || prev.end) return { ...prev, start: d, end: null };
+      if (dayNum(d) < dayNum(prev.start)) return { ...prev, start: d, end: null };
+      if (dayNum(d) === dayNum(prev.start)) return { ...prev, end: null };
+      return { ...prev, end: d };
+    });
+  };
+  const schedDraftDateText = () => {
+    const a = schedDraft.start;
+    const b = schedDraft.end;
+    if (!a) return '날짜 고르기';
+    if (b && dayNum(b) > dayNum(a)) {
+      const n = Math.round((b - a) / 86400000);
+      return `${mdw(a)} ~ ${mdw(b)} · ${n}박${n + 1}일`;
+    }
+    return `${a.getFullYear()}. ${mdw(a)}`;
   };
   const saveSchedule = async () => {
     const title = schedDraft.title.trim();
-    const dm = schedDraft.date.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    const tm = (schedDraft.time.trim() || '00:00').match(/^(\d{1,2}):(\d{2})$/);
     if (!title) { Alert.alert('확인', '일정 이름을 적어 주세요.'); return; }
-    if (!dm) { Alert.alert('확인', '날짜를 2026-12-07 처럼 적어 주세요.'); return; }
-    if (!tm) { Alert.alert('확인', '시간을 18:00 처럼 적어 주세요.'); return; }
-    const when = new Date(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2]);
-    if (isNaN(when.getTime())) { Alert.alert('확인', '날짜나 시간이 올바르지 않아요.'); return; }
+    if (!schedDraft.start) { Alert.alert('확인', '달력에서 날짜를 골라 주세요.'); return; }
+    let hh = 0;
+    let mm = 0;
+    const sel = SCHED_TIMES.find((x) => x[0] === schedDraft.timeSel);
+    const allDay = !sel || sel[1] === null;
+    if (!allDay) {
+      const raw = sel[1] === 'custom' ? schedDraft.customTime.trim() : sel[1];
+      const tm = String(raw || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (!tm || +tm[1] > 23 || +tm[2] > 59) { Alert.alert('확인', '시간을 18:30 처럼 적어 주세요.'); return; }
+      hh = +tm[1];
+      mm = +tm[2];
+    }
+    const a = schedDraft.start;
+    const when = new Date(a.getFullYear(), a.getMonth(), a.getDate(), hh, mm);
+    const b = schedDraft.end && dayNum(schedDraft.end) > dayNum(a) ? schedDraft.end : null;
+    const endsAt = b ? new Date(b.getFullYear(), b.getMonth(), b.getDate(), 23, 59) : null;
     setHomeSaving(true);
     const { error } = await supabase.from('family_schedules').insert({
       title,
       place: schedDraft.place.trim() || null,
       starts_at: when.toISOString(),
+      ends_at: endsAt ? endsAt.toISOString() : null,
+      all_day: allDay,
       is_main: !!schedDraft.isMain,
       author_id: session.user.id,
     });
@@ -4586,7 +4809,7 @@ export default function App() {
   };
   const scheduleActions = (s) => {
     const who = memberById(s.author_id)?.nickname || '회원';
-    const lines = `${new Date(s.starts_at).toLocaleString('ko-KR')}${s.place ? `\n장소: ${s.place}` : ''}\n등록: ${who}`;
+    const lines = `${schedWhenText(s)}${s.place ? `\n장소: ${s.place}` : ''}\n등록: ${who}`;
     if (s.author_id !== session.user.id && !isAdmin) {
       Alert.alert(s.title, lines);
       return;
@@ -4631,6 +4854,169 @@ export default function App() {
       await supabase.from('travel_wish_likes').insert({ wish_id: wish.id, user_id: session.user.id });
     }
   };
+  // ---- 추천 여행지 '가고 싶어요' / 희망 여행지로 담기 ----
+  const toggleDestLike = async (city) => {
+    const uid = session.user.id;
+    const mine = destLikes.some((l) => l.city === city && l.user_id === uid);
+    if (mine) {
+      setDestLikes((prev) => prev.filter((l) => !(l.city === city && l.user_id === uid)));
+      const { error } = await supabase.from('travel_dest_likes').delete().eq('city', city).eq('user_id', uid);
+      if (error) fetchHomeData();
+    } else {
+      setDestLikes((prev) => [...prev, { city, user_id: uid }]);
+      const { error } = await supabase.from('travel_dest_likes').insert({ city, user_id: uid });
+      if (error) { Alert.alert('저장 실패', error.message); fetchHomeData(); }
+    }
+  };
+  const addDestToWish = async (d) => {
+    const uid = session.user.id;
+    if (wishes.some((w) => w.user_id === uid && w.place === d.city)) {
+      Alert.alert('희망 여행지', `${d.city}은(는) 이미 내 희망 여행지에 있어요.`);
+      return;
+    }
+    const { error } = await supabase.from('travel_wishes').insert({ place: d.city, memo: d.title, user_id: uid });
+    if (error) { Alert.alert('저장 실패', error.message); return; }
+    Alert.alert('희망 여행지', `${d.city}을(를) 희망 여행지에 담았어요.`);
+    fetchHomeData();
+  };
+  const shareDest = (d) => {
+    const e = TRAVEL_ESSAYS[d.city];
+    Share.share({ message: `[${d.city}] ${d.title}\n\n${e ? e.intro : d.body}\n\n— ${TRAVEL_SIGN} (me 앱)` }).catch(() => {});
+  };
+  // 사진 목록 (서버가 3장 넣어 줌. 예전 형식이면 1장)
+  const destImages = (city) => {
+    const r = travelPhotos[city];
+    if (!r) return [];
+    if (Array.isArray(r.images) && r.images.length) return r.images.filter((x) => x && x.url);
+    return r.image_url ? [{ url: r.image_url, photographer: r.photographer, photographer_url: r.photographer_url, photo_page: r.photo_page }] : [];
+  };
+  const renderTravelDetail = () => {
+    const d = travelDetail;
+    if (!d) return null;
+    const e = TRAVEL_ESSAYS[d.city] || { days: '', intro: d.body, sections: [], tips: [], outro: '' };
+    const imgs = destImages(d.city);
+    const W = getWindowWidth();
+    const likeN = destLikes.filter((l) => l.city === d.city).length;
+    const iLike = destLikes.some((l) => l.city === d.city && l.user_id === session.user.id);
+    const credit = (img) => (img && img.photographer ? (
+      <Text
+        style={styles.tdCredit}
+        onPress={() => { const u = img.photographer_url || img.photo_page; if (u) Linking.openURL(u).catch(() => {}); }}
+      >
+        사진: {img.photographer} / Unsplash
+      </Text>
+    ) : null);
+    const photo = (img, h, extra) => (img ? (
+      <Image source={{ uri: img.url }} style={[{ width: '100%', height: h, borderRadius: 12, backgroundColor: 'rgba(24,24,27,0.08)' }, extra]} resizeMode="cover" />
+    ) : null);
+    const sec = e.sections || [];
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+          {/* 맨 위 큰 사진 */}
+          <View style={{ width: W, height: Math.round(W * 0.72), backgroundColor: 'rgba(24,24,27,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+            {imgs[0] ? (
+              <Image source={{ uri: imgs[0].url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            ) : (
+              <Ionicons name="image-outline" size={34} color="#8E8E93" />
+            )}
+            <View style={styles.tdHeroShade}>
+              <Text style={styles.tdHeroRegion}>{d.region} · {d.iata && TRAVEL_OVERSEAS.includes(d) ? '해외' : '국내'}</Text>
+              <Text style={styles.tdHeroCity}>{d.city}</Text>
+              <Text style={styles.tdHeroTitle}>{d.title}</Text>
+            </View>
+            <TouchableOpacity style={[styles.tdRoundBtn, { left: 12 }]} onPress={() => setTravelDetail(null)} hitSlop={8}>
+              <Ionicons name="arrow-back" size={20} color="#18181B" />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.tdRoundBtn, { right: 12 }]} onPress={() => shareDest(d)} hitSlop={8}>
+              <Ionicons name="share-social-outline" size={19} color="#18181B" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ paddingHorizontal: 16, alignItems: 'flex-end' }}>{credit(imgs[0])}</View>
+
+          <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+              {d.months && d.months.length ? (
+                <View style={styles.tdChip}><Text style={styles.tdChipText}>추천 시기 {monthsText(d.months)}</Text></View>
+              ) : null}
+              {e.days ? <View style={styles.tdChip}><Text style={styles.tdChipText}>{e.days}</Text></View> : null}
+              {d.flight ? <View style={styles.tdChip}><Text style={styles.tdChipText}>비행 {d.flight}</Text></View> : null}
+              {isTravelSeason(d) ? <View style={[styles.tdChip, { backgroundColor: '#3F3F46' }]}><Text style={[styles.tdChipText, { color: '#FFFFFF' }]}>지금 딱</Text></View> : null}
+            </View>
+
+            <Text style={styles.tdBody}>{e.intro}</Text>
+
+            {imgs[1] ? (
+              <View style={{ marginBottom: 16 }}>
+                {photo(imgs[1], Math.round((W - 40) * 0.62))}
+                {credit(imgs[1])}
+              </View>
+            ) : null}
+
+            {sec[0] ? (
+              <>
+                <Text style={styles.tdH}>{sec[0].h}</Text>
+                <Text style={styles.tdBody}>{sec[0].p}</Text>
+              </>
+            ) : null}
+
+            {imgs[2] ? (
+              <View style={{ marginBottom: 16 }}>
+                {photo(imgs[2], Math.round((W - 40) * 0.62))}
+                {credit(imgs[2])}
+              </View>
+            ) : null}
+
+            {sec.slice(1).map((x, i) => (
+              <View key={i}>
+                <Text style={styles.tdH}>{x.h}</Text>
+                <Text style={styles.tdBody}>{x.p}</Text>
+              </View>
+            ))}
+
+            {e.tips && e.tips.length ? (
+              <View style={styles.tdTipBox}>
+                <Text style={styles.tdTipTitle}><Ionicons name="bulb-outline" size={14} color="#18181B" /> 아놀드킹 팁</Text>
+                {e.tips.map((t, i) => (
+                  <Text key={i} style={styles.tdTipText}>· {t}</Text>
+                ))}
+              </View>
+            ) : null}
+
+            {/* 해외면 오늘 항공권 최저가 */}
+            {d.iata && TRAVEL_OVERSEAS.includes(d) ? (
+              <View style={styles.tdTipBox}>
+                <Text style={styles.tdTipTitle}><Ionicons name="airplane-outline" size={14} color="#18181B" /> 오늘의 항공권 최저가</Text>
+                {[['ICN', '인천'], ['PUS', '김해']].map(([code, label]) => {
+                  const fp = flightPrices.find((f) => f.origin === code && f.destination === d.iata);
+                  return (
+                    <TouchableOpacity key={code} style={styles.tdFlightRow} activeOpacity={0.7} onPress={() => openFlightSearch(code, d.iata)}>
+                      <Text style={styles.tdTipText}>{label} → {d.city} · 왕복 1인</Text>
+                      <Text style={styles.tdFlightPrice}>{fp && fp.price ? `${Number(fp.price).toLocaleString('ko-KR')}원~` : '검색 ›'}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            {e.outro ? <Text style={styles.tdBody}>{e.outro}</Text> : null}
+            <Text style={styles.tdSign}>— {TRAVEL_SIGN}</Text>
+          </View>
+        </ScrollView>
+
+        <View style={styles.tdBottomBar}>
+          <TouchableOpacity style={[styles.tdBottomBtn, iLike && { backgroundColor: 'rgba(24,24,27,0.16)' }]} onPress={() => toggleDestLike(d.city)}>
+            <Ionicons name={iLike ? 'heart' : 'heart-outline'} size={16} color="#3F3F46" />
+            <Text style={styles.tdBottomText}> 가고 싶어요 {likeN}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.tdBottomBtn, { backgroundColor: '#3F3F46' }]} onPress={() => addDestToWish(d)}>
+            <Ionicons name="location-outline" size={16} color="#FFFFFF" />
+            <Text style={[styles.tdBottomText, { color: '#FFFFFF' }]}> 희망 여행지로 담기</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
   const wishActions = (wish) => {
     if (wish.user_id !== session.user.id) return;
     Alert.alert(wish.place, '내가 남긴 희망 여행지를 지울까요?', [
@@ -4652,6 +5038,66 @@ export default function App() {
     Linking.openURL(url).catch(() => Alert.alert('열기 실패', '항공권 검색 화면을 열 수 없어요.'));
   };
 
+  // 일정 추가 창의 작은 달력
+  const renderSchedCalendar = () => {
+    const { y, m } = schedCalMonth;
+    const first = new Date(y, m, 1).getDay();
+    const days = new Date(y, m + 1, 0).getDate();
+    const todayN = dayNum(new Date());
+    const st = schedDraft.start ? dayNum(schedDraft.start) : null;
+    const en = schedDraft.end ? dayNum(schedDraft.end) : null;
+    const cells = [];
+    for (let i = 0; i < first; i++) cells.push(null);
+    for (let d = 1; d <= days; d++) cells.push(new Date(y, m, d));
+    while (cells.length % 7) cells.push(null);
+    const move = (k) => {
+      let nm = m + k;
+      let ny = y;
+      if (nm < 0) { nm = 11; ny -= 1; }
+      if (nm > 11) { nm = 0; ny += 1; }
+      setSchedCalMonth({ y: ny, m: nm });
+    };
+    return (
+      <View style={styles.hCal}>
+        <View style={styles.hCalHead}>
+          <TouchableOpacity onPress={() => move(-1)} hitSlop={10}><Ionicons name="chevron-back" size={18} color="#3F3F46" /></TouchableOpacity>
+          <Text style={styles.hCalTitle}>{y}년 {m + 1}월</Text>
+          <TouchableOpacity onPress={() => move(1)} hitSlop={10}><Ionicons name="chevron-forward" size={18} color="#3F3F46" /></TouchableOpacity>
+        </View>
+        <View style={styles.hCalRow}>
+          {WEEK_KO.map((w) => <Text key={w} style={styles.hCalDow}>{w}</Text>)}
+        </View>
+        {Array.from({ length: cells.length / 7 }, (_, r) => (
+          <View key={r} style={styles.hCalRow}>
+            {cells.slice(r * 7, r * 7 + 7).map((d, i) => {
+              if (!d) return <View key={i} style={styles.hCalCell} />;
+              const k = dayNum(d);
+              const isEdge = k === st || k === en;
+              const isIn = st && en && k > st && k < en;
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.hCalCell, isIn && styles.hCalIn, isEdge && styles.hCalEdge, k === todayN && !isEdge && styles.hCalToday]}
+                  onPress={() => pickSchedDay(d)}
+                >
+                  <Text style={[styles.hCalDay, isEdge && { color: '#FFFFFF', fontWeight: '700' }]}>{d.getDate()}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ))}
+        <View style={styles.hCalFoot}>
+          <Text style={styles.hMuted}>
+            {!schedDraft.start ? '시작하는 날을 눌러요' : !schedDraft.end ? '끝나는 날을 눌러요 (하루면 확인)' : '다시 누르면 새로 골라요'}
+          </Text>
+          <TouchableOpacity style={styles.hCalOk} onPress={() => setSchedCalOpen(false)}>
+            <Text style={styles.hCalOkText}>확인</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   const renderHomeDashboard = () => {
     const today = new Date();
     const dayKey = dayKeyNum();
@@ -4664,29 +5110,28 @@ export default function App() {
     const motdAvatar = motd ? (motd.profiles?.avatar_url || memberById(motd.author_id)?.avatar_url || null) : null;
 
     // 스케줄: 메인(별표 우선, 없으면 가장 가까운 일정) + 서브 3개 + 이번 주
-    const upcoming = schedules.filter((s) => Date.parse(s.starts_at) >= startOfToday);
+    // 아직 안 끝난 일정 (여러 날 일정은 끝나는 날까지)
+    const upcoming = schedules.filter((s) => Date.parse(s.ends_at || s.starts_at) >= startOfToday);
     const mainSch = upcoming.find((s) => s.is_main) || upcoming[0] || null;
     const subSch = upcoming.filter((s) => !mainSch || s.id !== mainSch.id).slice(0, 3);
-    const dDay = (iso) => {
-      const d = new Date(iso);
-      const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - startOfToday) / 86400000);
-      return diff === 0 ? 'D-DAY' : diff > 0 ? `D-${diff}` : `D+${-diff}`;
-    };
-    const fmtWhen = (iso) => {
-      const d = new Date(iso);
-      return `${d.getMonth() + 1}/${d.getDate()}(${WEEK_KO[d.getDay()]}) ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const dDayOf = (s) => {
+      const d = new Date(s.starts_at);
+      const diff = Math.round((dayStart(d).getTime() - startOfToday) / 86400000);
+      if (diff < 0) return '진행 중';
+      return diff === 0 ? 'D-DAY' : `D-${diff}`;
     };
     const monOffset = (today.getDay() + 6) % 7;
     const weekDays = Array.from({ length: 7 }, (_, i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - monOffset + i));
     const hasSchOn = (d) => schedules.some((s) => {
-      const x = new Date(s.starts_at);
-      return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate();
+      const a = dayNum(new Date(s.starts_at));
+      const b = s.ends_at ? dayNum(new Date(s.ends_at)) : a;
+      const k = dayNum(d);
+      return k >= a && k <= b;
     });
 
     // 추천 여행지 2곳 (매일 바뀜) + 같은 곳 항공권
     const travelList = travelGroup === 'dom' ? TRAVEL_DOMESTIC : TRAVEL_OVERSEAS;
     const dests = weightedDailyPick(travelList, 2, dayKey + travelShuffle * 13 + (travelGroup === 'dom' ? 0 : 7));
-    const openDest = dests.find((d) => d.city === travelOpenCity) || null;
     const priceOf = (iata) => flightPrices.find((f) => f.origin === flightFrom && f.destination === iata);
 
     // 희망 여행지: 하루 안에 새로 등록된 게 있으면 그것, 아니면 날마다 하나
@@ -4766,9 +5211,9 @@ export default function App() {
               <TouchableOpacity style={styles.hMainSch} activeOpacity={0.85} onPress={() => scheduleActions(mainSch)}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <View style={styles.hMainTag}>
-                    <Text style={styles.hMainTagText}>메인 · {dDay(mainSch.starts_at)}</Text>
+                    <Text style={styles.hMainTagText}>메인 · {dDayOf(mainSch)}</Text>
                   </View>
-                  <Text style={styles.hMainWhen}>{fmtWhen(mainSch.starts_at)}</Text>
+                  <Text style={styles.hMainWhen}>{schedWhenText(mainSch)}</Text>
                 </View>
                 <Text style={styles.hMainTitle} numberOfLines={1}>
                   {mainSch.title}{mainSch.place ? ` · ${mainSch.place}` : ''}
@@ -4780,7 +5225,7 @@ export default function App() {
             {subSch.map((s) => (
               <TouchableOpacity key={s.id} style={styles.hSubSch} activeOpacity={0.8} onPress={() => scheduleActions(s)}>
                 <Text style={styles.hSubText} numberOfLines={1}>서브 · {s.title}</Text>
-                <Text style={styles.hSubWhen}>{fmtWhen(s.starts_at)}</Text>
+                <Text style={styles.hSubWhen}>{schedWhenText(s)}</Text>
               </TouchableOpacity>
             ))}
             <View style={styles.hWeekRow}>
@@ -4824,9 +5269,9 @@ export default function App() {
                   key={d.city}
                   style={{ flex: 1 }}
                   activeOpacity={0.8}
-                  onPress={() => setTravelOpenCity(travelOpenCity === d.city ? null : d.city)}
+                  onPress={() => setTravelDetail(d)}
                 >
-                  <View style={[styles.hDestBox, travelOpenCity === d.city && { backgroundColor: 'rgba(24,24,27,0.18)' }]}>
+                  <View style={styles.hDestBox}>
                     {travelPhotos[d.city] && travelPhotos[d.city].image_url ? (
                       <Image source={{ uri: travelPhotos[d.city].image_url }} style={styles.hDestImg} resizeMode="cover" />
                     ) : (
@@ -4857,13 +5302,6 @@ export default function App() {
                 </TouchableOpacity>
               ))}
             </View>
-            {openDest ? (
-              <View style={styles.hDestDetail}>
-                <Text style={styles.hDestDetailCity}>{openDest.city} <Text style={styles.hMuted}>{openDest.region}</Text></Text>
-                <Text style={styles.hDestDetailBody}>{openDest.body}</Text>
-                <Text style={styles.hDestSign}>— {TRAVEL_SIGN}</Text>
-              </View>
-            ) : null}
           </View>
 
           {/* 추천 여행지 항공권 최저가 (5%): 해외 탭에서만 */}
@@ -4958,6 +5396,11 @@ export default function App() {
           </View>
         </ScrollView>
 
+        {/* 추천 여행지 전체 화면 글 */}
+        <Modal visible={!!travelDetail} animationType="slide" onRequestClose={() => setTravelDetail(null)}>
+          {renderTravelDetail()}
+        </Modal>
+
         {/* 공지 게시판: 지금까지 올린 공지 (최신 순) */}
         <Modal visible={noticeBoardOpen} animationType="slide" onRequestClose={() => setNoticeBoardOpen(false)}>
           <View style={[styles.hBoardWrap, { backgroundColor: bgc('#FFFFFF') }]}>
@@ -5036,13 +5479,40 @@ export default function App() {
         {/* 일정 추가 */}
         <Modal visible={scheduleModalOpen} transparent animationType="fade" onRequestClose={() => setScheduleModalOpen(false)}>
           <KeyboardAvoidingView style={styles.hModalBackdrop} behavior="padding">
-            <View style={styles.hModalCard}>
+            <View style={[styles.hModalCard, { maxHeight: '92%' }]}>
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={styles.hModalTitle}>일정 추가</Text>
               <TextInput style={styles.hInput} value={schedDraft.title} onChangeText={(v) => setSchedDraft({ ...schedDraft, title: v })} placeholder="일정 이름 (예: 가족 모임)" placeholderTextColor="#A1A1AA" />
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <TextInput style={[styles.hInput, { flex: 1.3 }]} value={schedDraft.date} onChangeText={(v) => setSchedDraft({ ...schedDraft, date: v })} placeholder="2026-12-07" placeholderTextColor="#A1A1AA" keyboardType="numbers-and-punctuation" />
-                <TextInput style={[styles.hInput, { flex: 1 }]} value={schedDraft.time} onChangeText={(v) => setSchedDraft({ ...schedDraft, time: v })} placeholder="18:00" placeholderTextColor="#A1A1AA" keyboardType="numbers-and-punctuation" />
+              {/* 날짜: 누르면 작은 달력이 펼쳐짐 */}
+              <TouchableOpacity style={styles.hDateBtn} onPress={() => setSchedCalOpen(!schedCalOpen)} activeOpacity={0.8}>
+                <Ionicons name="calendar-outline" size={17} color="#52525B" />
+                <Text style={[styles.hDateBtnText, !schedDraft.start && { color: '#A1A1AA' }]}>{schedDraftDateText()}</Text>
+                <Ionicons name={schedCalOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#A1A1AA" />
+              </TouchableOpacity>
+              {schedCalOpen ? renderSchedCalendar() : null}
+              {/* 시간: 버튼으로 고르기 */}
+              <Text style={styles.hFieldLabel}>시간 (선택)</Text>
+              <View style={styles.hTimeRow}>
+                {SCHED_TIMES.map(([label]) => (
+                  <TouchableOpacity
+                    key={label}
+                    style={[styles.hTimeChip, schedDraft.timeSel === label && styles.hTimeChipOn]}
+                    onPress={() => setSchedDraft({ ...schedDraft, timeSel: label })}
+                  >
+                    <Text style={[styles.hTimeChipText, schedDraft.timeSel === label && { color: '#FFFFFF' }]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
+              {schedDraft.timeSel === '직접 입력' ? (
+                <TextInput
+                  style={styles.hInput}
+                  value={schedDraft.customTime}
+                  onChangeText={(v) => setSchedDraft({ ...schedDraft, customTime: v })}
+                  placeholder="18:30"
+                  placeholderTextColor="#A1A1AA"
+                  keyboardType="numbers-and-punctuation"
+                />
+              ) : null}
               <TextInput style={styles.hInput} value={schedDraft.place} onChangeText={(v) => setSchedDraft({ ...schedDraft, place: v })} placeholder="장소 (선택)" placeholderTextColor="#A1A1AA" />
               <TouchableOpacity style={styles.hMainToggle} onPress={() => setSchedDraft({ ...schedDraft, isMain: !schedDraft.isMain })}>
                 <Ionicons name={schedDraft.isMain ? 'star' : 'star-outline'} size={18} color="#3F3F46" />
@@ -5056,6 +5526,7 @@ export default function App() {
                   <Text style={styles.hBtnDarkText}>저장</Text>
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
           </KeyboardAvoidingView>
         </Modal>
@@ -7955,6 +8426,25 @@ const styles = themedStyles({
   hDestDetailCity: { fontSize: 15, fontWeight: '700', color: '#18181B' },
   hDestDetailBody: { fontSize: 12.5, color: '#3F3F46', lineHeight: 20, marginTop: 5 },
   hDestSign: { fontSize: 11, color: '#A1A1AA', textAlign: 'right', marginTop: 6 },
+  tdHeroShade: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 18, paddingVertical: 14, backgroundColor: 'rgba(0,0,0,0.35)' },
+  tdHeroRegion: { fontSize: 11, color: '#EEEEEE', marginBottom: 2 },
+  tdHeroCity: { fontSize: 26, fontWeight: '800', color: '#FFFFFF' },
+  tdHeroTitle: { fontSize: 13, color: '#EEEEEE', marginTop: 2 },
+  tdRoundBtn: { position: 'absolute', top: 14, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.88)', alignItems: 'center', justifyContent: 'center' },
+  tdCredit: { fontSize: 10, color: '#A1A1AA', marginTop: 4 },
+  tdChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, backgroundColor: 'rgba(24,24,27,0.07)' },
+  tdChipText: { fontSize: 11, color: '#52525B' },
+  tdH: { fontSize: 17, fontWeight: '700', color: '#18181B', marginBottom: 6, marginTop: 2 },
+  tdBody: { fontSize: 15, lineHeight: 27, color: '#27272A', marginBottom: 16 },
+  tdTipBox: { backgroundColor: 'rgba(24,24,27,0.05)', borderRadius: 12, padding: 14, marginBottom: 16 },
+  tdTipTitle: { fontSize: 13, fontWeight: '700', color: '#18181B', marginBottom: 6 },
+  tdTipText: { fontSize: 13, lineHeight: 22, color: '#52525B' },
+  tdFlightRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
+  tdFlightPrice: { fontSize: 13, fontWeight: '700', color: '#18181B' },
+  tdSign: { fontSize: 13, color: '#71717A', textAlign: 'right', marginBottom: 8 },
+  tdBottomBar: { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: 'rgba(24,24,27,0.08)', backgroundColor: '#FFFFFF' },
+  tdBottomBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 11, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)' },
+  tdBottomText: { fontSize: 13, fontWeight: '600', color: '#3F3F46' },
   hSegWrap: { flexDirection: 'row', marginLeft: 8, padding: 2, borderRadius: 8, backgroundColor: 'rgba(24,24,27,0.06)' },
   hSeg: { paddingHorizontal: 9, paddingVertical: 2, borderRadius: 7 },
   hSegOn: { backgroundColor: 'rgba(24,24,27,0.78)' },
@@ -7985,6 +8475,29 @@ const styles = themedStyles({
     borderWidth: 1, borderColor: '#E4E4E7', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     fontSize: 14, color: '#18181B', marginBottom: 8,
   },
+  hDateBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: '#E4E4E7',
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, marginBottom: 8,
+  },
+  hDateBtnText: { flex: 1, fontSize: 14, color: '#18181B' },
+  hCal: { borderWidth: 1, borderColor: '#E4E4E7', borderRadius: 14, padding: 10, marginBottom: 10 },
+  hCalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, paddingHorizontal: 4 },
+  hCalTitle: { fontSize: 14, fontWeight: '700', color: '#18181B' },
+  hCalRow: { flexDirection: 'row' },
+  hCalDow: { flex: 1, textAlign: 'center', fontSize: 11, color: '#A1A1AA', paddingVertical: 3 },
+  hCalCell: { flex: 1, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
+  hCalIn: { backgroundColor: 'rgba(24,24,27,0.10)', borderRadius: 0 },
+  hCalEdge: { backgroundColor: 'rgba(24,24,27,0.78)' },
+  hCalToday: { borderWidth: 1, borderColor: 'rgba(24,24,27,0.35)' },
+  hCalDay: { fontSize: 13, color: '#18181B' },
+  hCalFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  hCalOk: { backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
+  hCalOkText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  hFieldLabel: { fontSize: 12, color: '#71717A', marginBottom: 5 },
+  hTimeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  hTimeChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(24,24,27,0.06)' },
+  hTimeChipOn: { backgroundColor: 'rgba(24,24,27,0.78)' },
+  hTimeChipText: { fontSize: 12, color: '#52525B', fontWeight: '700' },
   hMainToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, marginBottom: 4 },
   hModalBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
   hBtnLight: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)' },
