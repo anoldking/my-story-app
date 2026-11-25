@@ -5823,6 +5823,27 @@ export default function App() {
               </View>
             )}
           </View>
+
+          {/* 맨 아래: 저작권 · 앱 버전 · 출처 */}
+          <View style={styles.appFooter}>
+            <Text style={styles.appFooterLogo}>me</Text>
+            <Text style={styles.appFooterText}>© 2026 anoldking. All rights reserved.</Text>
+            {currentVersionCode() ? (
+              updateInfo ? (
+                <Text style={styles.appFooterText}>
+                  버전 {currentVersionCode()} ({Constants?.expoConfig?.version || '1.0.0'}) ·{' '}
+                  <Text style={styles.appFooterLink} onPress={openStorePage}>새 버전 {updateInfo.latest} 업데이트 ›</Text>
+                </Text>
+              ) : (
+                <Text style={styles.appFooterText}>
+                  버전 {currentVersionCode()} ({Constants?.expoConfig?.version || '1.0.0'}) · 최신 버전이에요
+                </Text>
+              )
+            ) : (
+              <Text style={styles.appFooterText}>버전 {Constants?.expoConfig?.version || '1.0.0'} (테스트)</Text>
+            )}
+            <Text style={styles.appFooterCredit}>사진 Unsplash · 항공권 정보 Travelpayouts</Text>
+          </View>
         </ScrollView>
 
         {/* 추천 여행지 전체 화면 글 */}
@@ -8930,6 +8951,11 @@ const styles = themedStyles({
   hCalFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   hCalOk: { backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
   hCalOkText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  appFooter: { alignItems: 'center', marginTop: 14, paddingTop: 14, paddingBottom: 18, borderTopWidth: 1, borderTopColor: 'rgba(24,24,27,0.08)' },
+  appFooterLogo: { fontSize: 13, fontWeight: '800', color: '#A1A1AA', letterSpacing: -0.5, marginBottom: 4 },
+  appFooterText: { fontSize: 11, color: '#A1A1AA', lineHeight: 18, textAlign: 'center' },
+  appFooterLink: { fontSize: 11, color: '#3F3F46', fontWeight: '700', textDecorationLine: 'underline' },
+  appFooterCredit: { fontSize: 10, color: '#C4C4C8', lineHeight: 17, marginTop: 2, textAlign: 'center' },
   updBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 6, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.07)' },
   updBannerText: { flex: 1, fontSize: 12, color: '#18181B' },
   updBannerBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#3F3F46' },
