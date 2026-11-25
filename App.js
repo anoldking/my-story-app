@@ -275,6 +275,21 @@ const AIRLINE_KO = {
   TR: '스쿠트', CX: '캐세이퍼시픽', UO: '홍콩익스프레스', HX: '홍콩항공', MU: '중국동방항공', CA: '중국국제항공',
   CZ: '중국남방항공', '9C': '춘추항공', MH: '말레이시아항공', AK: '에어아시아', D7: '에어아시아X', OD: '바틱에어',
 };
+// ---- 앱 업데이트 알림 ----
+const STORE_PKG = 'com.anoldking.mystoryapp';
+const UPDATE_SKIP_KEY = 'update_prompt_skip_v1'; // '나중에' 누른 버전
+const UPDATE_BANNER_KEY = 'update_banner_hide_v1'; // 홈 띠 ✕ 누른 버전
+// 지금 폰에 깔린 버전 번호 (플레이스토어 빌드에만 있음, APK 빌드는 null)
+const currentVersionCode = () => {
+  const v = Constants?.expoConfig?.android?.versionCode;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+const openStorePage = () => {
+  Linking.openURL(`market://details?id=${STORE_PKG}`).catch(() => {
+    Linking.openURL(`https://play.google.com/store/apps/details?id=${STORE_PKG}`).catch(() => {});
+  });
+};
 const airlineName = (code) => (code ? AIRLINE_KO[code] || code : '');
 // 날짜 → 'YYYY-MM-DD'
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -2855,6 +2870,38 @@ export default function App() {
   const [travelOpenCity, setTravelOpenCity] = useState(null); // 눌러서 펼친 여행지
   const [travelDetail, setTravelDetail] = useState(null); // 전체 화면으로 연 여행지
   const [destLikes, setDestLikes] = useState([]); // [{ city, user_id }] '가고 싶어요'
+  // 앱 업데이트 알림
+  const [updateInfo, setUpdateInfo] = useState(null); // { latest, force, notes }
+  const [updatePromptOpen, setUpdatePromptOpen] = useState(false);
+  const [updateBannerOn, setUpdateBannerOn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      const cur = currentVersionCode();
+      if (!cur || !supabase) return;
+      try {
+        const { data, error } = await supabase.from('app_version').select('latest_code, force, notes').eq('id', 1).maybeSingle();
+        if (!alive || error || !data) return;
+        const latest = Number(data.latest_code) || 0;
+        if (latest <= cur) {
+          setUpdateInfo(null);
+          setUpdatePromptOpen(false);
+          setUpdateBannerOn(false);
+          return;
+        }
+        const info = { current: cur, latest, force: !!data.force, notes: data.notes || '' };
+        setUpdateInfo(info);
+        const skipped = await AsyncStorage.getItem(UPDATE_SKIP_KEY);
+        const bannerHidden = await AsyncStorage.getItem(UPDATE_BANNER_KEY);
+        if (!alive) return;
+        if (info.force || String(skipped) !== String(latest)) setUpdatePromptOpen(true);
+        setUpdateBannerOn(String(bannerHidden) !== String(latest));
+      } catch {}
+    };
+    check();
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') check(); });
+    return () => { alive = false; sub.remove(); };
+  }, []);
   // 항공권 날짜 변경
   const [flightRange, setFlightRange] = useState({ start: null, end: null }); // 적용된 날짜 (없으면 '가장 싼 날')
   const [flightDraft, setFlightDraft] = useState({ start: null, end: null }); // 달력에서 고르는 중
@@ -4750,6 +4797,71 @@ export default function App() {
           label={bgmTabLabel}
         />
       ) : null}
+
+      {/* 새 버전 알림 띠 */}
+      {updateInfo && updateBannerOn ? (
+        <View style={styles.updBanner}>
+          <Ionicons name="download-outline" size={16} color="#3F3F46" />
+          <Text style={styles.updBannerText} numberOfLines={1}>새 버전 {updateInfo.latest}이(가) 있어요</Text>
+          <TouchableOpacity style={styles.updBannerBtn} onPress={openStorePage}>
+            <Text style={styles.updBannerBtnText}>업데이트</Text>
+          </TouchableOpacity>
+          {!updateInfo.force ? (
+            <TouchableOpacity
+              hitSlop={10}
+              onPress={() => {
+                setUpdateBannerOn(false);
+                AsyncStorage.setItem(UPDATE_BANNER_KEY, String(updateInfo.latest)).catch(() => {});
+              }}
+            >
+              <Ionicons name="close" size={16} color="#A1A1AA" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* 새 버전 알림 창 */}
+      <Modal
+        visible={!!updateInfo && updatePromptOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { if (updateInfo && !updateInfo.force) setUpdatePromptOpen(false); }}
+      >
+        <View style={styles.updDim}>
+          {updateInfo ? (
+            <View style={styles.updCard}>
+              <View style={styles.updIcon}>
+                <Ionicons name="refresh" size={24} color="#3F3F46" />
+              </View>
+              <Text style={styles.updTitle}>새 버전이 나왔어요</Text>
+              <Text style={styles.updSub}>지금 버전 {updateInfo.current} → 새 버전 {updateInfo.latest}</Text>
+              {updateInfo.notes ? (
+                <View style={styles.updNotes}>
+                  {String(updateInfo.notes).split(/\n|,/).map((t) => t.trim()).filter(Boolean).map((t, i) => (
+                    <Text key={i} style={styles.updNoteText}>· {t}</Text>
+                  ))}
+                </View>
+              ) : null}
+              <TouchableOpacity style={styles.updMainBtn} onPress={openStorePage}>
+                <Text style={styles.updMainBtnText}>지금 업데이트</Text>
+              </TouchableOpacity>
+              {!updateInfo.force ? (
+                <TouchableOpacity
+                  style={{ paddingVertical: 10, alignItems: 'center' }}
+                  onPress={() => {
+                    setUpdatePromptOpen(false);
+                    AsyncStorage.setItem(UPDATE_SKIP_KEY, String(updateInfo.latest)).catch(() => {});
+                  }}
+                >
+                  <Text style={styles.updLater}>나중에</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={[styles.updLater, { marginTop: 10 }]}>이번 업데이트는 꼭 필요해요</Text>
+              )}
+            </View>
+          ) : null}
+        </View>
+      </Modal>
 
     </View>
   );
@@ -8783,6 +8895,20 @@ const styles = themedStyles({
   hCalFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   hCalOk: { backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
   hCalOkText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  updBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 6, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.07)' },
+  updBannerText: { flex: 1, fontSize: 12, color: '#18181B' },
+  updBannerBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#3F3F46' },
+  updBannerBtnText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  updDim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  updCard: { width: '100%', maxWidth: 320, backgroundColor: '#FFFFFF', borderRadius: 18, paddingTop: 20, paddingHorizontal: 18, paddingBottom: 8, alignItems: 'center' },
+  updIcon: { width: 52, height: 52, borderRadius: 14, backgroundColor: 'rgba(24,24,27,0.07)', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  updTitle: { fontSize: 17, fontWeight: '700', color: '#18181B', marginBottom: 6 },
+  updSub: { fontSize: 13, color: '#52525B', marginBottom: 10 },
+  updNotes: { alignSelf: 'stretch', backgroundColor: 'rgba(24,24,27,0.05)', borderRadius: 10, paddingVertical: 9, paddingHorizontal: 11, marginBottom: 14 },
+  updNoteText: { fontSize: 12, color: '#52525B', lineHeight: 20 },
+  updMainBtn: { alignSelf: 'stretch', alignItems: 'center', paddingVertical: 12, borderRadius: 11, backgroundColor: '#3F3F46' },
+  updMainBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  updLater: { fontSize: 13, color: '#71717A', textAlign: 'center', paddingBottom: 6 },
   fDateBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)', marginBottom: 8 },
   fDateText: { flex: 1, fontSize: 13, color: '#18181B' },
   fCalBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
