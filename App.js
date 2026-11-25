@@ -4255,6 +4255,7 @@ export default function App() {
   const bgmTabLabel = (() => {
     if (mainTab === 'home') return '홈 BGM이 재생되고 있습니다.';
     if (mainTab === 'music') return '음악 저장소에서 재생되고 있습니다.';
+    if (mainTab === 'group') return '단체방 화면에서도 BGM이 재생되고 있습니다.';
     const name = { posts: '게시글', chats: '1:1', friends: '회원검색', story: '내 프로필' }[mainTab] || '이';
     return `${name} 화면에서도 BGM이 재생되고 있습니다.`;
   })();
@@ -5307,21 +5308,6 @@ export default function App() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.igStoryBarContent}
       >
-        {/* 전체: 모든 게시글 보기 */}
-        <TouchableOpacity
-          style={styles.igStoryItem}
-          onPress={() => setPostsMemberId(null)}
-        >
-          <View style={styles.igStoryAvatarWrap}>
-            <View style={[styles.igStoryRing, { marginBottom: 0, borderColor: 'transparent' }, !postsMemberId && styles.igStoryRingSel]}>
-              <View style={[styles.igStoryAvatar, styles.postsAllAvatar]}>
-                <Ionicons name="grid-outline" size={20} color="#52525B" />
-              </View>
-            </View>
-          </View>
-          <Text style={[styles.igStoryName, !postsMemberId && { fontWeight: '700', color: '#18181B' }]} numberOfLines={1}>전체</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={styles.igStoryItem}
           onPress={() => {
@@ -6466,7 +6452,7 @@ export default function App() {
                 })}
                 {/* 단체방 (겹친 말풍선) */}
                 {Tab({
-                  on: showGroupChat,
+                  on: mainTab === 'group' && !showGroupChat,
                   // 단체방: 말풍선 하나 + 뒤에 옅은 음영 말풍선
                   custom: (on) => (
                     <View style={{ width: 23, height: 21 }}>
@@ -6475,7 +6461,7 @@ export default function App() {
                     </View>
                   ),
                   badge: groupUnreadTotal,
-                  onPress: goTab(() => setShowGroupChat(true)),
+                  onPress: goTab(() => { fetchGroupUnreadTotal(session.user.id); setMainTab('group'); }),
                 })}
                 {/* 음악 저장소 · 노래 듣기 (음표) */}
                 {Tab({
@@ -6628,6 +6614,16 @@ export default function App() {
 
           {mainTab === 'friends' && renderFriendsTabScreen()}
           {mainTab === 'music' && renderMusicScreen()}
+          {/* 단체방: 1:1처럼 기본 틀 안에 목록, 방에 들어가면 위로 올라오는 창 */}
+          {mainTab === 'group' && session ? (
+            <GroupChat
+              embedded
+              supabase={supabase}
+              me={session.user.id}
+              onClose={() => setMainTab('home')}
+              onRoomClosed={() => fetchGroupUnreadTotal(session.user.id)}
+            />
+          ) : null}
           {mainTab === 'chats' && renderChatsTabScreen()}
           {mainTab === 'story' && (
             <FlatList

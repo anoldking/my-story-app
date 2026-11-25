@@ -47,7 +47,7 @@ function makeId() {
   });
 }
 
-function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
+function GroupChatInner({ supabase, me, onClose, onOpenRoom, embedded, onRoomClosed }) {
   const [mode, setMode] = useState('list');
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -213,19 +213,19 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
     loadRooms();
   };
 
-  if (activeRoom) {
-    return (
+  // 방 안쪽 화면 (방에 들어갔을 때)
+  const closeRoom = (quiet) => { setActiveRoom(null); loadRooms(quiet); if (onRoomClosed) onRoomClosed(); };
+  const roomView = activeRoom ? (
       <GroupRoom
       supabase={supabase}
       me={me}
       room={activeRoom}
-      onBack={() => { setActiveRoom(null); loadRooms(true); }}
-      onLeft={() => { setActiveRoom(null); loadRooms(); }}
+      onBack={() => closeRoom(true)}
+      onLeft={() => closeRoom(false)}
       />
-    );
-  }
-  if (mode === 'create') {
-    return (
+  ) : null;
+  // 새 단체방 만들기 화면
+  const createView = mode === 'create' ? (
       <SafeAreaView style={s.wrap}>
       <View style={s.header}>
       <TouchableOpacity onPress={() => setMode('list')}>
@@ -271,13 +271,18 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
       }}
       />
       </SafeAreaView>
-    );
+  ) : null;
+
+  // 예전 방식(전체 화면 창)일 때는 방/만들기 화면을 그대로 보여줌
+  if (!embedded) {
+    if (roomView) return roomView;
+    if (createView) return createView;
   }
 
-  return (
-    <SafeAreaView style={s.wrap}>
+  const listView = (
+    <SafeAreaView style={embedded ? s.wrapEmbedded : s.wrap}>
     {/* 1:1 화면과 같은 모양의 머리줄: [단체방][채팅방 나가기] ........ [＋][✕] */}
-    <View style={s.ktHeader}>
+    <View style={[s.ktHeader, embedded && s.ktHeaderEmbedded]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <Text style={s.ktPageTitle}>단체방</Text>
         {rooms.length > 0 ? (
@@ -304,9 +309,15 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
           <TouchableOpacity style={s.ktIconBtn} onPress={startCreate} hitSlop={6}>
             <Ionicons name="add-outline" size={24} color="#333333" />
           </TouchableOpacity>
-          <TouchableOpacity style={s.ktIconBtn} onPress={onClose} hitSlop={6}>
-            <Ionicons name="close-outline" size={24} color="#333333" />
-          </TouchableOpacity>
+          {embedded ? (
+            <TouchableOpacity style={s.ktIconBtn} onPress={() => loadRooms(true)} hitSlop={6}>
+              <Ionicons name="refresh-outline" size={22} color="#333333" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={s.ktIconBtn} onPress={onClose} hitSlop={6}>
+              <Ionicons name="close-outline" size={24} color="#333333" />
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
@@ -317,7 +328,7 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
         data={rooms}
         keyExtractor={(r) => r.id}
         extraData={{ leaveSelectMode, leaveSelected, roomInfo, unreadByRoom }}
-        contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: embedded ? 0 : 14, paddingTop: 6, paddingBottom: 40 }}
         ListEmptyComponent={<Text style={s.empty}>아직 단체방이 없어요.{'\n'}오른쪽 위 ＋를 눌러 보세요.</Text>}
         renderItem={({ item }) => {
             const info = roomInfo[item.id];
@@ -369,10 +380,27 @@ function GroupChatInner({ supabase, me, onClose, onOpenRoom }) {
     )}
     </SafeAreaView>
   );
+
+  if (!embedded) return listView;
+
+  // 기본 틀 안에 들어가는 방식: 목록은 그대로, 방/만들기는 위로 올라오는 창
+  return (
+    <View style={{ flex: 1 }}>
+      {listView}
+      <Modal visible={!!activeRoom} animationType="slide" onRequestClose={() => closeRoom(true)}>
+        {roomView}
+      </Modal>
+      <Modal visible={mode === 'create'} animationType="slide" onRequestClose={() => setMode('list')}>
+        {createView}
+      </Modal>
+    </View>
+  );
 }
 
 const s = themedStyles({
     wrap: { flex: 1, backgroundColor: '#fff', paddingTop: 30 },
+    wrapEmbedded: { flex: 1, backgroundColor: '#fff' },
+    ktHeaderEmbedded: { paddingHorizontal: 0, paddingTop: 8 },
     header: {
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
       paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: '#eee',
@@ -428,6 +456,8 @@ const s = themedStyles({
     countText: { fontSize: 12, color: '#52525B', fontWeight: '700', marginLeft: 3 },
 });
 export default function GroupChat(props) {
+  // embedded: 앱 기본 틀(왼쪽 메뉴 · 로고 · BGM) 안에 들어가는 방식
+  if (props.embedded) return <GroupChatInner {...props} />;
   return (
     <Modal visible animationType="slide" onRequestClose={props.onClose}>
     <GroupChatInner {...props} />
