@@ -47,21 +47,68 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// 홈 '추천 여행지' 목록 (매일 무작위 2곳). iata = 공항 코드
-const TRAVEL_DESTS = [
-  { region: '일본', city: '오사카', iata: 'KIX', note: '도톤보리 먹방' },
-  { region: '일본', city: '도쿄', iata: 'NRT', note: '쇼핑과 야경' },
-  { region: '일본', city: '후쿠오카', iata: 'FUK', note: '가까운 온천 여행' },
-  { region: '일본', city: '삿포로', iata: 'CTS', note: '겨울 눈축제' },
-  { region: '일본', city: '오키나와', iata: 'OKA', note: '겨울에도 따뜻한 바다' },
-  { region: '일본', city: '나고야', iata: 'NGO', note: '맛집과 성 구경' },
-  { region: '동남아', city: '다낭', iata: 'DAD', note: '따뜻한 가족 휴양' },
-  { region: '동남아', city: '방콕', iata: 'BKK', note: '야시장 투어' },
-  { region: '동남아', city: '세부', iata: 'CEB', note: '바다 스노클링' },
-  { region: '동남아', city: '나트랑', iata: 'CXR', note: '가족 리조트' },
-  { region: '동남아', city: '싱가포르', iata: 'SIN', note: '깨끗한 도시 여행' },
-  { region: '동남아', city: '마닐라', iata: 'MNL', note: '가까운 필리핀' },
+// 홈 '추천 여행지' (국내 5곳 · 해외 10곳). 매일 2곳 무작위, 가기 좋은 달(months)이면 더 자주 뽑힘
+const TRAVEL_SIGN = '아놀드킹의 추천';
+const TRAVEL_DOMESTIC = [
+  { region: '제주도', city: '제주', iata: 'CJU', flight: '김포 약 1시간 10분', months: [4, 5, 6, 9, 10],
+    title: '바다 보고 싶을 때 제일 먼저 떠오르는 곳',
+    body: '렌터카 하나 빌려서 해안 도로 따라 천천히 달려 보세요. 창문만 열어도 여행 온 기분이 나요. 아침 일찍 성산일출봉에 올라 해 뜨는 걸 보고, 오후엔 함덕이나 협재 바다에서 발 한번 담가 보세요. 비 오는 날도 걱정 없어요. 실내 박물관이랑 카페가 많아서 아이들도 지루해하지 않아요. 봄가을 주말엔 렌터카가 금방 동나니까 미리 잡아 두세요!' },
+  { region: '경상도', city: '부산', months: [5, 6, 7, 8, 9, 10],
+    title: '바다, 야경, 먹거리. 셋 다 챙기고 싶다면',
+    body: '광안대교 불 켜지는 시간에 광안리 해변에 앉아 있으면 그냥 좋아요. 낮에는 감천문화마을 골목을 걸어 보고, 자갈치시장이랑 국제시장에서 어묵이랑 씨앗호떡 꼭 드셔 보세요. 해운대 해변열차는 아이들이 정말 좋아할 거예요. 대중교통이 잘 돼 있어서 차 없이 다니기도 편해요.' },
+  { region: '강원도', city: '강릉', months: [1, 6, 7, 8, 9],
+    title: '훌쩍 떠나는 동해 바다 여행',
+    body: '마음먹으면 바로 다녀올 수 있는 바다예요. 안목해변 커피 거리에서 바다 보면서 커피 한잔하면 그걸로 충분해요. 경포호 한 바퀴 산책하고, 시간 되면 정동진에서 해돋이도 보세요. 여름 성수기엔 해변 근처 주차가 정말 힘드니 참고하세요.' },
+  { region: '경상도', city: '경주', months: [3, 4, 10, 11],
+    title: '아이와 함께 걷는 살아있는 역사책',
+    body: '도시 전체가 박물관이라 걷기만 해도 공부가 돼요. 불국사랑 석굴암은 꼭 들르고, 밤에는 동궁과 월지 야경 보러 가세요. 물에 비친 모습이 정말 예뻐요. 자전거 빌려서 대릉원이랑 첨성대 쪽 돌면 아이들도 신나 해요. 봄 벚꽃, 가을 단풍 때가 제일 예뻐요.' },
+  { region: '전라도', city: '여수', months: [4, 5, 9, 10],
+    title: '밤바다 노래가 왜 나왔는지 알게 되는 곳',
+    body: '해상 케이블카 타고 바다 위를 건너 보세요. 해 질 무렵 타면 더 좋아요. 밤에는 돌산공원에서 내려다보는 밤바다가 진짜예요. 게장 백반이랑 갓김치는 빼먹지 마시고요. 하루 더 시간 내서 순천만 국가정원까지 묶으면 알찬 1박 2일이 돼요.' },
 ];
+const TRAVEL_OVERSEAS = [
+  { region: '일본', city: '오사카', iata: 'KIX', flight: '약 1시간 45분', months: [3, 4, 5, 10, 11],
+    title: '먹으러 가는 여행, 여기면 실패 없어요',
+    body: '도톤보리 골목에서 타코야키, 오코노미야키 하나씩 사 먹으면서 걷는 게 오사카 여행의 반이에요. 아이들 있으면 유니버설 스튜디오는 하루 통째로 잡으세요. 교토는 전철로 한 시간이라 하루쯤 다녀오기 좋아요. 간사이 교통 패스 하나 사 두면 이동이 정말 편해요.' },
+  { region: '일본', city: '후쿠오카', iata: 'FUK', flight: '약 1시간 20분', months: [3, 4, 5, 10, 11],
+    title: '비행기 한 시간 반, 주말에 다녀오는 일본',
+    body: '공항에서 시내까지 지하철로 10분이라 도착하자마자 바로 여행 시작이에요. 저녁엔 나카스 포장마차에서 라멘 한 그릇, 다음 날은 유후인 온천 마을로 가 보세요. 짧은 일정이라도 온천 료칸 하루는 꼭 넣으셨으면 해요. 피로가 싹 풀려요.' },
+  { region: '일본', city: '삿포로', iata: 'CTS', flight: '약 2시간 50분', months: [12, 1, 2, 7, 8],
+    title: '겨울에 가야 진짜 삿포로',
+    body: '눈이 펑펑 내리는 거리를 걷다 보면 동화 속에 들어온 것 같아요. 2월 초쯤 눈축제 때 오도리 공원 눈 조각은 정말 볼 만해요. 오타루 운하는 저녁에 가야 예쁘고요. 추운 날엔 수프카레랑 징기스칸으로 몸 녹이세요. 미끄럼 방지 신발은 필수예요!' },
+  { region: '일본', city: '오키나와', iata: 'OKA', flight: '약 2시간 20분', months: [4, 5, 6, 10, 11, 12],
+    title: '일본에서 만나는 에메랄드빛 바다',
+    body: '렌터카 빌려서 해안 도로 달리는 게 오키나와 여행의 맛이에요. 고우리 대교 건널 때 바다 색 보면 감탄이 나와요. 츄라우미 수족관 고래상어는 아이들이 넋 놓고 봐요. 8~9월은 태풍이 잦으니 피하시고, 운전하실 분은 국제운전면허증 챙기세요.' },
+  { region: '대만', city: '타이베이', iata: 'TPE', flight: '약 2시간 30분', months: [3, 4, 10, 11, 12],
+    title: '야시장 좋아하면 무조건 여기',
+    body: '저녁이 되면 야시장 가는 게 하루 일과가 돼요. 스린 야시장에서 이것저것 맛보고, 지우펀 골목은 해 질 무렵 가야 등불 켜진 모습이 예뻐요. 이지카드 하나면 지하철, 버스, 편의점까지 다 돼서 정말 편해요. 가깝고 물가도 부담 없어서 가족 여행으로 딱이에요.' },
+  { region: '베트남', city: '다낭', iata: 'DAD', flight: '약 4시간 30분', months: [2, 3, 4, 5, 6, 7, 8],
+    title: '아무것도 안 해도 좋은 휴양 여행',
+    body: '리조트 수영장이랑 바다만 왔다 갔다 해도 행복한 곳이에요. 미케 해변은 넓고 깨끗해서 아이들 놀기 좋고, 저녁엔 호이안 옛 마을에 가서 등불 거리를 걸어 보세요. 바나힐 케이블카도 한번 타 볼 만해요. 10~12월은 비가 많으니 이때는 피하시는 게 좋아요.' },
+  { region: '베트남', city: '나트랑', iata: 'CXR', flight: '약 5시간', months: [1, 2, 3, 4, 5, 6, 7, 8],
+    title: '다낭보다 조용한 바다를 원한다면',
+    body: '사람이 덜 붐벼서 여유 있게 쉬기 좋아요. 섬에 있는 빈원더스 놀이공원은 아이들이 정말 좋아하고, 머드 온천은 어른들이 더 좋아해요. 해변 식당에서 먹는 해산물도 싸고 맛있어요. 공항에서 시내까지 40분쯤 걸리니 이동 계획은 미리 세워 두세요.' },
+  { region: '태국', city: '방콕', iata: 'BKK', flight: '약 5시간 50분', months: [11, 12, 1, 2],
+    title: '볼거리, 먹거리, 쇼핑까지 다 되는 도시',
+    body: '왕궁이랑 왓아룬은 사진으로 보는 것보다 훨씬 화려해요. 주말이면 짜뚜짝 시장 구경 꼭 해 보세요. 저녁엔 강 위 크루즈 타면서 야경 보는 것도 추천해요. 더운 낮엔 시원한 쇼핑몰로 피신하면 돼요. 사원 갈 땐 어깨랑 무릎 가리는 옷 입는 거 잊지 마세요.' },
+  { region: '필리핀', city: '세부', iata: 'CEB', flight: '약 4시간 40분', months: [12, 1, 2, 3, 4, 5],
+    title: '바닷속이 궁금하다면 여기',
+    body: '호핑 투어 나가서 스노클링 하면 바로 눈앞에 물고기 떼가 지나가요. 아이들한테 평생 기억에 남을 경험이에요. 막탄 섬 리조트에 묵으면 수영장이랑 바다를 오가며 하루가 금방 가요. 래시가드랑 아쿠아슈즈는 꼭 챙겨 가세요.' },
+  { region: '싱가포르', city: '싱가포르', iata: 'SIN', flight: '약 6시간 20분', months: [2, 3, 4, 7, 8],
+    title: '아이 데리고 편하게 다니기 좋은 도시',
+    body: '깨끗하고 안전해서 마음 놓고 다닐 수 있어요. 밤에 가든스 바이 더 베이 나무 조명 쇼는 꼭 보세요. 센토사 섬에서 하루 놀고, 저녁은 호커센터에서 여러 가지 시켜서 나눠 먹으면 재밌어요. 길에서 껌 씹거나 쓰레기 버리면 벌금이 있으니 조심하세요.' },
+];
+// 이번 달이 가기 좋은 곳인지
+const isTravelSeason = (d) => (d.months || []).includes(new Date().getMonth() + 1);
+// 날마다 바뀌는 무작위 뽑기 (가기 좋은 달이면 2배 더 잘 뽑힘)
+const weightedDailyPick = (arr, count, seed) => {
+  const frac = (x) => x - Math.floor(x);
+  return arr
+    .map((x, i) => ({ x, k: frac(Math.abs(Math.sin(seed * 9301 + i * 49297)) * 1000) * (isTravelSeason(x) ? 2 : 1) }))
+    .sort((p, q) => q.k - p.k)
+    .slice(0, count)
+    .map((o) => o.x);
+};
 // 날짜(YYYYMMDD)로 매일 바뀌는 순서 만들기
 const dayKeyNum = () => {
   const d = new Date();
@@ -1656,6 +1703,9 @@ export default function App() {
   // ---- 배경음악 ----
   const soundRef = useRef(null);
   const bgmPlayingRef = useRef(false);
+  // 음악 저장소: 연속 재생 목록과 반복 설정
+  const musicQueueRef = useRef([]);
+  const musicRepeatRef = useRef(true);
   const bgmListRef = useRef([]);
   const [bgmTrack, setBgmTrack] = useState(null);
   const [bgmPlaying, setBgmPlayingState] = useState(false);
@@ -1696,6 +1746,18 @@ export default function App() {
   };
 
   const bgmNext = async (current) => {
+    // 음악 저장소에서 듣는 중이면 그 목록의 다음 곡
+    const q = musicQueueRef.current || [];
+    const qi = current ? q.findIndex((x) => x.url === current.url) : -1;
+    if (qi >= 0) {
+      let ni = qi + 1;
+      if (ni >= q.length) {
+        if (!musicRepeatRef.current) { setBgmPlaying(false); return; }
+        ni = 0;
+      }
+      await bgmPlay(q[ni]);
+      return;
+    }
     const list = bgmListRef.current || [];
     if (!list.length) return;
     const i = list.findIndex((m) => m.bgm_url === (current && current.url));
@@ -2583,6 +2645,8 @@ export default function App() {
   const [flightPrices, setFlightPrices] = useState([]);
   const [flightFrom, setFlightFrom] = useState('ICN');
   const [travelShuffle, setTravelShuffle] = useState(0);
+  const [travelGroup, setTravelGroup] = useState('dom'); // 'dom' 국내 / 'ovs' 해외
+  const [travelOpenCity, setTravelOpenCity] = useState(null); // 눌러서 펼친 여행지
   const [memberOfDayShuffle, setMemberOfDayShuffle] = useState(0);
   const [homeSaving, setHomeSaving] = useState(false);
 
@@ -3558,6 +3622,34 @@ export default function App() {
   const [bgmLibItems, setBgmLibItems] = useState([]);
   const [bgmLibLoading, setBgmLibLoading] = useState(false);
 
+  // ---- 음악 저장소 (노래 듣기) ----
+  const [musicQuery, setMusicQuery] = useState('');
+  const [musicSel, setMusicSel] = useState({}); // { url: true }
+  const [musicRecShuffle, setMusicRecShuffle] = useState(0);
+  const [musicRepeat, setMusicRepeatState] = useState(true);
+  const [musicLoading, setMusicLoading] = useState(false);
+  const setMusicRepeat = (v) => { musicRepeatRef.current = v; setMusicRepeatState(v); };
+  const fetchMusicLibrary = async () => {
+    setMusicLoading(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from('bgm-library')
+        .list('', { limit: 500, sortBy: { column: 'name', order: 'asc' } });
+      if (error) throw error;
+      const items = (data || [])
+        .filter((f) => f && f.name && /\.(mp3|m4a|wav|aac|ogg)$/i.test(f.name))
+        .map((f) => ({
+          name: f.name,
+          title: f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim(),
+          url: supabase.storage.from('bgm-library').getPublicUrl(f.name).data.publicUrl,
+        }));
+      setBgmLibItems(items);
+    } catch (e) {
+      // 목록을 못 불러오면 빈 목록
+    }
+    setMusicLoading(false);
+  };
+
   const openBgmLibrary = async () => {
     setBgmLibOpen(true);
     setBgmLibLoading(true);
@@ -4162,6 +4254,7 @@ export default function App() {
   // 모든 메뉴 맨 위에 고정: 로고 줄 + 메뉴 팝업 + BGM 재생기
   const bgmTabLabel = (() => {
     if (mainTab === 'home') return '홈 BGM이 재생되고 있습니다.';
+    if (mainTab === 'music') return '음악 저장소에서 재생되고 있습니다.';
     const name = { posts: '게시글', chats: '1:1', friends: '회원검색', story: '내 프로필' }[mainTab] || '이';
     return `${name} 화면에서도 BGM이 재생되고 있습니다.`;
   })();
@@ -4583,7 +4676,9 @@ export default function App() {
     });
 
     // 추천 여행지 2곳 (매일 바뀜) + 같은 곳 항공권
-    const dests = seededPick(TRAVEL_DESTS, 2, dayKey + travelShuffle * 13);
+    const travelList = travelGroup === 'dom' ? TRAVEL_DOMESTIC : TRAVEL_OVERSEAS;
+    const dests = weightedDailyPick(travelList, 2, dayKey + travelShuffle * 13 + (travelGroup === 'dom' ? 0 : 7));
+    const openDest = dests.find((d) => d.city === travelOpenCity) || null;
     const priceOf = (iata) => flightPrices.find((f) => f.origin === flightFrom && f.destination === iata);
 
     // 희망 여행지: 하루 안에 새로 등록된 게 있으면 그것, 아니면 날마다 하나
@@ -4699,63 +4794,96 @@ export default function App() {
             </View>
           </View>
 
-          {/* 추천 여행지 (4%) */}
+          {/* 추천 여행지 (4%): 국내/해외 탭 + 매일 2곳 */}
           <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.04)' }]}>
             <View style={styles.hSecHead}>
-              <Text style={styles.hSecTitle}>추천 여행지</Text>
-              <TouchableOpacity onPress={() => setTravelShuffle(travelShuffle + 1)} hitSlop={8}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={styles.hSecTitle}>추천 여행지</Text>
+                <View style={styles.hSegWrap}>
+                  {[['dom', '국내'], ['ovs', '해외']].map(([key, label]) => (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.hSeg, travelGroup === key && styles.hSegOn]}
+                      onPress={() => { setTravelGroup(key); setTravelOpenCity(null); }}
+                    >
+                      <Text style={[styles.hSegText, travelGroup === key && { color: '#FFFFFF' }]}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => { setTravelShuffle(travelShuffle + 1); setTravelOpenCity(null); }} hitSlop={8}>
                 <Text style={styles.hSecAction}><Ionicons name="refresh" size={11} color="#A1A1AA" /> 다른 곳</Text>
               </TouchableOpacity>
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               {dests.map((d) => (
-                <View key={d.iata} style={{ flex: 1 }}>
-                  <View style={styles.hDestBox}>
-                    <Ionicons name="airplane-outline" size={20} color="#71717A" />
+                <TouchableOpacity
+                  key={d.city}
+                  style={{ flex: 1 }}
+                  activeOpacity={0.8}
+                  onPress={() => setTravelOpenCity(travelOpenCity === d.city ? null : d.city)}
+                >
+                  <View style={[styles.hDestBox, travelOpenCity === d.city && { backgroundColor: 'rgba(24,24,27,0.18)' }]}>
+                    <Ionicons name="image-outline" size={20} color="#71717A" />
                     <View style={styles.hDestRegion}><Text style={styles.hDestRegionText}>{d.region}</Text></View>
+                    {isTravelSeason(d) ? (
+                      <View style={styles.hDestBest}><Text style={styles.hDestBestText}>지금 딱</Text></View>
+                    ) : null}
                   </View>
                   <Text style={styles.hDestCity}>{d.city}</Text>
-                  <Text style={styles.hMuted} numberOfLines={1}>{d.note}</Text>
-                </View>
+                  <Text style={styles.hDestTitle} numberOfLines={1}>{d.title}</Text>
+                  {d.flight ? (
+                    <Text style={styles.hMuted} numberOfLines={1}><Ionicons name="airplane-outline" size={10} color="#A1A1AA" /> {d.flight}</Text>
+                  ) : null}
+                </TouchableOpacity>
               ))}
             </View>
+            {openDest ? (
+              <View style={styles.hDestDetail}>
+                <Text style={styles.hDestDetailCity}>{openDest.city} <Text style={styles.hMuted}>{openDest.region}</Text></Text>
+                <Text style={styles.hDestDetailBody}>{openDest.body}</Text>
+                <Text style={styles.hDestSign}>— {TRAVEL_SIGN}</Text>
+              </View>
+            ) : null}
           </View>
 
-          {/* 추천 여행지 항공권 최저가 (5%) */}
-          <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.05)' }]}>
-            <View style={styles.hSecHead}>
-              <Text style={styles.hSecTitle}>추천 여행지 항공권 최저가</Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
-              {[['ICN', '인천 ICN'], ['PUS', '김해 PUS']].map(([code, label]) => (
-                <TouchableOpacity
-                  key={code}
-                  style={[styles.hChip, flightFrom === code && styles.hChipOn]}
-                  onPress={() => setFlightFrom(code)}
-                >
-                  <Text style={[styles.hChipText, flightFrom === code && { color: '#FFFFFF' }]}>{label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {dests.map((d) => {
-              const fp = priceOf(d.iata);
-              return (
-                <TouchableOpacity key={d.iata} style={styles.hFlightRow} activeOpacity={0.7} onPress={() => openFlightSearch(flightFrom, d.iata)}>
-                  <Text style={styles.hFlightRoute} numberOfLines={1}>
-                    {flightFrom} → {d.city} <Text style={styles.hMuted}>{d.iata}</Text>
-                  </Text>
-                  <View style={styles.hPricePill}>
-                    <Text style={styles.hPriceText}>
-                      {fp && fp.price ? `${Number(fp.price).toLocaleString('ko-KR')}원~` : '최저가 검색 ›'}
+          {/* 추천 여행지 항공권 최저가 (5%): 해외 탭에서만 */}
+          {travelGroup === 'ovs' ? (
+            <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.05)' }]}>
+              <View style={styles.hSecHead}>
+                <Text style={styles.hSecTitle}>추천 여행지 항공권 최저가</Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
+                {[['ICN', '인천 ICN'], ['PUS', '김해 PUS']].map(([code, label]) => (
+                  <TouchableOpacity
+                    key={code}
+                    style={[styles.hChip, flightFrom === code && styles.hChipOn]}
+                    onPress={() => setFlightFrom(code)}
+                  >
+                    <Text style={[styles.hChipText, flightFrom === code && { color: '#FFFFFF' }]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {dests.map((d) => {
+                const fp = priceOf(d.iata);
+                return (
+                  <TouchableOpacity key={d.iata} style={styles.hFlightRow} activeOpacity={0.7} onPress={() => openFlightSearch(flightFrom, d.iata)}>
+                    <Text style={styles.hFlightRoute} numberOfLines={1}>
+                      {flightFrom} → {d.city} <Text style={styles.hMuted}>{d.iata}</Text>
                     </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-            <Text style={[styles.hMuted, { marginTop: 6 }]}>
-              왕복 · 1인 · {flightPrices.length ? '최근 검색 기준' : '누르면 오늘 최저가 검색 화면이 열려요'}
-            </Text>
-          </View>
+                    <View style={styles.hPricePill}>
+                      <Text style={styles.hPriceText}>
+                        {fp && fp.price ? `${Number(fp.price).toLocaleString('ko-KR')}원~` : '최저가 검색 ›'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              <Text style={[styles.hMuted, { marginTop: 6 }]}>
+                왕복 · 1인 · {flightPrices.length ? '최근 검색 기준' : '누르면 오늘 최저가 검색 화면이 열려요'}
+              </Text>
+            </View>
+          ) : null}
 
           {/* 회원 희망 여행지 (6%) */}
           <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.06)' }]}>
@@ -4935,11 +5063,227 @@ export default function App() {
     );
   };
 
+  // ================= 음악 저장소 · 노래 듣기 =================
+  const isKoTitle = (s) => /^[가-힣ㄱ-ㅎ]/.test(String(s || '').trim());
+  // 가나다순 (한글 제목 먼저, 그다음 영어·숫자 제목 ABC순)
+  const musicSorted = [...bgmLibItems].sort((a, b) => {
+    const ka = isKoTitle(a.title);
+    const kb = isKoTitle(b.title);
+    if (ka !== kb) return ka ? -1 : 1;
+    return String(a.title).localeCompare(String(b.title), 'ko');
+  });
+  const musicTrackOf = (it) => ({ url: it.url, title: it.title, ownerId: null, ownerLabel: '음악 저장소' });
+  const musicPlayList = (items, startIdx = 0) => {
+    if (!items || !items.length) return;
+    musicQueueRef.current = items.map(musicTrackOf);
+    bgmUnmute();
+    bgmPlay(musicQueueRef.current[Math.max(0, Math.min(startIdx, items.length - 1))]);
+  };
+  const musicStep = (dir) => {
+    const q = musicQueueRef.current && musicQueueRef.current.length ? musicQueueRef.current : musicSorted.map(musicTrackOf);
+    if (!q.length) return;
+    if (!musicQueueRef.current.length) musicQueueRef.current = q;
+    const i = bgmTrack ? q.findIndex((x) => x.url === bgmTrack.url) : -1;
+    const ni = i < 0 ? 0 : (i + dir + q.length) % q.length;
+    bgmUnmute();
+    bgmPlay(q[ni]);
+  };
+
+  const renderMusicScreen = () => {
+    const q = musicQuery.trim().toLowerCase();
+    const shown = q ? musicSorted.filter((it) => String(it.title).toLowerCase().includes(q)) : musicSorted;
+    const selUrls = Object.keys(musicSel).filter((k) => musicSel[k]);
+    const allSelected = musicSorted.length > 0 && selUrls.length === musicSorted.length;
+    const rec = musicSorted.length ? seededPick(musicSorted, 1, dayKeyNum() + musicRecShuffle * 5)[0] : null;
+    const nowUrl = bgmTrack ? bgmTrack.url : null;
+
+    const header = (
+      <View>
+        <View style={styles.mHead}>
+          <Text style={styles.mTitle}>음악 저장소</Text>
+          <Text style={styles.hMuted}>노래 듣기</Text>
+        </View>
+
+        {/* 금일의 추천곡 */}
+        <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.06)' }]}>
+          <View style={styles.hSecHead}>
+            <Text style={styles.hSecTitle}>금일의 추천곡</Text>
+            {musicSorted.length > 1 ? (
+              <TouchableOpacity onPress={() => setMusicRecShuffle(musicRecShuffle + 1)} hitSlop={8}>
+                <Text style={styles.hSecAction}><Ionicons name="refresh" size={11} color="#A1A1AA" /> 다른 곡</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {rec ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={styles.mRecCover}><Ionicons name="disc-outline" size={24} color="#71717A" /></View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.mRecTitle} numberOfLines={1}>{rec.title}</Text>
+                <Text style={styles.hMuted}>음악 저장소 · 오늘의 추천</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.mRecPlay}
+                onPress={() => musicPlayList(musicSorted, musicSorted.findIndex((x) => x.url === rec.url))}
+              >
+                <Ionicons name={nowUrl === rec.url && bgmPlaying ? 'pause' : 'play'} size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={styles.hMuted}>{musicLoading ? '노래를 불러오는 중이에요…' : '아직 저장된 노래가 없어요.'}</Text>
+          )}
+        </View>
+
+        {/* 노래 검색 */}
+        <View style={styles.mSearch}>
+          <Ionicons name="search" size={16} color="#A1A1AA" />
+          <TextInput
+            style={styles.mSearchInput}
+            value={musicQuery}
+            onChangeText={setMusicQuery}
+            placeholder="노래 제목 검색"
+            placeholderTextColor="#A1A1AA"
+            returnKeyType="search"
+          />
+          {musicQuery ? (
+            <TouchableOpacity onPress={() => setMusicQuery('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color="#A1A1AA" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* 전체 선택 · 곡 수 · 전체 듣기 */}
+        <View style={styles.mListHead}>
+          <TouchableOpacity
+            style={[styles.mCheck, allSelected && styles.mCheckOn]}
+            onPress={() => {
+              if (allSelected) setMusicSel({});
+              else {
+                const all = {};
+                musicSorted.forEach((it) => { all[it.url] = true; });
+                setMusicSel(all);
+              }
+            }}
+            hitSlop={8}
+          >
+            {allSelected ? <Ionicons name="checkmark" size={13} color="#FFFFFF" /> : null}
+          </TouchableOpacity>
+          <Text style={styles.mListHeadText}>
+            저장된 노래 <Text style={{ color: '#71717A', fontWeight: '400' }}>{musicSorted.length}곡</Text>
+            <Text style={styles.hMuted}>  · 가나다순</Text>
+          </Text>
+          <TouchableOpacity style={styles.mPlayAll} onPress={() => musicPlayList(musicSorted, 0)}>
+            <Ionicons name="play" size={12} color="#FFFFFF" />
+            <Text style={styles.mPlayAllText}>전체 듣기</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+
+    return (
+      <View style={{ flex: 1 }}>
+        <FlatList
+          style={{ flex: 1, backgroundColor: bgc('#FFFFFF') }}
+          contentContainerStyle={{ paddingTop: 6, paddingBottom: 16 }}
+          data={shown}
+          keyExtractor={(it) => it.url}
+          extraData={[musicSel, nowUrl, bgmPlaying]}
+          ListHeaderComponent={header}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            <Text style={[styles.hMuted, { textAlign: 'center', marginTop: 24 }]}>
+              {musicLoading ? '노래를 불러오는 중이에요…' : q ? '찾는 노래가 없어요.' : '아직 저장된 노래가 없어요.'}
+            </Text>
+          }
+          renderItem={({ item }) => {
+            const on = !!musicSel[item.url];
+            const isNow = nowUrl === item.url;
+            return (
+              <TouchableOpacity
+                style={styles.mRow}
+                activeOpacity={0.7}
+                onPress={() => musicPlayList(musicSorted, musicSorted.findIndex((x) => x.url === item.url))}
+              >
+                <TouchableOpacity
+                  style={[styles.mCheck, on && styles.mCheckOn]}
+                  onPress={() => setMusicSel((prev) => ({ ...prev, [item.url]: !prev[item.url] }))}
+                  hitSlop={10}
+                >
+                  {on ? <Ionicons name="checkmark" size={13} color="#FFFFFF" /> : null}
+                </TouchableOpacity>
+                <View style={[styles.mCover, isNow && { backgroundColor: 'rgba(24,24,27,0.22)' }]}>
+                  <Ionicons name={isNow && bgmPlaying ? 'stats-chart' : 'musical-note'} size={17} color={isNow ? '#3F3F46' : '#A1A1AA'} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.mRowTitle, isNow && { fontWeight: '700' }]} numberOfLines={1}>{item.title}</Text>
+                  <Text style={styles.hMuted} numberOfLines={1}>{isNow ? (bgmPlaying ? '재생 중' : '일시정지') : '음악 저장소'}</Text>
+                </View>
+                <Ionicons name="reorder-three-outline" size={22} color="#C4C4C9" />
+              </TouchableOpacity>
+            );
+          }}
+        />
+
+        {/* 선택한 곡이 있으면: 선택 듣기 / 취소 */}
+        {selUrls.length > 0 ? (
+          <View style={styles.mSelBar}>
+            <Text style={styles.mSelText}>{selUrls.length}곡 선택됨</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  musicPlayList(musicSorted.filter((it) => musicSel[it.url]), 0);
+                  setMusicSel({});
+                }}
+              >
+                <Text style={[styles.mSelText, { fontWeight: '700' }]}>▶ 선택 듣기</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setMusicSel({})}>
+                <Text style={[styles.mSelText, { opacity: 0.75 }]}>취소</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
+        {/* 맨 아래 재생 바 (맨 위 BGM과 같은 플레이어) */}
+        <View style={styles.mPlayer}>
+          <TouchableOpacity onPress={() => setMusicRepeat(!musicRepeat)} hitSlop={8}>
+            <Ionicons name="repeat" size={20} color={musicRepeat ? '#18181B' : '#C4C4C9'} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => musicStep(-1)} hitSlop={8}>
+            <Ionicons name="play-skip-back" size={22} color="#18181B" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              if (!bgmTrack && musicSorted.length) musicPlayList(musicSorted, 0);
+              else { bgmUnmute(); if (soundRef.current) soundRef.current.setIsMutedAsync(false).catch(() => {}); bgmToggle(); }
+            }}
+            hitSlop={8}
+          >
+            <Ionicons name={bgmPlaying ? 'pause' : 'play'} size={30} color="#18181B" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => musicStep(1)} hitSlop={8}>
+            <Ionicons name="play-skip-forward" size={22} color="#18181B" />
+          </TouchableOpacity>
+          <View style={styles.mPlayerCover}>
+            <Ionicons name="musical-notes" size={14} color="#71717A" />
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   // 게시글 탭 위쪽: 모두/친구만 + 회원 줄 + (고른 회원 소개) + 격자/목록 전환
   const renderPostsHeader = () => (
     <View style={{ paddingTop: 4 }}>
-      {/* 멤버 줄 위: 친구만 / 모두 선택 (작은 글자 + 음영) */}
+      {/* 멤버 줄 위: 친구만 / 모두 선택 (작은 글자 + 음영) + 오른쪽 끝 회원 검색 */}
       <View style={styles.memberFilterRow}>
+        <TouchableOpacity
+          style={styles.memberSearchBtn}
+          onPress={() => { fetchFriendsAndRequests(); setMainTab('friends'); }}
+          hitSlop={8}
+        >
+          <Ionicons name="search" size={15} color="#52525B" />
+          <Text style={styles.memberSearchText}>회원 찾기</Text>
+        </TouchableOpacity>
         {[
           { key: false, label: '모두' },
           { key: true, label: '친구만' },
@@ -6133,11 +6477,11 @@ export default function App() {
                   badge: groupUnreadTotal,
                   onPress: goTab(() => setShowGroupChat(true)),
                 })}
-                {/* 회원 검색 (돋보기) */}
+                {/* 음악 저장소 · 노래 듣기 (음표) */}
                 {Tab({
-                  on: mainTab === 'friends' && !showGroupChat,
-                  icon: "search",
-                  onPress: goTab(() => { fetchFriendsAndRequests(); setMainTab('friends'); }),
+                  on: mainTab === 'music' && !showGroupChat,
+                  icon: mainTab === 'music' && !showGroupChat ? 'musical-notes' : 'musical-notes-outline',
+                  onPress: goTab(() => { fetchMusicLibrary(); setMainTab('music'); }),
                 })}
                 {/* 새 게시물 쓰기 */}
                 {Tab({
@@ -6283,6 +6627,7 @@ export default function App() {
           )}
 
           {mainTab === 'friends' && renderFriendsTabScreen()}
+          {mainTab === 'music' && renderMusicScreen()}
           {mainTab === 'chats' && renderChatsTabScreen()}
           {mainTab === 'story' && (
             <FlatList
@@ -7420,6 +7765,54 @@ const styles = themedStyles({
   igDropdownDivider: { height: 1, backgroundColor: '#F2F2F2', marginHorizontal: 10 },
 
   memberFilterRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 2, paddingTop: 2, paddingBottom: 2 },
+  memberSearchBtn: {
+    position: 'absolute', right: 2, top: 1, flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)',
+  },
+  memberSearchText: { fontSize: 11.5, color: '#52525B', fontWeight: '700' },
+  // ---- 음악 저장소 ----
+  mHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 },
+  mTitle: { fontSize: 19, fontWeight: '700', color: '#18181B' },
+  mRecCover: { width: 54, height: 54, borderRadius: 9, backgroundColor: 'rgba(24,24,27,0.14)', alignItems: 'center', justifyContent: 'center' },
+  mRecTitle: { fontSize: 14.5, fontWeight: '700', color: '#18181B', marginBottom: 2 },
+  mRecPlay: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(24,24,27,0.78)', alignItems: 'center', justifyContent: 'center' },
+  mSearch: {
+    flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(24,24,27,0.05)',
+    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 6,
+  },
+  mSearchInput: { flex: 1, fontSize: 13.5, color: '#18181B', paddingVertical: 6 },
+  mListHead: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(24,24,27,0.06)',
+  },
+  mListHeadText: { flex: 1, marginLeft: 10, fontSize: 13, fontWeight: '700', color: '#18181B' },
+  mPlayAll: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 9, backgroundColor: 'rgba(24,24,27,0.78)',
+  },
+  mPlayAllText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  mCheck: {
+    width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: '#C4C4C9',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mCheckOn: { backgroundColor: 'rgba(24,24,27,0.78)', borderColor: 'rgba(24,24,27,0.78)' },
+  mRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },
+  mCover: {
+    width: 46, height: 46, borderRadius: 8, marginLeft: 10, backgroundColor: 'rgba(24,24,27,0.10)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mRowTitle: { fontSize: 14, color: '#18181B', marginBottom: 2 },
+  mSelBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 11, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6,
+  },
+  mSelText: { fontSize: 13, color: '#FFFFFF' },
+  mPlayer: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6, borderRadius: 14,
+    backgroundColor: 'rgba(24,24,27,0.04)', borderWidth: 1, borderColor: 'rgba(24,24,27,0.06)',
+  },
+  mPlayerCover: { width: 30, height: 30, borderRadius: 7, backgroundColor: 'rgba(24,24,27,0.14)', alignItems: 'center', justifyContent: 'center' },
   memberFilterBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   memberFilterBtnOn: { backgroundColor: '#E4E4E7' },
   memberFilterText: { fontSize: 12, color: '#A1A1AA' },
@@ -7539,6 +7932,17 @@ const styles = themedStyles({
   hDestRegion: { position: 'absolute', left: 5, bottom: 5, backgroundColor: 'rgba(255,255,255,0.88)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   hDestRegionText: { fontSize: 10, color: '#52525B' },
   hDestCity: { fontSize: 13, fontWeight: '700', color: '#18181B', marginTop: 5 },
+  hDestTitle: { fontSize: 11, color: '#71717A', marginTop: 1 },
+  hDestBest: { position: 'absolute', right: 5, top: 5, backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 },
+  hDestBestText: { fontSize: 9.5, color: '#FFFFFF', fontWeight: '700' },
+  hDestDetail: { marginTop: 10, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)', padding: 11 },
+  hDestDetailCity: { fontSize: 15, fontWeight: '700', color: '#18181B' },
+  hDestDetailBody: { fontSize: 12.5, color: '#3F3F46', lineHeight: 20, marginTop: 5 },
+  hDestSign: { fontSize: 11, color: '#A1A1AA', textAlign: 'right', marginTop: 6 },
+  hSegWrap: { flexDirection: 'row', marginLeft: 8, padding: 2, borderRadius: 8, backgroundColor: 'rgba(24,24,27,0.06)' },
+  hSeg: { paddingHorizontal: 9, paddingVertical: 2, borderRadius: 7 },
+  hSegOn: { backgroundColor: 'rgba(24,24,27,0.78)' },
+  hSegText: { fontSize: 11, color: '#71717A', fontWeight: '700' },
   hChip: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(24,24,27,0.06)' },
   hChipOn: { backgroundColor: 'rgba(24,24,27,0.78)' },
   hChipText: { fontSize: 11.5, color: '#52525B' },
