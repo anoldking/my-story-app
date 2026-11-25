@@ -47,7 +47,35 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const LEFT_RAIL_WIDTH = 0; // 메뉴바를 화면 아래로 옮겨서 왼쪽 세로 메뉴 폭은 없음
+// 홈 '추천 여행지' 목록 (매일 무작위 2곳). iata = 공항 코드
+const TRAVEL_DESTS = [
+  { region: '일본', city: '오사카', iata: 'KIX', note: '도톤보리 먹방' },
+  { region: '일본', city: '도쿄', iata: 'NRT', note: '쇼핑과 야경' },
+  { region: '일본', city: '후쿠오카', iata: 'FUK', note: '가까운 온천 여행' },
+  { region: '일본', city: '삿포로', iata: 'CTS', note: '겨울 눈축제' },
+  { region: '일본', city: '오키나와', iata: 'OKA', note: '겨울에도 따뜻한 바다' },
+  { region: '일본', city: '나고야', iata: 'NGO', note: '맛집과 성 구경' },
+  { region: '동남아', city: '다낭', iata: 'DAD', note: '따뜻한 가족 휴양' },
+  { region: '동남아', city: '방콕', iata: 'BKK', note: '야시장 투어' },
+  { region: '동남아', city: '세부', iata: 'CEB', note: '바다 스노클링' },
+  { region: '동남아', city: '나트랑', iata: 'CXR', note: '가족 리조트' },
+  { region: '동남아', city: '싱가포르', iata: 'SIN', note: '깨끗한 도시 여행' },
+  { region: '동남아', city: '마닐라', iata: 'MNL', note: '가까운 필리핀' },
+];
+// 날짜(YYYYMMDD)로 매일 바뀌는 순서 만들기
+const dayKeyNum = () => {
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+};
+const seededPick = (arr, count, seed) => {
+  const a = arr.map((x, i) => ({ x, k: Math.sin(seed * 9301 + i * 49297) * 233280 }));
+  a.sort((p, q) => (p.k % 1) - (q.k % 1));
+  return a.slice(0, count).map((o) => o.x);
+};
+const WEEK_KO = ['일', '월', '화', '수', '목', '금', '토'];
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const LEFT_RAIL_WIDTH = 44; // 왼쪽 세로 색인 메뉴 폭(42) + 내용 칸 테두리(2)
 const RIGHT_RAIL_WIDTH = 44;
 const SIDE_MARGIN = 15; // 화면 좌우 여백 (각 15)
 const RIGHT_MARGIN = SIDE_MARGIN * 2; // 좌우 여백 합계 (사진·글자 폭 계산용)
@@ -1798,6 +1826,7 @@ export default function App() {
   }, [session?.user?.id]);
 
   const [mainTab, setMainTab] = useState('home');
+  const [postsMemberId, setPostsMemberId] = useState(null); // 게시글 탭에서 고른 회원
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
@@ -2074,6 +2103,11 @@ export default function App() {
         return true;
       }
 
+      if (mainTab === 'posts' && postsMemberId) {
+        setPostsMemberId(null);
+        return true;
+      }
+
       if (mainTab !== 'home') {
         setMainTab('home');
         return true;
@@ -2109,6 +2143,7 @@ export default function App() {
     chatPartner,
     searchQuery,
     mainTab,
+    postsMemberId,
   ]);
 
   useEffect(() => {
@@ -2528,6 +2563,60 @@ export default function App() {
       // 무시
     }
   };
+
+  // ---- 새 홈 화면 / 게시글 탭 ----
+  const [homeNotices, setHomeNotices] = useState([]); // 지금까지 올린 공지 (최신 순)
+  const homeNotice = homeNotices[0] || null;          // 홈 띠에 보이는 최신 공지
+  const [noticeBoardOpen, setNoticeBoardOpen] = useState(false);
+  const [openNoticeId, setOpenNoticeId] = useState(null); // 게시판에서 펼친 공지
+  const [editingNotice, setEditingNotice] = useState(null); // 수정 중인 공지 (새 글이면 null)
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [noticeEditOpen, setNoticeEditOpen] = useState(false);
+  const [noticeDraft, setNoticeDraft] = useState('');
+  const [schedules, setSchedules] = useState([]);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [schedDraft, setSchedDraft] = useState({ title: '', date: '', time: '', place: '', isMain: false });
+  const [wishes, setWishes] = useState([]);
+  const [wishLikes, setWishLikes] = useState([]);
+  const [wishModalOpen, setWishModalOpen] = useState(false);
+  const [wishDraft, setWishDraft] = useState({ place: '', memo: '' });
+  const [flightPrices, setFlightPrices] = useState([]);
+  const [flightFrom, setFlightFrom] = useState('ICN');
+  const [travelShuffle, setTravelShuffle] = useState(0);
+  const [memberOfDayShuffle, setMemberOfDayShuffle] = useState(0);
+  const [homeSaving, setHomeSaving] = useState(false);
+
+  // 홈 화면 자료(공지·스케줄·희망 여행지·항공권 가격) 불러오기
+  // 서버에 표가 아직 없으면 조용히 넘어감 (그 칸만 비어 보임)
+  const fetchHomeData = async () => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    try {
+      const since = new Date(Date.now() - 8 * 86400000).toISOString();
+      const [n, sc, w, wl, fp, me] = await Promise.all([
+        supabase.from('home_notices').select('*').order('created_at', { ascending: false }).limit(300),
+        supabase.from('family_schedules').select('*').gte('starts_at', since).order('starts_at', { ascending: true }).limit(200),
+        supabase.from('travel_wishes').select('*').order('created_at', { ascending: false }).limit(300),
+        supabase.from('travel_wish_likes').select('wish_id, user_id'),
+        supabase.from('flight_prices').select('*'),
+        supabase.from('profiles').select('is_admin').eq('id', uid).maybeSingle(),
+      ]);
+      if (!n.error) setHomeNotices(n.data || []);
+      if (!sc.error) setSchedules(sc.data || []);
+      if (!w.error) setWishes(w.data || []);
+      if (!wl.error) setWishLikes(wl.data || []);
+      if (!fp.error) setFlightPrices(fp.data || []);
+      if (!me.error && me.data) setIsAdmin(!!me.data.is_admin);
+    } catch {
+      // 무시
+    }
+  };
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    fetchHomeData();
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') fetchHomeData(); });
+    return () => sub.remove();
+  }, [session?.user?.id]);
 
   // 단체방 전체에서 아직 안 읽은 메시지 수 (아래 메뉴 단체방 아이콘에 표시)
   const [groupUnreadTotal, setGroupUnreadTotal] = useState(0);
@@ -4021,6 +4110,17 @@ export default function App() {
     : visiblePosts;
 
   const myStoryPosts = visiblePosts.filter((p) => p.author_id === session.user.id);
+
+  // 게시글 탭: 고른 회원 / 보여줄 게시글
+  const postsSelMember = postsMemberId
+    ? (members.find((m) => m.id === postsMemberId)
+      || (postsMemberId === session.user.id ? { id: session.user.id, nickname: profile.nickname, avatar_url: profile.avatar_url, bio: profile.bio } : null))
+    : null;
+  const postsList = postsMemberId
+    ? visiblePosts.filter((p) => p.author_id === postsMemberId)
+    : (memberFilterFriends
+      ? visiblePosts.filter((p) => p.author_id === session.user.id || acceptedFriendIds.includes(p.author_id))
+      : visiblePosts);
   const incomingCount = incomingRequests.length;
   const totalUnreadMessages = Object.values(unreadCountBySender).reduce((sum, n) => sum + (n || 0), 0);
 
@@ -4059,10 +4159,17 @@ export default function App() {
   const currentAccountEmail = session.user?.email || '';
   const currentAccountName = profile.nickname || (currentAccountEmail ? currentAccountEmail.split('@')[0] : '내 계정');
 
-  const renderHomeFeedHeader = () => (
+  // 모든 메뉴 맨 위에 고정: 로고 줄 + 메뉴 팝업 + BGM 재생기
+  const bgmTabLabel = (() => {
+    if (mainTab === 'home') return '홈 BGM이 재생되고 있습니다.';
+    const name = { posts: '게시글', chats: '1:1', friends: '회원검색', story: '내 프로필' }[mainTab] || '이';
+    return `${name} 화면에서도 BGM이 재생되고 있습니다.`;
+  })();
+
+  const renderTopHeader = () => (
     <View style={styles.igHeaderContainer}>
       <View style={styles.igTopBar}>
-        <View style={{ width: 32 }} />
+        <View style={{ width: 24 }} />
 
         <TouchableOpacity
           style={styles.igCenterBrandBtn}
@@ -4081,6 +4188,8 @@ export default function App() {
             color="#333333"
             style={{ marginLeft: 6 }}
           />
+          {/* 로고 옆 문구 */}
+          <Text style={styles.igTagline} numberOfLines={1}>healing life는 me에서..</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -4279,9 +4388,556 @@ export default function App() {
           onToggle={() => bgmToggle(shownBgmTrack)}
           onNext={() => bgmNext(shownBgmTrack)}
           onChangeBgm={openBgmLibrary}
+          label={bgmTabLabel}
         />
       ) : null}
 
+    </View>
+  );
+
+  // ================= 새 홈 화면 =================
+  const memberById = (id) => members.find((m) => m.id === id)
+    || (id === session.user.id ? { id, nickname: profile.nickname, avatar_url: profile.avatar_url } : null);
+
+  // ---- 공지 게시판 ----
+  const openNoticeWrite = (notice) => {
+    setEditingNotice(notice || null);
+    setNoticeDraft(notice ? (notice.content || '') : '');
+    setNoticeEditOpen(true);
+  };
+  const saveNotice = async () => {
+    const content = (noticeDraft || '').trim();
+    if (!content) { Alert.alert('확인', '공지 내용을 적어 주세요.'); return; }
+    setHomeSaving(true);
+    try {
+      if (editingNotice) {
+        const { error } = await supabase.from('home_notices')
+          .update({ content, updated_at: new Date().toISOString() }).eq('id', editingNotice.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('home_notices').insert({ content, author_id: session.user.id });
+        if (error) throw error;
+      }
+      setNoticeEditOpen(false);
+      setEditingNotice(null);
+      fetchHomeData();
+    } catch (e) {
+      Alert.alert('공지 저장 실패', e?.message || '잠시 후 다시 시도해 주세요.');
+    } finally {
+      setHomeSaving(false);
+    }
+  };
+  const noticeActions = (n) => {
+    if (n.author_id !== session.user.id && !isAdmin) return;
+    Alert.alert('공지', '이 공지를 어떻게 할까요?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: () => Alert.alert('공지 삭제', '이 공지를 지울까요? 되돌릴 수 없어요.', [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '삭제',
+            style: 'destructive',
+            onPress: async () => {
+              const { error } = await supabase.from('home_notices').delete().eq('id', n.id);
+              if (error) Alert.alert('삭제 실패', error.message);
+              else fetchHomeData();
+            },
+          },
+        ]),
+      },
+      { text: '수정', onPress: () => openNoticeWrite(n) },
+    ]);
+  };
+  const noticeDateText = (iso) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}. ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
+  // ---- 스케줄 ----
+  const openScheduleAdd = () => {
+    const d = new Date();
+    setSchedDraft({ title: '', date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`, time: '', place: '', isMain: false });
+    setScheduleModalOpen(true);
+  };
+  const saveSchedule = async () => {
+    const title = schedDraft.title.trim();
+    const dm = schedDraft.date.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    const tm = (schedDraft.time.trim() || '00:00').match(/^(\d{1,2}):(\d{2})$/);
+    if (!title) { Alert.alert('확인', '일정 이름을 적어 주세요.'); return; }
+    if (!dm) { Alert.alert('확인', '날짜를 2026-12-07 처럼 적어 주세요.'); return; }
+    if (!tm) { Alert.alert('확인', '시간을 18:00 처럼 적어 주세요.'); return; }
+    const when = new Date(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2]);
+    if (isNaN(when.getTime())) { Alert.alert('확인', '날짜나 시간이 올바르지 않아요.'); return; }
+    setHomeSaving(true);
+    const { error } = await supabase.from('family_schedules').insert({
+      title,
+      place: schedDraft.place.trim() || null,
+      starts_at: when.toISOString(),
+      is_main: !!schedDraft.isMain,
+      author_id: session.user.id,
+    });
+    setHomeSaving(false);
+    if (error) { Alert.alert('일정 저장 실패', error.message); return; }
+    setScheduleModalOpen(false);
+    fetchHomeData();
+  };
+  const scheduleActions = (s) => {
+    const who = memberById(s.author_id)?.nickname || '회원';
+    const lines = `${new Date(s.starts_at).toLocaleString('ko-KR')}${s.place ? `\n장소: ${s.place}` : ''}\n등록: ${who}`;
+    if (s.author_id !== session.user.id && !isAdmin) {
+      Alert.alert(s.title, lines);
+      return;
+    }
+    Alert.alert(s.title, lines, [
+      { text: '닫기', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await supabase.from('family_schedules').delete().eq('id', s.id);
+          if (error) Alert.alert('삭제 실패', error.message);
+          else fetchHomeData();
+        },
+      },
+    ]);
+  };
+
+  // ---- 희망 여행지 ----
+  const saveWish = async () => {
+    const place = wishDraft.place.trim();
+    if (!place) { Alert.alert('확인', '가고 싶은 곳을 적어 주세요.'); return; }
+    setHomeSaving(true);
+    const { error } = await supabase.from('travel_wishes').insert({
+      place,
+      memo: wishDraft.memo.trim() || null,
+      user_id: session.user.id,
+    });
+    setHomeSaving(false);
+    if (error) { Alert.alert('저장 실패', error.message); return; }
+    setWishModalOpen(false);
+    setWishDraft({ place: '', memo: '' });
+    fetchHomeData();
+  };
+  const toggleWishLike = async (wish) => {
+    const mine = wishLikes.some((l) => l.wish_id === wish.id && l.user_id === session.user.id);
+    if (mine) {
+      setWishLikes((prev) => prev.filter((l) => !(l.wish_id === wish.id && l.user_id === session.user.id)));
+      await supabase.from('travel_wish_likes').delete().eq('wish_id', wish.id).eq('user_id', session.user.id);
+    } else {
+      setWishLikes((prev) => [...prev, { wish_id: wish.id, user_id: session.user.id }]);
+      await supabase.from('travel_wish_likes').insert({ wish_id: wish.id, user_id: session.user.id });
+    }
+  };
+  const wishActions = (wish) => {
+    if (wish.user_id !== session.user.id) return;
+    Alert.alert(wish.place, '내가 남긴 희망 여행지를 지울까요?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '지우기',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await supabase.from('travel_wishes').delete().eq('id', wish.id);
+          if (error) Alert.alert('삭제 실패', error.message);
+          else fetchHomeData();
+        },
+      },
+    ]);
+  };
+
+  const openFlightSearch = (from, iata) => {
+    const url = `https://www.skyscanner.co.kr/transport/flights/${from.toLowerCase()}/${iata.toLowerCase()}/`;
+    Linking.openURL(url).catch(() => Alert.alert('열기 실패', '항공권 검색 화면을 열 수 없어요.'));
+  };
+
+  const renderHomeDashboard = () => {
+    const today = new Date();
+    const dayKey = dayKeyNum();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+
+    // 오늘의 회원: 사진 있는 게시물 중 날마다 하나
+    const motdPool = visiblePosts.filter((p) => p.image_urls && p.image_urls.length > 0);
+    const motd = motdPool.length ? seededPick(motdPool, 1, dayKey + memberOfDayShuffle * 7)[0] : null;
+    const motdAuthor = motd ? (motd.profiles?.nickname || memberById(motd.author_id)?.nickname || '회원') : '';
+    const motdAvatar = motd ? (motd.profiles?.avatar_url || memberById(motd.author_id)?.avatar_url || null) : null;
+
+    // 스케줄: 메인(별표 우선, 없으면 가장 가까운 일정) + 서브 3개 + 이번 주
+    const upcoming = schedules.filter((s) => Date.parse(s.starts_at) >= startOfToday);
+    const mainSch = upcoming.find((s) => s.is_main) || upcoming[0] || null;
+    const subSch = upcoming.filter((s) => !mainSch || s.id !== mainSch.id).slice(0, 3);
+    const dDay = (iso) => {
+      const d = new Date(iso);
+      const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - startOfToday) / 86400000);
+      return diff === 0 ? 'D-DAY' : diff > 0 ? `D-${diff}` : `D+${-diff}`;
+    };
+    const fmtWhen = (iso) => {
+      const d = new Date(iso);
+      return `${d.getMonth() + 1}/${d.getDate()}(${WEEK_KO[d.getDay()]}) ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    };
+    const monOffset = (today.getDay() + 6) % 7;
+    const weekDays = Array.from({ length: 7 }, (_, i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - monOffset + i));
+    const hasSchOn = (d) => schedules.some((s) => {
+      const x = new Date(s.starts_at);
+      return x.getFullYear() === d.getFullYear() && x.getMonth() === d.getMonth() && x.getDate() === d.getDate();
+    });
+
+    // 추천 여행지 2곳 (매일 바뀜) + 같은 곳 항공권
+    const dests = seededPick(TRAVEL_DESTS, 2, dayKey + travelShuffle * 13);
+    const priceOf = (iata) => flightPrices.find((f) => f.origin === flightFrom && f.destination === iata);
+
+    // 희망 여행지: 하루 안에 새로 등록된 게 있으면 그것, 아니면 날마다 하나
+    const likeCount = (id) => wishLikes.filter((l) => l.wish_id === id).length;
+    const newest = wishes[0];
+    const isNewWish = !!(newest && Date.now() - Date.parse(newest.created_at) < 86400000);
+    const wish = isNewWish ? newest : (wishes.length ? seededPick(wishes, 1, dayKey + 3)[0] : null);
+    const wishOwner = wish ? (memberById(wish.user_id)?.nickname || '회원') : '';
+    const wishOwnerAvatar = wish ? memberById(wish.user_id)?.avatar_url : null;
+    const iLikeWish = wish ? wishLikes.some((l) => l.wish_id === wish.id && l.user_id === session.user.id) : false;
+
+    return (
+      <>
+        <ScrollView
+          style={{ flex: 1, backgroundColor: bgc('#FFFFFF') }}
+          contentContainerStyle={{ paddingTop: 10, paddingBottom: 30 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* 공지 (78%) */}
+          {/* 공지: 누르면 지금까지 올린 공지 게시판 */}
+          {homeNotice ? (
+            <TouchableOpacity
+              style={styles.hNotice}
+              activeOpacity={0.85}
+              onPress={() => { setOpenNoticeId(homeNotice.id); setNoticeBoardOpen(true); }}
+            >
+              <Ionicons name="megaphone-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.hNoticeText} numberOfLines={1}>{homeNotice.content}</Text>
+              <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.hNoticeEmpty} onPress={() => openNoticeWrite(null)}>
+              <Ionicons name="megaphone-outline" size={15} color="#71717A" />
+              <Text style={styles.hNoticeEmptyText}>공지 등록하기</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* 오늘의 회원 (3%) */}
+          <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.03)', borderWidth: 1, borderColor: 'rgba(24,24,27,0.06)' }]}>
+            <View style={styles.hSecHead}>
+              <Text style={styles.hSecTitle}>오늘의 회원</Text>
+              {motdPool.length > 1 ? (
+                <TouchableOpacity onPress={() => setMemberOfDayShuffle(memberOfDayShuffle + 1)} hitSlop={8}>
+                  <Text style={styles.hSecAction}><Ionicons name="refresh" size={11} color="#A1A1AA" /> 다시 뽑기</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            {motd ? (
+              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }} activeOpacity={0.8} onPress={() => openPostView(motd, 0)}>
+                <Image source={{ uri: motd.image_urls[0] }} style={styles.hMotdImg} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {motdAvatar ? (
+                      <Image source={{ uri: motdAvatar }} style={styles.hMiniAvatar} />
+                    ) : (
+                      <View style={[styles.hMiniAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                        <Ionicons name="person" size={11} color="#A1A1AA" />
+                      </View>
+                    )}
+                    <Text style={styles.hMotdName} numberOfLines={1}>{motdAuthor}</Text>
+                  </View>
+                  <Text style={styles.hMotdText} numberOfLines={2}>{motd.content || '사진 게시물'}</Text>
+                  <Text style={styles.hMuted}>
+                    {new Date(motd.created_at).toLocaleDateString('ko-KR')} · 하트 {(motd.reactions || []).length}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.hMuted}>아직 사진 게시물이 없어요.</Text>
+            )}
+          </View>
+
+          {/* 예정된 스케줄 (5%) */}
+          <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.05)' }]}>
+            <View style={styles.hSecHead}>
+              <Text style={styles.hSecTitle}>예정된 스케줄</Text>
+              <TouchableOpacity onPress={openScheduleAdd} hitSlop={8}>
+                <Text style={styles.hSecAction}>+ 일정 추가</Text>
+              </TouchableOpacity>
+            </View>
+            {mainSch ? (
+              <TouchableOpacity style={styles.hMainSch} activeOpacity={0.85} onPress={() => scheduleActions(mainSch)}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={styles.hMainTag}>
+                    <Text style={styles.hMainTagText}>메인 · {dDay(mainSch.starts_at)}</Text>
+                  </View>
+                  <Text style={styles.hMainWhen}>{fmtWhen(mainSch.starts_at)}</Text>
+                </View>
+                <Text style={styles.hMainTitle} numberOfLines={1}>
+                  {mainSch.title}{mainSch.place ? ` · ${mainSch.place}` : ''}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={[styles.hMuted, { marginBottom: 6 }]}>예정된 일정이 없어요. + 일정 추가를 눌러 보세요.</Text>
+            )}
+            {subSch.map((s) => (
+              <TouchableOpacity key={s.id} style={styles.hSubSch} activeOpacity={0.8} onPress={() => scheduleActions(s)}>
+                <Text style={styles.hSubText} numberOfLines={1}>서브 · {s.title}</Text>
+                <Text style={styles.hSubWhen}>{fmtWhen(s.starts_at)}</Text>
+              </TouchableOpacity>
+            ))}
+            <View style={styles.hWeekRow}>
+              {weekDays.map((d) => {
+                const isToday = d.getTime() === startOfToday;
+                return (
+                  <View key={d.getTime()} style={[styles.hWeekCell, isToday && styles.hWeekCellOn]}>
+                    <Text style={[styles.hWeekDow, isToday && { color: '#FFFFFF' }]}>{WEEK_KO[d.getDay()]}</Text>
+                    <Text style={[styles.hWeekDate, isToday && { color: '#FFFFFF' }]}>{d.getDate()}</Text>
+                    <Text style={[styles.hWeekDot, isToday && { color: '#FFFFFF' }]}>{hasSchOn(d) ? '●' : ' '}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* 추천 여행지 (4%) */}
+          <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.04)' }]}>
+            <View style={styles.hSecHead}>
+              <Text style={styles.hSecTitle}>추천 여행지</Text>
+              <TouchableOpacity onPress={() => setTravelShuffle(travelShuffle + 1)} hitSlop={8}>
+                <Text style={styles.hSecAction}><Ionicons name="refresh" size={11} color="#A1A1AA" /> 다른 곳</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {dests.map((d) => (
+                <View key={d.iata} style={{ flex: 1 }}>
+                  <View style={styles.hDestBox}>
+                    <Ionicons name="airplane-outline" size={20} color="#71717A" />
+                    <View style={styles.hDestRegion}><Text style={styles.hDestRegionText}>{d.region}</Text></View>
+                  </View>
+                  <Text style={styles.hDestCity}>{d.city}</Text>
+                  <Text style={styles.hMuted} numberOfLines={1}>{d.note}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* 추천 여행지 항공권 최저가 (5%) */}
+          <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.05)' }]}>
+            <View style={styles.hSecHead}>
+              <Text style={styles.hSecTitle}>추천 여행지 항공권 최저가</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 6 }}>
+              {[['ICN', '인천 ICN'], ['PUS', '김해 PUS']].map(([code, label]) => (
+                <TouchableOpacity
+                  key={code}
+                  style={[styles.hChip, flightFrom === code && styles.hChipOn]}
+                  onPress={() => setFlightFrom(code)}
+                >
+                  <Text style={[styles.hChipText, flightFrom === code && { color: '#FFFFFF' }]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {dests.map((d) => {
+              const fp = priceOf(d.iata);
+              return (
+                <TouchableOpacity key={d.iata} style={styles.hFlightRow} activeOpacity={0.7} onPress={() => openFlightSearch(flightFrom, d.iata)}>
+                  <Text style={styles.hFlightRoute} numberOfLines={1}>
+                    {flightFrom} → {d.city} <Text style={styles.hMuted}>{d.iata}</Text>
+                  </Text>
+                  <View style={styles.hPricePill}>
+                    <Text style={styles.hPriceText}>
+                      {fp && fp.price ? `${Number(fp.price).toLocaleString('ko-KR')}원~` : '최저가 검색 ›'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            <Text style={[styles.hMuted, { marginTop: 6 }]}>
+              왕복 · 1인 · {flightPrices.length ? '최근 검색 기준' : '누르면 오늘 최저가 검색 화면이 열려요'}
+            </Text>
+          </View>
+
+          {/* 회원 희망 여행지 (6%) */}
+          <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.06)' }]}>
+            <View style={styles.hSecHead}>
+              <Text style={styles.hSecTitle}>회원 희망 여행지</Text>
+              {wish ? (
+                isNewWish ? (
+                  <View style={styles.hNewTag}><Text style={styles.hNewTagText}>NEW</Text></View>
+                ) : (
+                  <Text style={styles.hSecAction}>오늘의 추천 · 매일 바뀜</Text>
+                )
+              ) : null}
+            </View>
+            {wish ? (
+              <>
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }} activeOpacity={0.9} onLongPress={() => wishActions(wish)}>
+                  {wishOwnerAvatar ? (
+                    <Image source={{ uri: wishOwnerAvatar }} style={styles.hWishAvatar} />
+                  ) : (
+                    <View style={[styles.hWishAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                      <Ionicons name="person" size={18} color="#A1A1AA" />
+                    </View>
+                  )}
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <Text style={styles.hWishWho} numberOfLines={1}>
+                      {wishOwner}님이 {isNewWish ? '방금 등록했어요' : '가고 싶은 곳'}
+                    </Text>
+                    <Text style={styles.hWishPlace} numberOfLines={1}>
+                      <Ionicons name="location-outline" size={15} color="#18181B" /> {wish.place}
+                    </Text>
+                    {wish.memo ? <Text style={styles.hMotdText} numberOfLines={2}>"{wish.memo}"</Text> : null}
+                  </View>
+                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
+                  <TouchableOpacity style={[styles.hWishBtn, iLikeWish && { backgroundColor: 'rgba(24,24,27,0.18)' }]} onPress={() => toggleWishLike(wish)}>
+                    <Text style={styles.hWishBtnText}>나도 가고 싶어요 {likeCount(wish.id)}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.hWishBtn, styles.hWishBtnDark]} onPress={() => setWishModalOpen(true)}>
+                    <Text style={[styles.hWishBtnText, { color: '#FFFFFF' }]}>내 희망 여행지 등록</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+                <Ionicons name="airplane-outline" size={26} color="#A1A1AA" />
+                <Text style={styles.hWishAsk}>{profile.nickname || '회원'}님, 어디를 가고 싶나요?</Text>
+                <Text style={styles.hMuted}>가고 싶은 곳을 남기면 가족 홈에 소개돼요</Text>
+                <TouchableOpacity style={[styles.hWishBtn, styles.hWishBtnDark, { marginTop: 10, flex: 0, paddingHorizontal: 16 }]} onPress={() => setWishModalOpen(true)}>
+                  <Text style={[styles.hWishBtnText, { color: '#FFFFFF' }]}>+ 희망 여행지 남기기</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+
+        {/* 공지 게시판: 지금까지 올린 공지 (최신 순) */}
+        <Modal visible={noticeBoardOpen} animationType="slide" onRequestClose={() => setNoticeBoardOpen(false)}>
+          <View style={[styles.hBoardWrap, { backgroundColor: bgc('#FFFFFF') }]}>
+            <View style={styles.hBoardHead}>
+              <TouchableOpacity onPress={() => setNoticeBoardOpen(false)} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="arrow-back" size={22} color="#18181B" />
+                <Text style={styles.hBoardTitle}>공지</Text>
+                <Text style={styles.hBoardCount}>{homeNotices.length}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.hBoardWrite} onPress={() => openNoticeWrite(null)}>
+                <Ionicons name="create-outline" size={15} color="#3F3F46" />
+                <Text style={styles.hBoardWriteText}>쓰기</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={homeNotices}
+              keyExtractor={(n) => String(n.id)}
+              contentContainerStyle={{ padding: 14, paddingBottom: 40 }}
+              ListEmptyComponent={
+                <Text style={[styles.hMuted, { textAlign: 'center', marginTop: 40 }]}>아직 올린 공지가 없어요. 오른쪽 위 쓰기를 눌러 보세요.</Text>
+              }
+              renderItem={({ item, index }) => {
+                const opened = openNoticeId === item.id;
+                const who = memberById(item.author_id)?.nickname || '회원';
+                const edited = item.updated_at && Date.parse(item.updated_at) - Date.parse(item.created_at) > 60000;
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[styles.hBoardRow, index === 0 && styles.hBoardRowNew]}
+                    onPress={() => setOpenNoticeId(opened ? null : item.id)}
+                    onLongPress={() => noticeActions(item)}
+                    delayLongPress={400}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                      {index === 0 ? (
+                        <View style={styles.hNewTag}><Text style={styles.hNewTagText}>최신</Text></View>
+                      ) : null}
+                      <Text style={[styles.hMuted, index === 0 && { marginLeft: 6 }]}>
+                        {who} · {noticeDateText(item.created_at)}{edited ? ' · 수정됨' : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.hBoardText} numberOfLines={opened ? 0 : 1}>{item.content}</Text>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+            <Text style={[styles.hMuted, { textAlign: 'center', paddingBottom: 16 }]}>누르면 펼쳐져요 · 내가 쓴 공지는 길게 눌러 수정/삭제</Text>
+          </View>
+        </Modal>
+
+        {/* 공지 쓰기/수정 (회원 누구나) */}
+        <Modal visible={noticeEditOpen} transparent animationType="fade" onRequestClose={() => setNoticeEditOpen(false)}>
+          <KeyboardAvoidingView style={styles.hModalBackdrop} behavior="padding">
+            <View style={styles.hModalCard}>
+              <Text style={styles.hModalTitle}>{editingNotice ? '공지 수정' : '새 공지'}</Text>
+              <TextInput
+                style={[styles.hInput, { minHeight: 110, textAlignVertical: 'top' }]}
+                value={noticeDraft}
+                onChangeText={setNoticeDraft}
+                placeholder="가족에게 알릴 내용을 적어 주세요"
+                placeholderTextColor="#A1A1AA"
+                multiline
+              />
+              <View style={styles.hModalBtns}>
+                <TouchableOpacity style={styles.hBtnLight} onPress={() => { setNoticeEditOpen(false); setEditingNotice(null); }}>
+                  <Text style={styles.hBtnLightText}>취소</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.hBtnDark} onPress={saveNotice} disabled={homeSaving}>
+                  <Text style={styles.hBtnDarkText}>{editingNotice ? '수정' : '올리기'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* 일정 추가 */}
+        <Modal visible={scheduleModalOpen} transparent animationType="fade" onRequestClose={() => setScheduleModalOpen(false)}>
+          <KeyboardAvoidingView style={styles.hModalBackdrop} behavior="padding">
+            <View style={styles.hModalCard}>
+              <Text style={styles.hModalTitle}>일정 추가</Text>
+              <TextInput style={styles.hInput} value={schedDraft.title} onChangeText={(v) => setSchedDraft({ ...schedDraft, title: v })} placeholder="일정 이름 (예: 가족 모임)" placeholderTextColor="#A1A1AA" />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TextInput style={[styles.hInput, { flex: 1.3 }]} value={schedDraft.date} onChangeText={(v) => setSchedDraft({ ...schedDraft, date: v })} placeholder="2026-12-07" placeholderTextColor="#A1A1AA" keyboardType="numbers-and-punctuation" />
+                <TextInput style={[styles.hInput, { flex: 1 }]} value={schedDraft.time} onChangeText={(v) => setSchedDraft({ ...schedDraft, time: v })} placeholder="18:00" placeholderTextColor="#A1A1AA" keyboardType="numbers-and-punctuation" />
+              </View>
+              <TextInput style={styles.hInput} value={schedDraft.place} onChangeText={(v) => setSchedDraft({ ...schedDraft, place: v })} placeholder="장소 (선택)" placeholderTextColor="#A1A1AA" />
+              <TouchableOpacity style={styles.hMainToggle} onPress={() => setSchedDraft({ ...schedDraft, isMain: !schedDraft.isMain })}>
+                <Ionicons name={schedDraft.isMain ? 'star' : 'star-outline'} size={18} color="#3F3F46" />
+                <Text style={styles.hBtnLightText}>메인 일정으로 크게 보이기</Text>
+              </TouchableOpacity>
+              <View style={styles.hModalBtns}>
+                <TouchableOpacity style={styles.hBtnLight} onPress={() => setScheduleModalOpen(false)}>
+                  <Text style={styles.hBtnLightText}>취소</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.hBtnDark} onPress={saveSchedule} disabled={homeSaving}>
+                  <Text style={styles.hBtnDarkText}>저장</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
+        {/* 희망 여행지 등록 */}
+        <Modal visible={wishModalOpen} transparent animationType="fade" onRequestClose={() => setWishModalOpen(false)}>
+          <KeyboardAvoidingView style={styles.hModalBackdrop} behavior="padding">
+            <View style={styles.hModalCard}>
+              <Text style={styles.hModalTitle}>희망 여행지 남기기</Text>
+              <TextInput style={styles.hInput} value={wishDraft.place} onChangeText={(v) => setWishDraft({ ...wishDraft, place: v })} placeholder="가고 싶은 곳 (예: 스위스 인터라켄)" placeholderTextColor="#A1A1AA" />
+              <TextInput style={styles.hInput} value={wishDraft.memo} onChangeText={(v) => setWishDraft({ ...wishDraft, memo: v })} placeholder="한마디 (선택)" placeholderTextColor="#A1A1AA" />
+              <View style={styles.hModalBtns}>
+                <TouchableOpacity style={styles.hBtnLight} onPress={() => setWishModalOpen(false)}>
+                  <Text style={styles.hBtnLightText}>취소</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.hBtnDark} onPress={saveWish} disabled={homeSaving}>
+                  <Text style={styles.hBtnDarkText}>남기기</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      </>
+    );
+  };
+
+  // 게시글 탭 위쪽: 모두/친구만 + 회원 줄 + (고른 회원 소개) + 격자/목록 전환
+  const renderPostsHeader = () => (
+    <View style={{ paddingTop: 4 }}>
       {/* 멤버 줄 위: 친구만 / 모두 선택 (작은 글자 + 음영) */}
       <View style={styles.memberFilterRow}>
         {[
@@ -4307,17 +4963,32 @@ export default function App() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.igStoryBarContent}
       >
+        {/* 전체: 모든 게시글 보기 */}
+        <TouchableOpacity
+          style={styles.igStoryItem}
+          onPress={() => setPostsMemberId(null)}
+        >
+          <View style={styles.igStoryAvatarWrap}>
+            <View style={[styles.igStoryRing, { marginBottom: 0, borderColor: 'transparent' }, !postsMemberId && styles.igStoryRingSel]}>
+              <View style={[styles.igStoryAvatar, styles.postsAllAvatar]}>
+                <Ionicons name="grid-outline" size={20} color="#52525B" />
+              </View>
+            </View>
+          </View>
+          <Text style={[styles.igStoryName, !postsMemberId && { fontWeight: '700', color: '#18181B' }]} numberOfLines={1}>전체</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.igStoryItem}
           onPress={() => {
-            // '나': 내 프로필 편집 화면 바로 열기 (새 게시물은 아래 ＋ 버튼)
+            // '나': 내 게시글만 보기 (한 번 더 누르면 전체)
             setBrandMenuOpen(false);
             setAccountMenuOpen(false);
-            openProfileEditor();
+            setPostsMemberId(postsMemberId === session.user.id ? null : session.user.id);
           }}
         >
           <View style={styles.igStoryAvatarWrap}>
-            <View style={[styles.igStoryRing, { marginBottom: 0, borderColor: 'transparent' }]}>
+            <View style={[styles.igStoryRing, { marginBottom: 0, borderColor: 'transparent' }, postsMemberId === session.user.id && styles.igStoryRingSel]}>
               {profile.avatar_url ? (
                 <Image source={{ uri: profile.avatar_url }} style={styles.igStoryAvatar} />
               ) : (
@@ -4338,17 +5009,14 @@ export default function App() {
             key={member.id}
             style={styles.igStoryItem}
             onPress={() => {
+              // 회원을 고르면 아래 게시글이 그 회원 게시글로 바뀜 (한 번 더 누르면 전체)
               setBrandMenuOpen(false);
               setAccountMenuOpen(false);
-              if (unreadN > 0) {
-                openInlineChatInMessagesTab(member);
-              } else {
-                setSelectedFriend(member);
-              }
+              setPostsMemberId(postsMemberId === member.id ? null : member.id);
             }}
           >
             <View style={styles.igStoryAvatarWrap}>
-              <View style={[styles.igStoryRing, { marginBottom: 0 }, !isFriendMember && styles.igStoryRingOff]}>
+              <View style={[styles.igStoryRing, { marginBottom: 0 }, !isFriendMember && styles.igStoryRingOff, postsMemberId === member.id && styles.igStoryRingSel]}>
                 {member.avatar_url ? (
                   <Image source={{ uri: member.avatar_url }} style={[styles.igStoryAvatar, !isFriendMember && { opacity: 0.75 }]} />
                 ) : (
@@ -4375,6 +5043,48 @@ export default function App() {
           );
         })}
       </ScrollView>
+
+      {/* 고른 회원 소개: 이름을 누르면 프로필 카드 (나는 프로필 편집) */}
+      {postsSelMember ? (
+        <View style={styles.postsMemberHead}>
+          {postsSelMember.avatar_url ? (
+            <Image source={{ uri: postsSelMember.avatar_url }} style={styles.postsMemberAvatar} />
+          ) : (
+            <View style={[styles.postsMemberAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+              <Ionicons name="person" size={20} color="#A1A1AA" />
+            </View>
+          )}
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <TouchableOpacity
+              activeOpacity={0.6}
+              onPress={() => {
+                if (postsSelMember.id === session.user.id) openProfileEditor();
+                else setSelectedFriend(postsSelMember);
+              }}
+            >
+              <Text style={styles.postsMemberName} numberOfLines={1}>
+                {postsSelMember.nickname || '회원'} <Ionicons name="chevron-forward" size={13} color="#A1A1AA" />
+                <Text style={styles.postsMemberCount}>  게시물 {postsList.length}</Text>
+              </Text>
+            </TouchableOpacity>
+            <Text
+              style={[styles.postsMemberBio, !(postsSelMember.bio && postsSelMember.bio.trim()) && { color: '#A1A1AA' }]}
+              numberOfLines={1}
+            >
+              {postsSelMember.bio && postsSelMember.bio.trim() ? postsSelMember.bio.trim() : '소개글이 등록되지 않았습니다.'}
+            </Text>
+            <Text style={styles.postsMemberVisit}>{visitLabelOf(postsSelMember)}</Text>
+          </View>
+          <TouchableOpacity onPress={() => setPostsMemberId(null)} hitSlop={10} style={{ padding: 4 }}>
+            <Ionicons name="close" size={18} color="#71717A" />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.postsAllHead}>
+          <Text style={styles.postsTabTitle}>{memberFilterFriends ? '친구 게시글' : '모든 게시글'}</Text>
+          <Text style={styles.postsTabCount}>{postsList.length}개</Text>
+        </View>
+      )}
 
       <View style={{ flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#EEEEEE', marginTop: 8 }}>
         <TouchableOpacity
@@ -5361,94 +6071,88 @@ export default function App() {
       )}
 
       <View style={styles.mainShellRow}>
-        {/* 화면 맨 아래 가로 메뉴바 */}
+        {/* 왼쪽 세로 색인 메뉴: 오른쪽 내용 칸에 붙어 왼쪽으로 튀어나온 탭 */}
         <View style={styles.leftVerticalMenuBar}>
-          <TouchableOpacity
-            style={styles.leftMenuBtn}
-            onPress={() => {
+          {(() => {
+            const goTab = (fn) => () => {
               setBrandMenuOpen(false);
               setMemberPostsUser(null);
               setAccountMenuOpen(false);
-              setOnlyFavoritesFeed(false);
-              fetchPosts();
-              setMainTab('home');
-            }}
-          >
-            <Ionicons
-              name={isHomeActive ? 'home' : 'home-outline'}
-              size={22}
-              color="#111111"
-              style={{ opacity: isHomeActive ? 1 : 0.45 }}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.leftMenuBtn}
-            onPress={() => {
-              setBrandMenuOpen(false);
-              setMemberPostsUser(null);
-              setAccountMenuOpen(false);
-              fetchFriendsAndRequests();
-              setMainTab('friends');
-            }}
-          >
-            <Ionicons
-              name="search"
-              size={22}
-              color="#111111"
-              style={{ opacity: isFriendsActive ? 1 : 0.45 }}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.leftMenuBtn}
-            onPress={() => {
-              setBrandMenuOpen(false);
-              setMemberPostsUser(null);
-              setAccountMenuOpen(false);
-              fetchFriendsAndRequests();
-              fetchUnreadCountsBySender(session.user.id);
-              setMainTab('chats');
-            }}
-          >
-            <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons
-                name={isChatsActive ? 'chatbubble' : 'chatbubble-outline'}
-                size={21}
-                color="#111111"
-                style={{ opacity: isChatsActive ? 1 : 0.45 }}
-              />
-              {totalUnreadMessages > 0 && (
-                <View style={styles.leftRailUnreadBadge}>
-                  <Text style={styles.leftRailUnreadText}>
-                    {totalUnreadMessages > 99 ? '…' : totalUnreadMessages}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.leftMenuBtn}
-            onPress={() => {
-              setBrandMenuOpen(false);
-              setMemberPostsUser(null);
-              setAccountMenuOpen(false);
-              setShowGroupChat(true);
-            }}
-          >
-            <View style={{ width: 28, height: 26 }}>
-              <Ionicons name="chatbubble" size={17} color="#111111" style={{ position: 'absolute', right: 0, top: 0, opacity: 0.28 }} />
-              <Ionicons name="chatbubble" size={19} color="#FFFFFF" style={{ position: 'absolute', left: 0, bottom: 0 }} />
-              <Ionicons name="chatbubble-outline" size={19} color="#111111" style={{ position: 'absolute', left: 0, bottom: 0, opacity: showGroupChat ? 1 : 0.7 }} />
-              {groupUnreadTotal > 0 && (
-                <View style={[styles.leftRailUnreadBadge, { top: -8, right: -8 }]}>
-                  <Text style={styles.leftRailUnreadText}>
-                    {groupUnreadTotal > 99 ? '…' : groupUnreadTotal}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
+              fn();
+            };
+            // 버튼을 함수로 그려서, 화면이 새로 그려져도 누르던 버튼이 끊기지 않게 함
+            const Tab = ({ on, icon, onPress, badge, custom }) => (
+              <TouchableOpacity
+                style={[styles.indexTab, on && styles.indexTabOn]}
+                onPress={onPress}
+                activeOpacity={0.8}
+              >
+                {custom ? custom(on) : <Ionicons name={icon} size={19} color={on ? '#FFFFFF' : '#71717A'} />}
+                {badge > 0 ? (
+                  <View style={styles.indexTabBadge}>
+                    <Text style={styles.leftRailUnreadText}>{badge > 99 ? '…' : badge}</Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            );
+            return (
+              <>
+                {/* 홈 */}
+                {Tab({
+                  on: mainTab === 'home' && !showGroupChat,
+                  icon: mainTab === 'home' && !showGroupChat ? 'home' : 'home-outline',
+                  onPress: goTab(() => { setOnlyFavoritesFeed(false); fetchPosts(); setMainTab('home'); }),
+                })}
+                {/* 게시글 (모든 게시물 격자 보기) */}
+                {Tab({
+                  on: mainTab === 'posts' && !showGroupChat,
+                  icon: mainTab === 'posts' && !showGroupChat ? 'grid' : 'grid-outline',
+                  onPress: goTab(() => { fetchPosts(); setMainTab('posts'); }),
+                })}
+                {/* 1:1 채팅 (말풍선 하나) */}
+                {Tab({
+                  on: mainTab === 'chats' && !showGroupChat,
+                  icon: mainTab === 'chats' && !showGroupChat ? 'chatbubble' : 'chatbubble-outline',
+                  badge: totalUnreadMessages,
+                  onPress: goTab(() => {
+                    fetchFriendsAndRequests();
+                    fetchUnreadCountsBySender(session.user.id);
+                    setMainTab('chats');
+                  }),
+                })}
+                {/* 단체방 (겹친 말풍선) */}
+                {Tab({
+                  on: showGroupChat,
+                  // 단체방: 말풍선 하나 + 뒤에 옅은 음영 말풍선
+                  custom: (on) => (
+                    <View style={{ width: 23, height: 21 }}>
+                      <Ionicons name="chatbubble" size={17} color={on ? '#FFFFFF' : '#71717A'} style={{ position: 'absolute', left: 5, top: 4, opacity: 0.35 }} />
+                      <Ionicons name={on ? 'chatbubble' : 'chatbubble-outline'} size={17} color={on ? '#FFFFFF' : '#71717A'} style={{ position: 'absolute', left: 0, top: 0 }} />
+                    </View>
+                  ),
+                  badge: groupUnreadTotal,
+                  onPress: goTab(() => setShowGroupChat(true)),
+                })}
+                {/* 회원 검색 (돋보기) */}
+                {Tab({
+                  on: mainTab === 'friends' && !showGroupChat,
+                  icon: "search",
+                  onPress: goTab(() => { fetchFriendsAndRequests(); setMainTab('friends'); }),
+                })}
+                {/* 새 게시물 쓰기 */}
+                {Tab({
+                  on: false,
+                  icon: "add",
+                  onPress: goTab(() => {
+                    setImageUri(null); setPostImages([]);
+                    setContent('');
+                    setVisibility('public');
+                    setWriteModalVisible(true);
+                  }),
+                })}
+              </>
+            );
+          })()}
           {showGroupChat && session ? (
             <GroupChat
               supabase={supabase}
@@ -5456,27 +6160,13 @@ export default function App() {
               onClose={() => { setShowGroupChat(false); fetchGroupUnreadTotal(session.user.id); }}
             />
           ) : null}
-
-
-          <TouchableOpacity
-            style={styles.leftMenuBtn}
-            onPress={() => {
-              setBrandMenuOpen(false);
-              setMemberPostsUser(null);
-              setAccountMenuOpen(false);
-              setImageUri(null); setPostImages([]);
-              setContent('');
-              setVisibility('public');
-              setWriteModalVisible(true);
-            }}
-          >
-            <Ionicons name="add" size={25} color="#111111" />
-          </TouchableOpacity>
-
         </View>
 
         {/* 중앙 메인 콘텐츠 영역 */}
         <View style={styles.centerContentArea}>
+          {/* 모든 메뉴 공통: 로고 + BGM (맨 위 고정) */}
+          {renderTopHeader()}
+          <View style={{ flex: 1 }}>
           {/* 멤버 게시물 화면 (프로필 → 게시물): 홈 화면과 같은 모양, 아래 메뉴바 유지 */}
           {memberPostsUser && (() => {
             const mu = memberPostsUser;
@@ -5565,27 +6255,27 @@ export default function App() {
             );
           })()}
 
-          {mainTab === 'home' && (
+          {mainTab === 'home' && renderHomeDashboard()}
+
+          {mainTab === 'posts' && (
             <FlatList
-              key={homeGrid ? 'home-grid' : 'home-feed'}
+              key={homeGrid ? 'posts-grid' : 'posts-feed'}
               style={{ flex: 1, backgroundColor: bgc('#FFFFFF') }}
               onLayout={(e) => {
                 const w = Math.floor(e.nativeEvent.layout.width);
                 if (w > 0 && w !== homeListWidth) setHomeListWidth(w);
               }}
               contentContainerStyle={{ paddingBottom: 28 }}
-              data={feedPosts}
+              data={postsList}
               numColumns={homeGrid ? 3 : 1}
-              extraData={homeListWidth}
-              keyExtractor={(item) => String(item.id)}
-              ListHeaderComponent={renderHomeFeedHeader}
+              extraData={[homeListWidth, postsMemberId]}
+              keyExtractor={(item) => 'p' + String(item.id)}
+              ListHeaderComponent={renderPostsHeader}
               renderItem={homeGrid ? renderGridItem : renderHomeFeedPostItem}
               ListEmptyComponent={
                 <View style={styles.emptyBox}>
-                  <Text style={[styles.emptyText, { color: '#777' }]}>
-                    {onlyFavoritesFeed
-                      ? '친구공개로 공유된 게시물이 없습니다.\n친구 신청을 수락하거나 전체 보기로 전환해 보세요!'
-                      : '아직 올라온 스토리가 없습니다.\n왼쪽 [+] 버튼을 눌러 첫 사진을 올려 보세요!'}
+                  <Text style={[styles.emptyText, { color: '#A1A1AA' }]}>
+                    {postsMemberId ? '아직 볼 수 있는 게시물이 없어요.' : '아직 올라온 게시물이 없어요.\n왼쪽 [＋] 탭을 눌러 첫 사진을 올려 보세요!'}
                   </Text>
                 </View>
               }
@@ -5610,6 +6300,7 @@ export default function App() {
               }
             />
           )}
+          </View>
         </View>
 
       </View>
@@ -6386,23 +7077,53 @@ const styles = themedStyles({
 
   mainShellRow: {
     flex: 1,
-    // 메뉴바(첫 번째 칸)를 화면 맨 아래로 보내기 위해 아래→위 순서로 쌓음
-    flexDirection: 'column-reverse',
+    // 왼쪽 색인 메뉴 | 오른쪽 내용 칸
+    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
   },
 
-  // 화면 맨 아래 가로 메뉴바
+  // 왼쪽 세로 색인 메뉴 (탭이 오른쪽 내용 칸에 붙어 있음)
   leftVerticalMenuBar: {
-    flexDirection: 'row',
+    width: LEFT_RAIL_WIDTH - 2,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 6,
-    paddingTop: 4,
-    paddingBottom: 8,
+    alignItems: 'flex-end',
+    justifyContent: 'center', // 탭을 화면 세로 가운데로
+    gap: 6,
   },
+  indexTab: {
+    width: 32,
+    height: 46,
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
+    backgroundColor: 'rgba(24,24,27,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indexTabOn: {
+    width: 40,
+    backgroundColor: 'rgba(24,24,27,0.78)',
+  },
+  indexTabBadge: {
+    position: 'absolute',
+    top: -6,
+    left: -6,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3.5,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  postsTabHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
+  postsTabTitle: { fontSize: 20, fontWeight: 'bold', color: '#191919' },
+  postsTabCount: { fontSize: 13, color: '#A1A1AA' },
   leftMenuBtn: {
     width: 44,
     height: 46,
@@ -6445,6 +7166,9 @@ const styles = themedStyles({
     flex: 1,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: SIDE_MARGIN,
+    // 색인 탭이 붙는 왼쪽 테두리
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(24,24,27,0.78)',
   },
 
   rightUnreadRailBar: {
@@ -6509,17 +7233,15 @@ const styles = themedStyles({
 
   igHeaderContainer: {
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    paddingTop: 10,
-    paddingBottom: 6,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
   igTopBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 0,
+    paddingVertical: 6,
   },
   igCenterBrandBtn: {
     flexDirection: 'row',
@@ -6529,12 +7251,16 @@ const styles = themedStyles({
     paddingVertical: 2,
   },
   igLogoText: {
-    fontSize: 42,
+    fontSize: 38,
     fontWeight: '900',
     color: '#111111',
-    letterSpacing: -2.2,
-    lineHeight: 48,
+    letterSpacing: -2,
+    lineHeight: 46,
     transform: [{ skewX: '-8deg' }],
+    // 글꼴의 가장 굵은 두께보다 더 두껍게 보이도록 같은 색 그림자를 살짝 겹침
+    textShadowColor: '#111111',
+    textShadowOffset: { width: 1, height: 0 },
+    textShadowRadius: 1,
   },
   igTopRightBtn: {
     width: 36,
@@ -6737,6 +7463,114 @@ const styles = themedStyles({
   igStoryRingOff: {
     borderColor: '#D4D4D8',
   },
+  igStoryRingSel: {
+    borderColor: 'rgba(24,24,27,0.78)',
+    borderWidth: 3,
+    backgroundColor: 'rgba(24,24,27,0.10)',
+  },
+  postsAllAvatar: { backgroundColor: 'rgba(24,24,27,0.06)', alignItems: 'center', justifyContent: 'center' },
+  postsMemberHead: {
+    flexDirection: 'row', alignItems: 'center', marginTop: 8, padding: 10,
+    borderRadius: 12, backgroundColor: 'rgba(24,24,27,0.04)',
+  },
+  postsMemberAvatar: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(24,24,27,0.10)' },
+  postsMemberName: { fontSize: 15, fontWeight: '700', color: '#18181B' },
+  postsMemberCount: { fontSize: 12, fontWeight: '400', color: '#A1A1AA' },
+  postsMemberBio: { fontSize: 12, color: '#52525B', marginTop: 2 },
+  postsMemberVisit: { fontSize: 10.5, color: '#A1A1AA', marginTop: 2 },
+  postsAllHead: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 8 },
+
+  // ---- 새 홈 화면 (회색 농도: 공지 78% · 메인 65% · 가격 14% · 서브 10% · 희망 6% · 스케줄/항공 5% · 여행지 4% · 오늘의 회원 3%) ----
+  hNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 12, backgroundColor: 'rgba(24,24,27,0.78)', marginBottom: 10,
+  },
+  hNoticeText: { flex: 1, color: '#FFFFFF', fontSize: 13, lineHeight: 19 },
+  hNoticeEmpty: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 9,
+    borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(24,24,27,0.2)', marginBottom: 10,
+  },
+  hNoticeEmptyText: { fontSize: 12, color: '#71717A' },
+  hBoardWrap: { flex: 1, paddingTop: 36 },
+  hBoardHead: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(24,24,27,0.06)',
+  },
+  hBoardTitle: { fontSize: 18, fontWeight: '700', color: '#18181B', marginLeft: 8 },
+  hBoardCount: { fontSize: 13, color: '#A1A1AA', marginLeft: 6 },
+  hBoardWrite: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 11, paddingVertical: 6,
+    borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)',
+  },
+  hBoardWriteText: { fontSize: 13, fontWeight: '700', color: '#3F3F46' },
+  hBoardRow: { borderRadius: 11, padding: 12, marginBottom: 7, backgroundColor: 'rgba(24,24,27,0.03)' },
+  hBoardRowNew: { backgroundColor: 'rgba(24,24,27,0.10)' },
+  hBoardText: { fontSize: 14, color: '#27272A', lineHeight: 20 },
+  hSec: { borderRadius: 14, padding: 12, marginBottom: 10 },
+  hSecHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 },
+  hSecTitle: { fontSize: 14, fontWeight: '700', color: '#18181B' },
+  hSecAction: { fontSize: 11.5, color: '#A1A1AA' },
+  hMuted: { fontSize: 11, color: '#A1A1AA' },
+  hMotdImg: { width: 68, height: 68, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.12)' },
+  hMiniAvatar: { width: 20, height: 20, borderRadius: 6, backgroundColor: 'rgba(24,24,27,0.12)', marginRight: 6 },
+  hMotdName: { fontSize: 13, fontWeight: '700', color: '#18181B', flexShrink: 1 },
+  hMotdText: { fontSize: 12, color: '#52525B', marginTop: 4, lineHeight: 17 },
+  hMainSch: { borderRadius: 11, backgroundColor: 'rgba(24,24,27,0.65)', padding: 11, marginBottom: 6 },
+  hMainTag: { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  hMainTagText: { fontSize: 10.5, color: '#FFFFFF', fontWeight: '700' },
+  hMainWhen: { fontSize: 11, color: 'rgba(255,255,255,0.8)' },
+  hMainTitle: { fontSize: 15, fontWeight: '700', color: '#FFFFFF', marginTop: 6 },
+  hSubSch: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: 9, backgroundColor: 'rgba(24,24,27,0.10)', paddingHorizontal: 10, paddingVertical: 7, marginBottom: 4,
+  },
+  hSubText: { flex: 1, fontSize: 12, color: '#27272A', marginRight: 8 },
+  hSubWhen: { fontSize: 11, color: '#71717A' },
+  hWeekRow: { flexDirection: 'row', gap: 3, marginTop: 8 },
+  hWeekCell: { flex: 1, alignItems: 'center', paddingVertical: 4, borderRadius: 7 },
+  hWeekCellOn: { backgroundColor: 'rgba(24,24,27,0.78)' },
+  hWeekDow: { fontSize: 10, color: '#71717A' },
+  hWeekDate: { fontSize: 12, fontWeight: '700', color: '#18181B' },
+  hWeekDot: { fontSize: 7, color: '#3F3F46', height: 10 },
+  hDestBox: {
+    height: 58, borderRadius: 9, backgroundColor: 'rgba(24,24,27,0.10)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  hDestRegion: { position: 'absolute', left: 5, bottom: 5, backgroundColor: 'rgba(255,255,255,0.88)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
+  hDestRegionText: { fontSize: 10, color: '#52525B' },
+  hDestCity: { fontSize: 13, fontWeight: '700', color: '#18181B', marginTop: 5 },
+  hChip: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(24,24,27,0.06)' },
+  hChipOn: { backgroundColor: 'rgba(24,24,27,0.78)' },
+  hChipText: { fontSize: 11.5, color: '#52525B' },
+  hFlightRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 8, borderTopWidth: 1, borderTopColor: 'rgba(24,24,27,0.06)',
+  },
+  hFlightRoute: { flex: 1, fontSize: 13, color: '#18181B', marginRight: 8 },
+  hPricePill: { backgroundColor: 'rgba(24,24,27,0.14)', borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3 },
+  hPriceText: { fontSize: 12, fontWeight: '700', color: '#18181B' },
+  hNewTag: { backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 1 },
+  hNewTagText: { fontSize: 10, color: '#FFFFFF', fontWeight: '700' },
+  hWishAvatar: { width: 46, height: 46, borderRadius: 13, backgroundColor: 'rgba(24,24,27,0.14)' },
+  hWishWho: { fontSize: 12, color: '#3F3F46' },
+  hWishPlace: { fontSize: 16, fontWeight: '700', color: '#18181B', marginTop: 2 },
+  hWishBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 9, backgroundColor: 'rgba(24,24,27,0.10)' },
+  hWishBtnDark: { backgroundColor: 'rgba(24,24,27,0.78)' },
+  hWishBtnText: { fontSize: 12, fontWeight: '700', color: '#27272A' },
+  hWishAsk: { fontSize: 15, fontWeight: '700', color: '#18181B', marginTop: 6, marginBottom: 3 },
+  hModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 22 },
+  hModalCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 18 },
+  hModalTitle: { fontSize: 17, fontWeight: '700', color: '#18181B', marginBottom: 12 },
+  hInput: {
+    borderWidth: 1, borderColor: '#E4E4E7', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 14, color: '#18181B', marginBottom: 8,
+  },
+  hMainToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, marginBottom: 4 },
+  hModalBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
+  hBtnLight: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.06)' },
+  hBtnLightText: { fontSize: 13, fontWeight: '700', color: '#3F3F46' },
+  hBtnDark: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.78)' },
+  hBtnDarkText: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
   igStoryFriendBadge: {
     position: 'absolute',
     right: -3,
@@ -6940,7 +7774,7 @@ const styles = themedStyles({
 
   viewerZoomLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000000', zIndex: 1250 },
   viewerZoomHint: { position: 'absolute', bottom: 40, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1260 },
-  musicBar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 6, marginBottom: 2, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: 'rgba(113,113,122,0.12)', borderWidth: 1, borderColor: 'rgba(113,113,122,0.25)' },
+  musicBar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 8, marginTop: 6, marginBottom: 2, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: 'rgba(24,24,27,0.08)', borderWidth: 0 },
   musicTitle: { fontSize: 13, fontWeight: '700', color: '#27272A' },
   musicOwner: { fontSize: 11, color: '#71717A', marginTop: 1 },
   musicBtn: { padding: 6, marginLeft: 2 },
@@ -7330,6 +8164,13 @@ const styles = themedStyles({
   glassBottomRow: { flexDirection: 'row', alignItems: 'center' },
   glassHalfBtn: { flex: 1, flexDirection: 'row', gap: 5, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   glassDividerVertical: { width: 1, height: '100%', backgroundColor: 'rgba(255, 255, 255, 0.35)' },
+  igTagline: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: '#8A8F98',
+    fontStyle: 'italic',
+    letterSpacing: 0.2,
+  },
   glassBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
 
   cmtSheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
