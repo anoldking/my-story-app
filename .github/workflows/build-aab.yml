@@ -114,6 +114,20 @@ jobs:
             console.log("API 36 설정 완료");
           '
           echo "android.suppressUnsupportedCompileSdk=36" >> android/gradle.properties
+          # Android 16: 뒤로가기 한 번에 앱이 꺼지지 않게 (예전 뒤로가기 방식 사용)
+          node -e '
+            const fs = require("fs");
+            const f = "android/app/src/main/AndroidManifest.xml";
+            let m = fs.readFileSync(f, "utf8");
+            if (m.includes("enableOnBackInvokedCallback")) {
+              m = m.replace(/android:enableOnBackInvokedCallback="[^"]*"/, "android:enableOnBackInvokedCallback=\"false\"");
+            } else {
+              m = m.replace("<application ", "<application android:enableOnBackInvokedCallback=\"false\" ");
+            }
+            if (!m.includes("enableOnBackInvokedCallback=\"false\"")) { console.log("매니페스트 수정 실패"); process.exit(1); }
+            fs.writeFileSync(f, m);
+            console.log("뒤로가기 설정 완료");
+          '
 
       # 업로드 열쇠로 서명하도록 설정
       - name: Set up upload key
