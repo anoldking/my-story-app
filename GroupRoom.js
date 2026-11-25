@@ -373,6 +373,29 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
     Linking.openURL(url).catch(() => Alert.alert('열기 실패', '파일을 열 수 없습니다.'));
   };
 
+  // 메시지 속 인터넷 주소(링크)를 찾아서 눌러 열 수 있게 나눔
+  const LINK_RE = /((?:https?:\/\/|www\.)[^\s<>"]+)/gi;
+  const openLink = (raw) => {
+    let url = String(raw || '').replace(/[),.!?'"\]]+$/, '');
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    Linking.openURL(url).catch(() => Alert.alert('열기 실패', '링크를 열 수 없어요.'));
+  };
+  const renderLinkedText = (text, mine) => {
+    const str = String(text || '');
+    const parts = str.split(LINK_RE);
+    if (parts.length === 1) return str;
+    return parts.map((part, i) => {
+      if (i % 2 === 1) {
+        return (
+          <Text key={i} style={[s.linkText, mine && s.linkTextMine]} onPress={() => openLink(part)} suppressHighlighting>
+            {part}
+          </Text>
+        );
+      }
+      return part;
+    });
+  };
+
   // 파일 말풍선을 눌렀을 때: 열기 / 폰에 저장
   const fileActions = (item) => {
     Alert.alert(item.file_name || '첨부파일', '이 파일을 어떻게 할까요?', [
@@ -453,7 +476,7 @@ export default function GroupRoom({ supabase, me, room, onBack, onLeft, onInvite
         delayLongPress={400}
         style={[s.bubble, mine ? s.bubbleMine : s.bubbleOther]}
       >
-        <Text style={mine ? s.textMine : s.textOther}>{item.content}</Text>
+        <Text style={mine ? s.textMine : s.textOther}>{renderLinkedText(item.content, mine)}</Text>
       </TouchableOpacity>
     );
   };
@@ -749,6 +772,8 @@ const s = themedStyles({
   grayBtnLightText: { color: '#3F3F46', fontWeight: '700', fontSize: 14 },
   viewer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center' },
   viewerImg: { width: '100%', height: '80%' },
+  linkText: { color: '#1D4ED8', textDecorationLine: 'underline' },
+  linkTextMine: { color: '#0B4A8B' },
   viewerSave: {
     position: 'absolute', bottom: 48, alignSelf: 'center', flexDirection: 'row', alignItems: 'center',
     gap: 6, backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22,
