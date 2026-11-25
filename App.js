@@ -4657,7 +4657,7 @@ export default function App() {
     const dayKey = dayKeyNum();
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
 
-    // 오늘의 회원: 사진 있는 게시물 중 날마다 하나
+    // 오늘의 주인공: 사진 있는 게시물 중 날마다 하나 (날짜가 바뀌면 자동으로 바뀜)
     const motdPool = visiblePosts.filter((p) => p.image_urls && p.image_urls.length > 0);
     const motd = motdPool.length ? seededPick(motdPool, 1, dayKey + memberOfDayShuffle * 7)[0] : null;
     const motdAuthor = motd ? (motd.profiles?.nickname || memberById(motd.author_id)?.nickname || '회원') : '';
@@ -4728,11 +4728,6 @@ export default function App() {
           <View style={[styles.hSec, { backgroundColor: 'rgba(24,24,27,0.03)', borderWidth: 1, borderColor: 'rgba(24,24,27,0.06)' }]}>
             <View style={styles.hSecHead}>
               <Text style={styles.hSecTitle}><Ionicons name="trophy-outline" size={14} color="#3F3F46" /> 오늘의 주인공</Text>
-              {motdPool.length > 1 ? (
-                <TouchableOpacity onPress={() => setMemberOfDayShuffle(memberOfDayShuffle + 1)} hitSlop={8}>
-                  <Text style={styles.hSecAction}><Ionicons name="refresh" size={11} color="#A1A1AA" /> 다시 뽑기</Text>
-                </TouchableOpacity>
-              ) : null}
             </View>
             {motd ? (
               <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }} activeOpacity={0.8} onPress={() => openPostView(motd, 0)}>
