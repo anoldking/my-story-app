@@ -20,6 +20,7 @@
     "expo-haptics": "~14.1.4",
     "expo-image-manipulator": "~13.1.0",
     "expo-image-picker": "~16.1.0",
+    "expo-intent-launcher": "*",
     "expo-media-library": "~17.1.7",
     "expo-notifications": "*",
     "expo-status-bar": "~2.2.3",

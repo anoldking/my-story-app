@@ -37,6 +37,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { Ionicons, themedStyles, useTheme, bgc, cycleThemeMode, getMode, modeLabel, hapticTap, hapticSelect } from './theme';
 import { BounceView, HeartPop, useDoubleTap } from './anim';
 
@@ -294,6 +296,46 @@ const openStorePage = () => {
 const JEJU_ORIGINS = ['GMP', 'ICN', 'PUS'];
 const ORIGIN_KO = { GMP: '김포', ICN: '인천', PUS: '김해' };
 const JEJU_DEST = TRAVEL_DOMESTIC.find((d) => d.iata === 'CJU');
+// ---- 캐시 삭제 ----
+// 앱 임시 폴더(사진·동영상·노래 임시 파일) 크기 계산
+const cacheDirSize = async (uri, depth = 0) => {
+  if (!uri || depth > 6) return 0;
+  let total = 0;
+  try {
+    const names = await FileSystem.readDirectoryAsync(uri);
+    for (const n of names) {
+      const child = uri.endsWith('/') ? uri + n : `${uri}/${n}`;
+      try {
+        const info = await FileSystem.getInfoAsync(child, { size: true });
+        if (!info.exists) continue;
+        if (info.isDirectory) total += await cacheDirSize(child, depth + 1);
+        else total += info.size || 0;
+      } catch {}
+    }
+  } catch {}
+  return total;
+};
+const clearCacheDir = async () => {
+  const root = FileSystem.cacheDirectory;
+  if (!root) return;
+  let names = [];
+  try { names = await FileSystem.readDirectoryAsync(root); } catch { return; }
+  for (const n of names) {
+    try { await FileSystem.deleteAsync(root + n, { idempotent: true }); } catch {}
+  }
+};
+const fmtBytes = (b) => {
+  if (!b || b < 1024 * 1024) return `${Math.max(0, Math.round((b || 0) / 1024))}KB`;
+  return `${(b / (1024 * 1024)).toFixed(b >= 100 * 1024 * 1024 ? 0 : 1)}MB`;
+};
+// 폰 설정 > 앱 > Google Play 스토어 화면 열기
+const openPlayStoreSettings = async () => {
+  try {
+    await IntentLauncher.startActivityAsync('android.settings.APPLICATION_DETAILS_SETTINGS', { data: 'package:com.android.vending' });
+  } catch {
+    Alert.alert('설정 열기 실패', '설정 → 애플리케이션 → Google Play 스토어 → 저장공간 → 캐시 삭제 순서로 직접 들어가 주세요.');
+  }
+};
 // 항공권 검색 사이트 (네이버 / 스카이스캐너)
 const FLIGHT_NAVER_KEY = 'flight_open_naver_v1';
 const KR_AIRPORTS = ['ICN', 'GMP', 'PUS', 'CJU', 'CJJ', 'TAE', 'KWJ', 'RSU', 'USN', 'MWX'];
@@ -2898,6 +2940,10 @@ export default function App() {
   const [travelOpenCity, setTravelOpenCity] = useState(null); // 눌러서 펼친 여행지
   const [travelDetail, setTravelDetail] = useState(null); // 전체 화면으로 연 여행지
   const [destLikes, setDestLikes] = useState([]); // [{ city, user_id }] '가고 싶어요'
+  // 캐시 삭제 창
+  const [cacheOpen, setCacheOpen] = useState(false);
+  const [cacheSize, setCacheSize] = useState(null); // null = 계산 중
+  const [cacheBusy, setCacheBusy] = useState(false);
   // 항공권 검색 사이트 고르기 창
   const [flightPick, setFlightPick] = useState(null); // { from, to, dep, ret }
   const [flightNaverAlways, setFlightNaverAlways] = useState(false);
@@ -4723,6 +4769,12 @@ export default function App() {
 
           <View style={styles.igDropdownDivider} />
 
+          <TouchableOpacity style={styles.accountPopoverActionRow} onPress={openCacheClear}>
+            <Ionicons name="trash-outline" size={16} color="#18181B" />
+            <Text style={styles.accountPopoverActionText}>캐시 삭제</Text>
+          </TouchableOpacity>
+          <View style={styles.igDropdownDivider} />
+
           <TouchableOpacity
             style={styles.accountPopoverActionRow}
             onPress={handleLogout}
@@ -4860,6 +4912,45 @@ export default function App() {
           ) : null}
         </View>
       ) : null}
+
+      {/* 캐시 삭제 확인 창 */}
+      <Modal visible={cacheOpen} transparent animationType="fade" onRequestClose={() => { if (!cacheBusy) setCacheOpen(false); }}>
+        <View style={styles.updDim}>
+          <View style={[styles.updCard, { alignItems: 'stretch', paddingBottom: 18 }]}>
+            <Text style={styles.ccTitle}>캐시 삭제</Text>
+            <Text style={styles.ccSub}>me 앱과 플레이스토어의 임시 파일을 비워요</Text>
+            <View style={styles.ccStep}>
+              <View style={[styles.ccNum, { backgroundColor: '#3F3F46' }]}><Text style={[styles.ccNumText, { color: '#FFFFFF' }]}>1</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.ccStepTitle}>
+                  me 앱 캐시 <Text style={{ fontWeight: '400', color: '#71717A' }}>{cacheSize == null ? '계산 중…' : fmtBytes(cacheSize)}</Text>
+                </Text>
+                <Text style={styles.ccStepSub}>사진·동영상·노래 임시 파일 · 자동으로 지워져요</Text>
+              </View>
+            </View>
+            {Platform.OS === 'android' ? (
+              <View style={styles.ccStep}>
+                <View style={styles.ccNum}><Text style={styles.ccNumText}>2</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.ccStepTitle}>플레이스토어 캐시</Text>
+                  <Text style={styles.ccStepSub}>설정 화면이 열려요{'\n'}저장공간 → 캐시 삭제 를 눌러 주세요</Text>
+                </View>
+              </View>
+            ) : null}
+            <Text style={styles.ccNote}>✓ 로그인, 글, 대화, me 폴더 사진은 그대로예요</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity style={[styles.ccBtn, { backgroundColor: 'rgba(24,24,27,0.06)' }]} disabled={cacheBusy} onPress={() => setCacheOpen(false)}>
+                <Text style={[styles.ccBtnText, { color: '#52525B' }]}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.ccBtn, { flex: 1.4, backgroundColor: '#3F3F46' }]} disabled={cacheBusy} onPress={runCacheClear}>
+                {cacheBusy ? <ActivityIndicator size="small" color="#FFFFFF" /> : (
+                  <Text style={[styles.ccBtnText, { color: '#FFFFFF' }]}>{Platform.OS === 'android' ? '둘 다 비우기' : '비우기'}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* 항공권 검색 사이트 고르기 */}
       <Modal visible={!!flightPick} transparent animationType="slide" onRequestClose={() => setFlightPick(null)}>
@@ -5302,6 +5393,33 @@ export default function App() {
     if (flightNaverAlways) { openUrlSafe(naverFlightUrl(from, iata, dep, ret)); return; }
     setFlightNaverCheck(false);
     setFlightPick({ from, to: iata, dep: dep || null, ret: ret || null });
+  };
+  const openCacheClear = async () => {
+    setAccountMenuOpen(false);
+    setCacheSize(null);
+    setCacheOpen(true);
+    const size = await cacheDirSize(FileSystem.cacheDirectory);
+    setCacheSize(size);
+  };
+  const runCacheClear = async () => {
+    if (cacheBusy) return;
+    setCacheBusy(true);
+    const before = cacheSize != null ? cacheSize : await cacheDirSize(FileSystem.cacheDirectory);
+    await clearCacheDir();
+    setCacheBusy(false);
+    setCacheOpen(false);
+    if (Platform.OS !== 'android') {
+      Alert.alert('캐시 삭제', `me 캐시 ${fmtBytes(before)}를 비웠어요.`);
+      return;
+    }
+    Alert.alert(
+      'me 캐시를 비웠어요',
+      `${fmtBytes(before)}를 지웠어요.\n\n이제 플레이스토어 차례예요.\n열리는 화면에서 '저장공간' → '캐시 삭제'를 눌러 주세요.\n('데이터 삭제'는 누르지 마세요)`,
+      [
+        { text: '나중에', style: 'cancel' },
+        { text: '플레이스토어 열기', onPress: openPlayStoreSettings },
+      ],
+    );
   };
   const pickFlightSite = (site) => {
     const f = flightPick;
@@ -9039,6 +9157,16 @@ const styles = themedStyles({
   hCalFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   hCalOk: { backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
   hCalOkText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  ccTitle: { fontSize: 16, fontWeight: '700', color: '#18181B', marginBottom: 4 },
+  ccSub: { fontSize: 12, color: '#71717A', marginBottom: 12 },
+  ccStep: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 11, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.05)', marginBottom: 6 },
+  ccNum: { width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(24,24,27,0.15)', alignItems: 'center', justifyContent: 'center' },
+  ccNumText: { fontSize: 11, fontWeight: '700', color: '#3F3F46' },
+  ccStepTitle: { fontSize: 13, fontWeight: '700', color: '#18181B' },
+  ccStepSub: { fontSize: 11, color: '#71717A', marginTop: 2, lineHeight: 17 },
+  ccNote: { fontSize: 11, color: '#71717A', marginTop: 6, marginBottom: 14 },
+  ccBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, borderRadius: 10 },
+  ccBtnText: { fontSize: 13, fontWeight: '700' },
   fsDim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   fsSheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 24 },
   fsHandle: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(24,24,27,0.15)', marginBottom: 12 },
