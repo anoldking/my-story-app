@@ -12,6 +12,8 @@ import {
   ScrollView,
   Dimensions,
   KeyboardAvoidingView,
+  Keyboard,
+  useWindowDimensions,
   Modal,
   Platform,
   BackHandler,
@@ -947,6 +949,34 @@ const CompactFeedImage = ({ uri, onPress, onDoubleLike, width: widthProp }) => {
 };
 
 // 전체화면 원본 사진 팝업
+// 1:1 목록 오른쪽에 보이는 마지막 대화 시간 (카카오톡처럼)
+const formatChatListTime = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(d, now)) {
+    const h = d.getHours();
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${mm}`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(d, yesterday)) return '어제';
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+  return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`;
+};
+
+// 1:1 목록 이름 아래에 보이는 마지막 메시지 내용
+const chatPreviewText = (m) => {
+  if (!m) return '';
+  if (m.sticker_url || m.content === STICKER_LABEL) return '이모티콘을 보냈습니다.';
+  if (m.image_url) return '사진을 보냈습니다.';
+  if (m.file_url) return '파일을 보냈습니다.';
+  return String(m.content || '').replace(/\s+/g, ' ').trim();
+};
+
 const FullscreenPhotoPopup = ({
   photoInfo,
   currentUserId,
@@ -2189,6 +2219,7 @@ function AppMain() {
   const [postsMemberId, setPostsMemberId] = useState(null); // 게시글 탭에서 고른 회원
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [topBarBottom, setTopBarBottom] = useState(56);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
 
   // 접속시 음악 자동재생 켬/끔 (기본: 켬 — 처음 홈화면에 들어오면 바로 재생)
@@ -2333,11 +2364,30 @@ function AppMain() {
   const [postGalleryOpen, setPostGalleryOpen] = useState(false);
   const [homeListWidth, setHomeListWidth] = useState(0);
   const inlineChatScrollRef = useRef(null);
+  // 폴드를 펼친 화면·태블릿처럼 넓은 화면이면 1:1 목록 옆에 대화창을 나란히 보여줌
+  const { width: windowWidth } = useWindowDimensions();
+  const isWideScreen = windowWidth >= 600;
+
+  // 1:1 대화창: 키보드가 다 올라온 뒤 맨 아래(마지막 메시지)로 다시 내림
+  useEffect(() => {
+    if (!chatPartner) return undefined;
+    const toEnd = () => {
+      setTimeout(() => inlineChatScrollRef.current?.scrollToEnd({ animated: true }), 120);
+      setTimeout(() => inlineChatScrollRef.current?.scrollToEnd({ animated: true }), 350);
+    };
+    const s1 = Keyboard.addListener('keyboardDidShow', toEnd);
+    const s2 = Keyboard.addListener('keyboardDidHide', toEnd);
+    return () => { s1.remove(); s2.remove(); };
+  }, [chatPartner]);
 
   const lastBackPressRef = useRef(0);
 
   const [homeGrid, setHomeGrid] = useState(false);
   const [memberFilterFriends, setMemberFilterFriends] = useState(false); // 홈 멤버 줄: true=친구만, false=모두
+  const [lastMsgByPartner, setLastMsgByPartner] = useState({}); // 상대별 마지막 메시지 (1:1 목록용)
+  const [memberSearch, setMemberSearch] = useState(''); // 회원 탭 검색어
+  const [memberSearchOpen, setMemberSearchOpen] = useState(false);
+  const memberPostsFromListRef = useRef(false); // 회원 탭에서 게시물을 열었으면 뒤로 누를 때 회원 탭으로
   const [memberPostsUser, setMemberPostsUser] = useState(null); // 프로필에서 '게시물'을 누른 멤버
   const [memberPostsGrid, setMemberPostsGrid] = useState(true); // 격자 보기 / 크게 보기
   const [memberMenuOpen, setMemberMenuOpen] = useState(false); // 회원 페이지 ··· 메뉴
@@ -2419,6 +2469,7 @@ function AppMain() {
       }
 
       if (memberPostsUser) {
+        memberPostsFromListRef.current = false;
         setMemberPostsUser(null);
         return true;
       }
@@ -2594,6 +2645,7 @@ function AppMain() {
         { event: '*', schema: 'public', table: 'messages' },
         (payload) => {
           fetchUnreadCountsBySender(session.user.id);
+          fetchLastMessages(session.user.id);
           if (payload.eventType === 'INSERT' && payload.new?.receiver_id === session.user.id) {
             triggerIncomingMessageBanner(payload.new);
           }
@@ -2907,6 +2959,33 @@ function AppMain() {
       },
     ]);
   };
+
+  // 1:1 목록: 상대마다 마지막 메시지 1개씩 (시간·내용 표시, 최근 대화 순 정렬용)
+  const fetchLastMessages = async (myId) => {
+    if (!myId || !supabase) return;
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('sender_id, receiver_id, content, created_at, image_url, file_url, sticker_url')
+        .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`)
+        .order('created_at', { ascending: false })
+        .limit(3000);
+      if (error || !Array.isArray(data)) return;
+      const map = {};
+      data.forEach((m) => {
+        const other = m.sender_id === myId ? m.receiver_id : m.sender_id;
+        if (!other || map[other]) return;
+        map[other] = m;
+      });
+      setLastMsgByPartner(map);
+    } catch {
+      // 무시
+    }
+  };
+
+  useEffect(() => {
+    if (session?.user?.id) fetchLastMessages(session.user.id);
+  }, [session?.user?.id, mainTab, chatPartner?.id]);
 
   const fetchUnreadCountsBySender = async (myId) => {
     if (!myId) return;
@@ -4510,6 +4589,7 @@ function AppMain() {
   useEffect(() => { if (selectedPostId) recordPostView(selectedPostId); }, [selectedPostId]);
   useEffect(() => { if (selectedFriend?.id) recordProfileVisit(selectedFriend.id); }, [selectedFriend?.id]);
   useEffect(() => { if (memberPostsUser?.id) recordProfileVisit(memberPostsUser.id); }, [memberPostsUser?.id]);
+
   useEffect(() => { if (viewingImage?.postId) recordPostView(viewingImage.postId); }, [viewingImage?.postId]);
   useEffect(() => { if (commentSheetPost?.id) recordPostView(commentSheetPost.id); }, [commentSheetPost?.id]);
 
@@ -4655,6 +4735,7 @@ function AppMain() {
       };
     });
 
+  // 1:1 목록: 대화한 적 있는 사람만, 최근 대화 순 (카카오톡처럼)
   const sortedChatMembers = (() => {
     const myId = session.user.id;
     const meItem = members.find((m) => m.id === myId) || {
@@ -4663,14 +4744,15 @@ function AppMain() {
       bio: profile.bio || '',
       avatar_url: profile.avatar_url || null,
     };
-    const others = members
-      .filter((m) => m.id !== myId)
+    const all = [meItem, ...members.filter((m) => m.id !== myId)];
+    if (chatPartner && !all.some((m) => m.id === chatPartner.id)) all.push(chatPartner);
+    return all
+      .filter((m) => lastMsgByPartner[m.id] || (unreadCountBySender[m.id] || 0) > 0 || chatPartner?.id === m.id)
       .sort((a, b) => {
-        const diff = (unreadCountBySender[b.id] || 0) - (unreadCountBySender[a.id] || 0);
-        if (diff !== 0) return diff;
-        return (a.nickname || '').localeCompare(b.nickname || '', 'ko');
+        const ta = lastMsgByPartner[a.id]?.created_at || '9999';
+        const tb = lastMsgByPartner[b.id]?.created_at || '9999';
+        return ta < tb ? 1 : ta > tb ? -1 : 0;
       });
-    return [meItem, ...others];
   })();
 
   const currentAccountEmail = session.user?.email || '';
@@ -4685,9 +4767,203 @@ function AppMain() {
     return `${name} 화면에서도 BGM이 재생되고 있습니다.`;
   })();
 
+  // 햄버거 메뉴 / 로고 메뉴: 화면 위에 떠서 열림 (아래 화면을 밀어내지 않음)
+  const renderTopMenus = () => {
+    if (!accountMenuOpen && !brandMenuOpen) return null;
+    return (
+      <View style={styles.topMenuOverlay} pointerEvents="box-none">
+        {/* 메뉴 바깥을 누르면 닫힘 */}
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={() => { setAccountMenuOpen(false); setBrandMenuOpen(false); }}
+        />
+        <View style={{ position: 'absolute', top: topBarBottom, left: 0, right: 0, paddingHorizontal: SIDE_MARGIN }} pointerEvents="box-none">
+          {accountMenuOpen && (
+            <View style={styles.accountPopoverMenu}>
+              {/* 이름 줄을 누르면 내 프로필 화면 (아래 메뉴바의 프로필 버튼 대신) */}
+              <TouchableOpacity
+                style={styles.accountPopoverHeader}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setAccountMenuOpen(false);
+                  setMemberPostsUser(null);
+                  setMainTab('story');
+                }}
+              >
+                <Ionicons name="person-circle-outline" size={18} color="#18181B" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountPopoverName} numberOfLines={1}>
+                    {currentAccountName}
+                  </Text>
+                  <Text style={styles.accountPopoverEmail} numberOfLines={1}>
+                    {currentAccountEmail ? `${currentAccountEmail} · ` : ''}내 프로필 보기 ›
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.igDropdownDivider} />
+
+              <TouchableOpacity
+                style={styles.accountPopoverActionRow}
+                onPress={() => setIncomingListExpanded(!incomingListExpanded)}
+              >
+                <Ionicons name="notifications-outline" size={16} color="#0288D1" />
+                <Text style={styles.accountPopoverActionText}>친구 신청</Text>
+                <View style={styles.applicantCountPill}>
+                  <Text style={styles.applicantCountPillText}>{incomingCount}명</Text>
+                </View>
+              </TouchableOpacity>
+
+              {incomingListExpanded && incomingCount > 0 && (
+                <View style={styles.incomingRequestBox}>
+                  {incomingRequests.map((req) => (
+                    <View key={req.id} style={styles.incomingRequestRow}>
+                      <Text style={styles.incomingRequesterName} numberOfLines={1}>
+                        {req.requesterProfile?.nickname || '회원'}
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 5 }}>
+                        <TouchableOpacity
+                          style={styles.acceptMiniBtn}
+                          onPress={() => acceptFriendRequest(req.id, req.requester_id)}
+                        >
+                          <Text style={styles.acceptMiniBtnText}>수락</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.rejectMiniBtn}
+                          onPress={() => rejectFriendRequest(req.id, req.requester_id)}
+                        >
+                          <Text style={styles.rejectMiniBtnText}>거절</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.igDropdownDivider} />
+
+              <TouchableOpacity style={styles.accountPopoverActionRow} onPress={openCacheClear}>
+                <Ionicons name="trash-outline" size={16} color="#18181B" />
+                <Text style={styles.accountPopoverActionText}>캐시 삭제</Text>
+              </TouchableOpacity>
+              <View style={styles.igDropdownDivider} />
+
+              <TouchableOpacity
+                style={styles.accountPopoverActionRow}
+                onPress={handleLogout}
+                disabled={loading}
+              >
+                <Ionicons name="log-out-outline" size={16} color="#18181B" />
+                <Text style={styles.accountPopoverActionText}>로그아웃</Text>
+              </TouchableOpacity>
+              <View style={styles.igDropdownDivider} />
+
+              <TouchableOpacity
+                style={styles.accountPopoverActionRow}
+                onPress={() => setSettingsMenuOpen(!settingsMenuOpen)}
+              >
+                <Ionicons name="settings-outline" size={16} color="#18181B" />
+                <Text style={styles.accountPopoverActionText}>설정</Text>
+                <Ionicons name={settingsMenuOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#71717A" />
+              </TouchableOpacity>
+
+              {settingsMenuOpen && (
+                <View style={{ paddingLeft: 14 }}>
+                  <View style={styles.igDropdownDivider} />
+                  <TouchableOpacity
+                    style={styles.accountPopoverActionRow}
+                    onPress={() => { hapticSelect(); toggleBgmAutoStart(); }}
+                  >
+                    <Ionicons name="musical-note-outline" size={16} color="#18181B" />
+                    <Text style={styles.accountPopoverActionText}>접속시 음악재생</Text>
+                    <View style={styles.applicantCountPill}>
+                      <Text style={styles.applicantCountPillText}>{bgmAutoStart ? '켬' : '끔'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.igDropdownDivider} />
+                  <TouchableOpacity
+                    style={styles.accountPopoverActionRow}
+                    onPress={() => { hapticSelect(); cycleThemeMode(); }}
+                  >
+                    <Ionicons name="moon-outline" size={16} color="#18181B" />
+                    <Text style={styles.accountPopoverActionText}>화면 모드</Text>
+                    <View style={styles.applicantCountPill}>
+                      <Text style={styles.applicantCountPillText}>{modeLabel(getMode())}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.igDropdownDivider} />
+
+                  <TouchableOpacity
+                    style={styles.accountPopoverActionRow}
+                    onPress={() => {
+                      setAccountMenuOpen(false);
+                      setBlockListOpen(true);
+                    }}
+                  >
+                    <Ionicons name="ban-outline" size={16} color="#18181B" />
+                    <Text style={styles.accountPopoverActionText}>차단 관리</Text>
+                    <View style={styles.applicantCountPill}>
+                      <Text style={styles.applicantCountPillText}>{blockedIds.length}명</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.igDropdownDivider} />
+
+                  <TouchableOpacity
+                    style={styles.accountPopoverActionRow}
+                    onPress={() => {
+                      setAccountMenuOpen(false);
+                      openNotificationSoundSettings();
+                    }}
+                  >
+                    <Ionicons name="musical-notes-outline" size={16} color="#18181B" />
+                    <Text style={styles.accountPopoverActionText}>알림음 변경</Text>
+                  </TouchableOpacity>
+                  <View style={styles.igDropdownDivider} />
+
+                  <TouchableOpacity
+                    style={styles.accountPopoverActionRow}
+                    onPress={handleWithdrawAccount}
+                    disabled={loading}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#DC2626" />
+                    <Text style={[styles.accountPopoverActionText, { color: '#DC2626' }]}>탈퇴</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {brandMenuOpen && (
+            <View style={styles.igBrandDropdown}>
+              <TouchableOpacity
+                style={styles.igDropdownRow}
+                onPress={() => {
+                  setBrandMenuOpen(false);
+                  setOnlyFavoritesFeed(false);
+                  fetchFriendsAndRequests();
+                  setMainTab('friends');
+                }}
+              >
+                <Ionicons name="person-add-outline" size={17} color="#111111" />
+                <Text style={styles.igDropdownLabel}>친구하기</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   const renderTopHeader = () => (
     <View style={styles.igHeaderContainer}>
-      <View style={styles.igTopBar}>
+      <View
+        style={styles.igTopBar}
+        onLayout={(e) => {
+          const { y, height } = e.nativeEvent.layout;
+          setTopBarBottom(y + height);
+        }}
+      >
         <View style={{ width: 24 }} />
 
         <TouchableOpacity
@@ -4730,178 +5006,6 @@ function AppMain() {
           )}
         </TouchableOpacity>
       </View>
-
-      {accountMenuOpen && (
-        <View style={styles.accountPopoverMenu}>
-          {/* 이름 줄을 누르면 내 프로필 화면 (아래 메뉴바의 프로필 버튼 대신) */}
-          <TouchableOpacity
-            style={styles.accountPopoverHeader}
-            activeOpacity={0.7}
-            onPress={() => {
-              setAccountMenuOpen(false);
-              setMemberPostsUser(null);
-              setMainTab('story');
-            }}
-          >
-            <Ionicons name="person-circle-outline" size={18} color="#18181B" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.accountPopoverName} numberOfLines={1}>
-                {currentAccountName}
-              </Text>
-              <Text style={styles.accountPopoverEmail} numberOfLines={1}>
-                {currentAccountEmail ? `${currentAccountEmail} · ` : ''}내 프로필 보기 ›
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <View style={styles.igDropdownDivider} />
-
-          <TouchableOpacity
-            style={styles.accountPopoverActionRow}
-            onPress={() => setIncomingListExpanded(!incomingListExpanded)}
-          >
-            <Ionicons name="notifications-outline" size={16} color="#0288D1" />
-            <Text style={styles.accountPopoverActionText}>친구 신청</Text>
-            <View style={styles.applicantCountPill}>
-              <Text style={styles.applicantCountPillText}>{incomingCount}명</Text>
-            </View>
-          </TouchableOpacity>
-
-          {incomingListExpanded && incomingCount > 0 && (
-            <View style={styles.incomingRequestBox}>
-              {incomingRequests.map((req) => (
-                <View key={req.id} style={styles.incomingRequestRow}>
-                  <Text style={styles.incomingRequesterName} numberOfLines={1}>
-                    {req.requesterProfile?.nickname || '회원'}
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 5 }}>
-                    <TouchableOpacity
-                      style={styles.acceptMiniBtn}
-                      onPress={() => acceptFriendRequest(req.id, req.requester_id)}
-                    >
-                      <Text style={styles.acceptMiniBtnText}>수락</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.rejectMiniBtn}
-                      onPress={() => rejectFriendRequest(req.id, req.requester_id)}
-                    >
-                      <Text style={styles.rejectMiniBtnText}>거절</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-
-          <View style={styles.igDropdownDivider} />
-
-          <TouchableOpacity style={styles.accountPopoverActionRow} onPress={openCacheClear}>
-            <Ionicons name="trash-outline" size={16} color="#18181B" />
-            <Text style={styles.accountPopoverActionText}>캐시 삭제</Text>
-          </TouchableOpacity>
-          <View style={styles.igDropdownDivider} />
-
-          <TouchableOpacity
-            style={styles.accountPopoverActionRow}
-            onPress={handleLogout}
-            disabled={loading}
-          >
-            <Ionicons name="log-out-outline" size={16} color="#18181B" />
-            <Text style={styles.accountPopoverActionText}>로그아웃</Text>
-          </TouchableOpacity>
-          <View style={styles.igDropdownDivider} />
-
-          <TouchableOpacity
-            style={styles.accountPopoverActionRow}
-            onPress={() => setSettingsMenuOpen(!settingsMenuOpen)}
-          >
-            <Ionicons name="settings-outline" size={16} color="#18181B" />
-            <Text style={styles.accountPopoverActionText}>설정</Text>
-            <Ionicons name={settingsMenuOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#71717A" />
-          </TouchableOpacity>
-
-          {settingsMenuOpen && (
-            <View style={{ paddingLeft: 14 }}>
-              <View style={styles.igDropdownDivider} />
-              <TouchableOpacity
-                style={styles.accountPopoverActionRow}
-                onPress={() => { hapticSelect(); toggleBgmAutoStart(); }}
-              >
-                <Ionicons name="musical-note-outline" size={16} color="#18181B" />
-                <Text style={styles.accountPopoverActionText}>접속시 음악재생</Text>
-                <View style={styles.applicantCountPill}>
-                  <Text style={styles.applicantCountPillText}>{bgmAutoStart ? '켬' : '끔'}</Text>
-                </View>
-              </TouchableOpacity>
-              <View style={styles.igDropdownDivider} />
-              <TouchableOpacity
-                style={styles.accountPopoverActionRow}
-                onPress={() => { hapticSelect(); cycleThemeMode(); }}
-              >
-                <Ionicons name="moon-outline" size={16} color="#18181B" />
-                <Text style={styles.accountPopoverActionText}>화면 모드</Text>
-                <View style={styles.applicantCountPill}>
-                  <Text style={styles.applicantCountPillText}>{modeLabel(getMode())}</Text>
-                </View>
-              </TouchableOpacity>
-              <View style={styles.igDropdownDivider} />
-
-              <TouchableOpacity
-                style={styles.accountPopoverActionRow}
-                onPress={() => {
-                  setAccountMenuOpen(false);
-                  setBlockListOpen(true);
-                }}
-              >
-                <Ionicons name="ban-outline" size={16} color="#18181B" />
-                <Text style={styles.accountPopoverActionText}>차단 관리</Text>
-                <View style={styles.applicantCountPill}>
-                  <Text style={styles.applicantCountPillText}>{blockedIds.length}명</Text>
-                </View>
-              </TouchableOpacity>
-              <View style={styles.igDropdownDivider} />
-
-              <TouchableOpacity
-                style={styles.accountPopoverActionRow}
-                onPress={() => {
-                  setAccountMenuOpen(false);
-                  openNotificationSoundSettings();
-                }}
-              >
-                <Ionicons name="musical-notes-outline" size={16} color="#18181B" />
-                <Text style={styles.accountPopoverActionText}>알림음 변경</Text>
-              </TouchableOpacity>
-              <View style={styles.igDropdownDivider} />
-
-              <TouchableOpacity
-                style={styles.accountPopoverActionRow}
-                onPress={handleWithdrawAccount}
-                disabled={loading}
-              >
-                <Ionicons name="trash-outline" size={16} color="#DC2626" />
-                <Text style={[styles.accountPopoverActionText, { color: '#DC2626' }]}>탈퇴</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      )}
-
-      {brandMenuOpen && (
-        <View style={styles.igBrandDropdown}>
-          <TouchableOpacity
-            style={styles.igDropdownRow}
-            onPress={() => {
-              setBrandMenuOpen(false);
-              setOnlyFavoritesFeed(false);
-              fetchFriendsAndRequests();
-              setMainTab('friends');
-            }}
-          >
-            <Ionicons name="person-add-outline" size={17} color="#111111" />
-            <Text style={styles.igDropdownLabel}>친구하기</Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {shownBgmTrack ? (
         <MusicBar
@@ -6949,8 +7053,8 @@ function AppMain() {
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <TouchableOpacity onPress={() => setChatPartner(null)} style={styles.inlineChatCollapseBtn}>
-              <Text style={styles.inlineChatCollapseText}>접기</Text>
-              <Ionicons name="chevron-up" size={14} color="#52525B" />
+              <Text style={styles.inlineChatCollapseText}>{isWideScreen ? '닫기' : '접기'}</Text>
+              <Ionicons name={isWideScreen ? 'close' : 'chevron-up'} size={14} color="#52525B" />
             </TouchableOpacity>
           </View>
         </View>
@@ -6962,7 +7066,11 @@ function AppMain() {
           nestedScrollEnabled
           showsVerticalScrollIndicator={true}
           onContentSizeChange={() => inlineChatScrollRef.current?.scrollToEnd({ animated: false })}
-          onLayout={() => inlineChatScrollRef.current?.scrollToEnd({ animated: false })}
+          onLayout={() => {
+            inlineChatScrollRef.current?.scrollToEnd({ animated: false });
+            // 키보드가 올라오며 화면 크기가 바뀌는 중에도 마지막 메시지가 보이게 한 번 더 내림
+            setTimeout(() => inlineChatScrollRef.current?.scrollToEnd({ animated: false }), 150);
+          }}
         >
           {chatMessages.length === 0 ? (
             <View style={styles.inlineChatEmpty}>
@@ -7184,11 +7292,197 @@ function AppMain() {
     );
   };
 
-  const renderChatsTabScreen = () => (
-    <KeyboardAvoidingView
-      style={styles.ktContainer}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+  // ---- 회원 탭 (카카오톡 친구 탭 스타일) ----
+  // 사진을 누르면 프로필, 이름 줄을 누르면 그 회원 게시물만 모아 보기
+  const renderMembersTabScreen = () => {
+    const myId = session.user.id;
+    const q = memberSearch.trim().toLowerCase();
+    const match = (m) =>
+      !q || (m.nickname || '').toLowerCase().includes(q) || (m.bio || '').toLowerCase().includes(q);
+    const byName = (a, b) => (a.nickname || '').localeCompare(b.nickname || '', 'ko');
+    const others = members.filter((m) => m.id !== myId && !blockedIds.includes(m.id));
+    const friends = others.filter((m) => friendRelationMap[m.id]?.status === 'accepted' && match(m)).sort(byName);
+    const rest = others.filter((m) => friendRelationMap[m.id]?.status !== 'accepted' && match(m)).sort(byName);
+    const meItem = {
+      ...(members.find((m) => m.id === myId) || {}),
+      id: myId,
+      nickname: profile.nickname || '나',
+      bio: profile.bio || '',
+      avatar_url: profile.avatar_url || null,
+    };
+
+    const openProfile = (m) => {
+      memberPostsFromListRef.current = true;
+      openMemberPage(m);
+    };
+    const openPosts = (m) => {
+      memberPostsFromListRef.current = true;
+      setMemberPostsGrid(true);
+      setMemberPostsUser(m);
+    };
+
+    const row = (m, big) => (
+      <View key={m.id} style={[styles.mbRow, big && styles.mbRowBig]}>
+        <TouchableOpacity onPress={() => openProfile(m)} activeOpacity={0.7} hitSlop={6}>
+          {m.avatar_url ? (
+            <Image source={{ uri: m.avatar_url }} style={[styles.mbAvatar, big && styles.mbAvatarBig]} />
+          ) : (
+            <View style={[styles.mbAvatar, big && styles.mbAvatarBig, styles.ktDefaultAvatar]}>
+              <Ionicons name="person" size={big ? 24 : 18} color="#64748B" />
+            </View>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.mbMain} onPress={() => openPosts(m)} activeOpacity={0.6}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.mbName, big && styles.mbNameBig]} numberOfLines={1}>
+              {m.nickname || '이름 없음'}
+            </Text>
+            {big && m.bio ? <Text style={styles.mbBioUnder} numberOfLines={1}>{m.bio}</Text> : null}
+          </View>
+          {!big && m.bio ? (
+            <View style={styles.mbBioPill}>
+              <Text style={styles.mbBioPillText} numberOfLines={1}>{m.bio}</Text>
+            </View>
+          ) : null}
+        </TouchableOpacity>
+      </View>
+    );
+
+    return (
+      <View style={styles.ktContainer}>
+        <View style={styles.ktHeader}>
+          <Text style={styles.ktPageTitle}>회원</Text>
+          <TouchableOpacity
+            style={styles.ktIconBtn}
+            onPress={() => {
+              if (memberSearchOpen) setMemberSearch('');
+              setMemberSearchOpen(!memberSearchOpen);
+            }}
+          >
+            <Ionicons name={memberSearchOpen ? 'close' : 'search-outline'} size={20} color="#333333" />
+          </TouchableOpacity>
+        </View>
+
+        {memberSearchOpen ? (
+          <View style={styles.mbSearchBox}>
+            <Ionicons name="search-outline" size={16} color="#888888" />
+            <TextInput
+              style={styles.mbSearchInput}
+              placeholder="이름 또는 상태메시지로 찾기"
+              value={memberSearch}
+              onChangeText={setMemberSearch}
+              autoFocus
+            />
+          </View>
+        ) : null}
+
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+          {!q ? row(meItem, true) : null}
+          {!q ? <View style={styles.mbDivider} /> : null}
+
+          {!q && incomingRequests.length > 0 ? (
+            <>
+              <Text style={styles.mbSection}>받은 친구 신청 {incomingRequests.length}</Text>
+              {incomingRequests.map((req) => (
+                <View key={req.id} style={styles.mbRow}>
+                  {req.requesterProfile?.avatar_url ? (
+                    <Image source={{ uri: req.requesterProfile.avatar_url }} style={styles.mbAvatar} />
+                  ) : (
+                    <View style={[styles.mbAvatar, styles.ktDefaultAvatar]}>
+                      <Ionicons name="person" size={18} color="#64748B" />
+                    </View>
+                  )}
+                  <Text style={[styles.mbName, { flex: 1, marginLeft: 12 }]} numberOfLines={1}>
+                    {req.requesterProfile?.nickname || '회원'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 5 }}>
+                    <TouchableOpacity style={styles.acceptMiniBtn} onPress={() => acceptFriendRequest(req.id, req.requester_id)}>
+                      <Text style={styles.acceptMiniBtnText}>수락</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.rejectMiniBtn} onPress={() => rejectFriendRequest(req.id, req.requester_id)}>
+                      <Text style={styles.rejectMiniBtnText}>거절</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+              <View style={styles.mbDivider} />
+            </>
+          ) : null}
+
+          <Text style={styles.mbSection}>친구 {friends.length}</Text>
+          {friends.length === 0 ? (
+            <Text style={styles.mbEmpty}>{q ? '찾는 친구가 없어요' : '아직 친구가 없어요'}</Text>
+          ) : friends.map((m) => row(m, false))}
+
+          <View style={styles.mbDivider} />
+          <Text style={styles.mbSection}>다른 회원 {rest.length}</Text>
+          {rest.length === 0 ? (
+            <Text style={styles.mbEmpty}>{q ? '찾는 회원이 없어요' : '다른 회원이 없어요'}</Text>
+          ) : rest.map((m) => row(m, false))}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  const renderChatsTabScreen = () => {
+    // 일반 폰: 지금처럼 목록만 보이고, 누르면 대화창이 화면 전체로 열림
+    if (!isWideScreen) {
+      return (
+        <KeyboardAvoidingView
+          style={styles.ktContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          {renderChatsListContent()}
+          {/* 1:1 대화창 (목록 밖에서 한 번만 띄움: 목록이 다시 그려져도 입력창이 풀리지 않게) */}
+          {chatPartner ? (
+            <Modal
+              visible
+              animationType="slide"
+              onRequestClose={() => (viewingImage && !viewingImage.postId ? setViewingImage(null) : setChatPartner(null))}
+            >
+              <View style={{ flex: 1, backgroundColor: bgc('#fff'), paddingTop: 36 }}>
+                {/* 키보드가 올라오면 가려지는 만큼 아래 여백을 줘서 입력창·메시지가 키보드 위로 올라오게 함 */}
+                <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
+                  {renderInlineChatDrawer(chatPartner)}
+                </KeyboardAvoidingView>
+              </View>
+              {/* 채팅 사진 크게 보기 (채팅창 위에 보이도록 이 안에서 띄움) */}
+              {viewingImage && !viewingImage.postId ? (
+                <FullscreenPhotoPopup
+                  photoInfo={viewingImage}
+                  currentUserId={session.user.id}
+                  onClose={() => setViewingImage(null)}
+                />
+              ) : null}
+            </Modal>
+          ) : null}
+        </KeyboardAvoidingView>
+      );
+    }
+
+    // 넓은 화면(폴드 펼침·태블릿): 왼쪽 목록 + 오른쪽 대화창 (카카오톡처럼)
+    const listWidth = Math.max(250, Math.min(360, Math.round(windowWidth * 0.38)));
+    return (
+      <View style={styles.wideChatRow}>
+        <View style={[styles.ktContainer, styles.wideChatListPane, { width: listWidth }]}>
+          {renderChatsListContent()}
+        </View>
+        <KeyboardAvoidingView style={styles.wideChatRoomPane} behavior="padding">
+          {chatPartner ? (
+            renderInlineChatDrawer(chatPartner)
+          ) : (
+            <View style={styles.wideChatEmpty}>
+              <Ionicons name="chatbubbles-outline" size={40} color="#A0AEC0" />
+              <Text style={styles.wideChatEmptyText}>왼쪽 목록에서 대화할 사람을 골라 주세요</Text>
+            </View>
+          )}
+        </KeyboardAvoidingView>
+      </View>
+    );
+  };
+
+  const renderChatsListContent = () => (
+    <>
       <View style={styles.ktHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Text style={styles.ktPageTitle}>1:1</Text>
@@ -7218,6 +7512,7 @@ function AppMain() {
             onPress={() => {
               fetchFriendsAndRequests();
               fetchUnreadCountsBySender(session.user.id);
+              fetchLastMessages(session.user.id);
             }}
           >
             <Ionicons name="refresh-outline" size={20} color="#333333" />
@@ -7230,17 +7525,19 @@ function AppMain() {
         keyExtractor={(item) => item.id}
         extraData={{
           activeChatId: chatPartner?.id,
-          chatMessages,
-          chatInput,
-          sendingMsg,
-          chatAttachMenuOpen,
-          chatStickerOpen,
           unreadCountBySender,
           leaveSelectMode,
           leaveSelected,
         }}
         contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
+        ListEmptyComponent={
+          <View style={styles.emptyBox}>
+            <Text style={[styles.emptyText, { color: '#A1A1AA' }]}>
+              아직 대화가 없어요.{'\n'}왼쪽 회원 탭에서 대화할 사람의 사진을 눌러{'\n'}1:1 채팅하기를 시작해 보세요.
+            </Text>
+          </View>
+        }
         renderItem={({ item }) => {
           const isMe = item.id === session.user.id;
           const isExpanded = chatPartner?.id === item.id;
@@ -7283,51 +7580,30 @@ function AppMain() {
                     )}
                   </View>
                   <Text style={styles.memberBio} numberOfLines={1}>
-                    {item.bio || '터치하여 아래에서 대화하기'}
+                    {chatPreviewText(lastMsgByPartner[item.id]) || '대화를 시작해 보세요'}
                   </Text>
                 </View>
 
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  {unreadForSender > 0 && (
+                {/* 오른쪽: 마지막 대화 시간 + 안 읽은 숫자 */}
+                <View style={styles.chatListRight}>
+                  <Text style={styles.chatListTime} numberOfLines={1}>
+                    {formatChatListTime(lastMsgByPartner[item.id]?.created_at)}
+                  </Text>
+                  {unreadForSender > 0 ? (
                     <View style={styles.unreadCounterBadge}>
                       <Text style={styles.unreadCounterBadgeText}>{unreadForSender}</Text>
                     </View>
+                  ) : (
+                    <View style={{ height: 18 }} />
                   )}
-                  <Ionicons
-                    name={isExpanded ? 'chevron-up' : 'chatbubble-outline'}
-                    size={16}
-                    color={isExpanded ? '#18181B' : '#2B6CB0'}
-                  />
                 </View>
               </TouchableOpacity>
 
-            {isExpanded && (
-              <Modal
-                visible
-                animationType="slide"
-                onRequestClose={() => (viewingImage && !viewingImage.postId ? setViewingImage(null) : setChatPartner(null))}
-              >
-                <View style={{ flex: 1, backgroundColor: bgc('#fff'), paddingTop: 36 }}>
-                  {/* 키보드가 올라오면 가려지는 만큼 아래 여백을 줘서 입력창·메시지가 키보드 위로 올라오게 함 */}
-                  <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-                    {renderInlineChatDrawer(item)}
-                  </KeyboardAvoidingView>
-                </View>
-                {/* 채팅 사진 크게 보기 (채팅창 위에 보이도록 이 안에서 띄움) */}
-                {viewingImage && !viewingImage.postId ? (
-                  <FullscreenPhotoPopup
-                    photoInfo={viewingImage}
-                    currentUserId={session.user.id}
-                    onClose={() => setViewingImage(null)}
-                  />
-                ) : null}
-              </Modal>
-            )}
             </View>
           );
         }}
       />
-    </KeyboardAvoidingView>
+    </>
   );
 
   const renderProfileHeader = () => (
@@ -7603,6 +7879,13 @@ function AppMain() {
                   on: mainTab === 'home' && !showGroupChat,
                   icon: mainTab === 'home' && !showGroupChat ? 'home' : 'home-outline',
                   onPress: goTab(() => { setOnlyFavoritesFeed(false); fetchPosts(); setMainTab('home'); }),
+                })}
+                {/* 회원 목록 (카카오톡 친구 탭처럼) */}
+                {Tab({
+                  on: mainTab === 'members' && !showGroupChat,
+                  icon: mainTab === 'members' && !showGroupChat ? 'person' : 'person-outline',
+                  badge: incomingCount,
+                  onPress: goTab(() => { fetchFriendsAndRequests(); setMainTab('members'); }),
                 })}
                 {/* 게시글 (모든 게시물 격자 보기) */}
                 {Tab({
@@ -7918,6 +8201,7 @@ function AppMain() {
           )}
 
           {mainTab === 'friends' && renderFriendsTabScreen()}
+          {mainTab === 'members' && renderMembersTabScreen()}
           {mainTab === 'music' && renderMusicScreen()}
           {/* 단체방: 1:1처럼 기본 틀 안에 목록, 방에 들어가면 위로 올라오는 창 */}
           {mainTab === 'group' && session ? (
@@ -7947,6 +8231,8 @@ function AppMain() {
             />
           )}
           </View>
+          {/* 맨 위 메뉴 팝업 (화면 위에 겹쳐서 열림) */}
+          {renderTopMenus()}
         </View>
 
       </View>
@@ -8069,7 +8355,7 @@ function AppMain() {
                     <TouchableOpacity
                       style={styles.friendCardActionBtn}
                       activeOpacity={0.7}
-                      onPress={() => { setMemberPostsGrid(true); setMemberPostsUser(selectedFriend); setSelectedFriend(null); }}
+                      onPress={() => { memberPostsFromListRef.current = false; setMemberPostsGrid(true); setMemberPostsUser(selectedFriend); setSelectedFriend(null); }}
                     >
                       <Ionicons name="grid-outline" size={17} color="#FFFFFF" />
                       <Text style={styles.friendCardActionLabel}>게시물</Text>
@@ -8596,7 +8882,7 @@ function AppMain() {
       ) : null}
 
       <FullscreenPhotoPopup
-        photoInfo={viewingPost || (chatPartner && mainTab === 'chats') ? null : viewingImage}
+        photoInfo={viewingPost || (chatPartner && mainTab === 'chats' && !isWideScreen) ? null : viewingImage}
         currentUserId={session.user.id}
         onClose={() => setViewingImage(null)}
         onToggleReaction={toggleReaction}
@@ -8942,6 +9228,15 @@ const styles = themedStyles({
     fontWeight: 'bold',
   },
 
+  topMenuOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    elevation: 1000,
+  },
   accountPopoverMenu: {
     alignSelf: 'flex-end',
     marginRight: 14,
@@ -9741,6 +10036,34 @@ const styles = themedStyles({
   },
 
   ktContainer: { flex: 1, backgroundColor: '#FFFFFF' },
+  // 1:1 목록 오른쪽 시간·숫자
+  chatListRight: { alignItems: 'flex-end', justifyContent: 'center', gap: 4, minWidth: 56, marginLeft: 6 },
+  chatListTime: { fontSize: 11.5, color: '#A1A1AA' },
+  // 회원 탭 (카카오톡 친구 탭 스타일)
+  mbRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 7 },
+  mbRowBig: { paddingVertical: 12 },
+  mbAvatar: { width: 44, height: 44, borderRadius: 16, backgroundColor: '#E2E8F0' },
+  mbAvatarBig: { width: 58, height: 58, borderRadius: 21 },
+  mbMain: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 12, minHeight: 44, gap: 8 },
+  mbName: { fontSize: 15, color: '#18181B' },
+  mbNameBig: { fontSize: 17, fontWeight: '700' },
+  mbBioUnder: { fontSize: 13, color: '#71717A', marginTop: 3 },
+  mbBioPill: { maxWidth: '50%', borderWidth: 1, borderColor: '#E4E4E7', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 },
+  mbBioPillText: { fontSize: 12, color: '#52525B' },
+  mbSection: { fontSize: 12.5, color: '#71717A', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
+  mbDivider: { height: 1, backgroundColor: '#F0F0F2', marginHorizontal: 16, marginVertical: 4 },
+  mbEmpty: { fontSize: 13, color: '#A1A1AA', paddingHorizontal: 16, paddingVertical: 10 },
+  mbSearchBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 14, marginBottom: 6,
+    paddingHorizontal: 12, borderRadius: 18, backgroundColor: '#F4F4F5',
+  },
+  mbSearchInput: { flex: 1, paddingVertical: 8, fontSize: 14 },
+  // 넓은 화면용 1:1 나란히 보기
+  wideChatRow: { flex: 1, flexDirection: 'row' },
+  wideChatListPane: { flex: 0, borderRightWidth: 1, borderRightColor: '#E4E4E7' },
+  wideChatRoomPane: { flex: 1, backgroundColor: '#EAF2F8' },
+  wideChatEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 20 },
+  wideChatEmptyText: { fontSize: 14, color: '#718096', textAlign: 'center' },
   ktHeader: {
     flexDirection: 'row',
     alignItems: 'center',
