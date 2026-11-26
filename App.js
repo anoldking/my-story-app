@@ -294,6 +294,30 @@ const openStorePage = () => {
 const JEJU_ORIGINS = ['GMP', 'ICN', 'PUS'];
 const ORIGIN_KO = { GMP: '김포', ICN: '인천', PUS: '김해' };
 const JEJU_DEST = TRAVEL_DOMESTIC.find((d) => d.iata === 'CJU');
+// 항공권 검색 사이트 (네이버 / 스카이스캐너)
+const FLIGHT_NAVER_KEY = 'flight_open_naver_v1';
+const KR_AIRPORTS = ['ICN', 'GMP', 'PUS', 'CJU', 'CJJ', 'TAE', 'KWJ', 'RSU', 'USN', 'MWX'];
+const ymd8 = (d) => ymd(d).replace(/-/g, '');
+// 날짜가 없으면 일주일 뒤 출발, 3박
+const flightDates = (dep, ret) => {
+  if (dep && ret) return [dep, ret];
+  const a = new Date(); a.setDate(a.getDate() + 7);
+  const b = new Date(a); b.setDate(b.getDate() + 3);
+  return [a, b];
+};
+const naverFlightUrl = (from, to, dep, ret) => {
+  const [a, b] = flightDates(dep, ret);
+  const domestic = KR_AIRPORTS.includes(from) && KR_AIRPORTS.includes(to);
+  const kind = domestic ? 'domestic' : 'international';
+  const fare = domestic ? 'YC' : 'Y';
+  return `https://flight.naver.com/flights/${kind}/${from}-${to}-${ymd8(a)}/${to}-${from}-${ymd8(b)}?adult=1&fareType=${fare}`;
+};
+const skyscannerUrl = (from, to, dep, ret) => {
+  const yymmdd = (d) => ymd(d).slice(2).replace(/-/g, '');
+  const dates = dep && ret ? `${yymmdd(dep)}/${yymmdd(ret)}/` : '';
+  return `https://www.skyscanner.co.kr/transport/flights/${from.toLowerCase()}/${to.toLowerCase()}/${dates}`;
+};
+const openUrlSafe = (url) => Linking.openURL(url).catch(() => Alert.alert('열기 실패', '항공권 검색 화면을 열 수 없어요.'));
 const airlineName = (code) => (code ? AIRLINE_KO[code] || code : '');
 // 날짜 → 'YYYY-MM-DD'
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -2874,6 +2898,13 @@ export default function App() {
   const [travelOpenCity, setTravelOpenCity] = useState(null); // 눌러서 펼친 여행지
   const [travelDetail, setTravelDetail] = useState(null); // 전체 화면으로 연 여행지
   const [destLikes, setDestLikes] = useState([]); // [{ city, user_id }] '가고 싶어요'
+  // 항공권 검색 사이트 고르기 창
+  const [flightPick, setFlightPick] = useState(null); // { from, to, dep, ret }
+  const [flightNaverAlways, setFlightNaverAlways] = useState(false);
+  const [flightNaverCheck, setFlightNaverCheck] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(FLIGHT_NAVER_KEY).then((v) => { if (v === '1') setFlightNaverAlways(true); }).catch(() => {});
+  }, []);
   // 앱 업데이트 알림
   const [updateInfo, setUpdateInfo] = useState(null); // { latest, force, notes }
   const [updatePromptOpen, setUpdatePromptOpen] = useState(false);
@@ -4830,6 +4861,45 @@ export default function App() {
         </View>
       ) : null}
 
+      {/* 항공권 검색 사이트 고르기 */}
+      <Modal visible={!!flightPick} transparent animationType="slide" onRequestClose={() => setFlightPick(null)}>
+        <TouchableOpacity style={styles.fsDim} activeOpacity={1} onPress={() => setFlightPick(null)}>
+          {flightPick ? (
+            <TouchableOpacity activeOpacity={1} style={styles.fsSheet} onPress={() => {}}>
+              <View style={styles.fsHandle} />
+              <Text style={styles.fsTitle}>{airportName(flightPick.from)} → {airportName(flightPick.to)} 왕복</Text>
+              <Text style={styles.fsSub}>
+                {(() => { const [a, b] = flightDates(flightPick.dep, flightPick.ret); return `${mdw(a)} ~ ${mdw(b)} · 성인 1명`; })()}
+              </Text>
+              <TouchableOpacity style={[styles.fsOpt, { backgroundColor: '#3F3F46' }]} activeOpacity={0.85} onPress={() => pickFlightSite('naver')}>
+                <View style={[styles.fsOptIcon, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>N</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.fsOptTitle, { color: '#FFFFFF' }]}>네이버 항공권</Text>
+                  <Text style={[styles.fsOptSub, { color: '#D4D4D8' }]}>국내선 · 국내 항공사 가격 비교</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.fsOpt} activeOpacity={0.85} onPress={() => pickFlightSite('sky')}>
+                <View style={styles.fsOptIcon}>
+                  <Ionicons name="airplane-outline" size={15} color="#3F3F46" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fsOptTitle}>스카이스캐너</Text>
+                  <Text style={styles.fsOptSub}>해외 항공사까지 넓게 비교</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#A1A1AA" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.fsCheckRow} activeOpacity={0.7} onPress={() => setFlightNaverCheck((v) => !v)}>
+                <Ionicons name={flightNaverCheck ? 'checkbox' : 'square-outline'} size={18} color="#52525B" />
+                <Text style={styles.fsCheckText}>다음부터 묻지 않고 네이버로 열기</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ) : null}
+        </TouchableOpacity>
+      </Modal>
+
       {/* 새 버전 알림 창 */}
       <Modal
         visible={!!updateInfo && updatePromptOpen}
@@ -5180,7 +5250,7 @@ export default function App() {
                 {renderFlightDateBar('detail')}
                 {renderFlightRow('ICN', d, false)}
                 {renderFlightRow('PUS', d, true)}
-                <Text style={[styles.hMuted, { marginTop: 4 }]}>왕복 · 1인 · 최근 검색 기준</Text>
+                <Text style={[styles.hMuted, { marginTop: 4 }]}>왕복 · 1인 · 참고용 가격 · 눌러서 확인</Text>
               </View>
             ) : null}
 
@@ -5190,7 +5260,7 @@ export default function App() {
                 <Text style={styles.tdTipTitle}><Ionicons name="airplane-outline" size={14} color="#18181B" /> 제주 항공권 최저가</Text>
                 {renderFlightDateBar('detail')}
                 {JEJU_ORIGINS.map((o, i) => renderFlightRow(o, d, i === JEJU_ORIGINS.length - 1))}
-                <Text style={[styles.hMuted, { marginTop: 4 }]}>왕복 · 1인 · 최근 검색 기준</Text>
+                <Text style={[styles.hMuted, { marginTop: 4 }]}>왕복 · 1인 · 참고용 가격 · 눌러서 확인</Text>
               </View>
             ) : null}
 
@@ -5229,10 +5299,28 @@ export default function App() {
   };
 
   const openFlightSearch = (from, iata, dep, ret) => {
-    const yymmdd = (d) => (d ? ymd(d).slice(2).replace(/-/g, '') : '');
-    const dates = dep && ret ? `${yymmdd(dep)}/${yymmdd(ret)}/` : '';
-    const url = `https://www.skyscanner.co.kr/transport/flights/${from.toLowerCase()}/${iata.toLowerCase()}/${dates}`;
-    Linking.openURL(url).catch(() => Alert.alert('열기 실패', '항공권 검색 화면을 열 수 없어요.'));
+    if (flightNaverAlways) { openUrlSafe(naverFlightUrl(from, iata, dep, ret)); return; }
+    setFlightNaverCheck(false);
+    setFlightPick({ from, to: iata, dep: dep || null, ret: ret || null });
+  };
+  const pickFlightSite = (site) => {
+    const f = flightPick;
+    if (!f) return;
+    setFlightPick(null);
+    if (site === 'naver') {
+      if (flightNaverCheck) {
+        setFlightNaverAlways(true);
+        AsyncStorage.setItem(FLIGHT_NAVER_KEY, '1').catch(() => {});
+      }
+      openUrlSafe(naverFlightUrl(f.from, f.to, f.dep, f.ret));
+    } else {
+      openUrlSafe(skyscannerUrl(f.from, f.to, f.dep, f.ret));
+    }
+  };
+  const airportName = (code) => {
+    if (ORIGIN_KO[code]) return ORIGIN_KO[code];
+    const t = [...TRAVEL_DOMESTIC, ...TRAVEL_OVERSEAS].find((d) => d.iata === code);
+    return t ? t.city : code;
   };
 
   // ---- 항공권: 날짜 바 · 달력 · 가격 줄 ----
@@ -5406,7 +5494,7 @@ export default function App() {
             <Text style={styles.hPriceText}>{Number(info.price).toLocaleString('ko-KR')}원~</Text>
           </View>
         ) : state === 'none' ? (
-          <View style={styles.fSearchBtn}><Text style={styles.fSearchText}>직접 검색 ›</Text></View>
+          <View style={styles.fSearchBtn}><Text style={styles.fSearchText}>네이버에서 보기 ›</Text></View>
         ) : null}
       </TouchableOpacity>
     );
@@ -5751,7 +5839,7 @@ export default function App() {
               {renderFlightDateBar('home')}
               {dests.map((d, i) => renderFlightRow(flightFrom, d, i === dests.length - 1))}
               <Text style={[styles.hMuted, { marginTop: 6 }]}>
-                왕복 · 1인 · 최근 검색 기준 · 누르면 항공권 검색
+                왕복 · 1인 · 참고용 가격 · 정확한 가격은 눌러서 확인
               </Text>
             </View>
           ) : null}
@@ -5766,7 +5854,7 @@ export default function App() {
               {renderFlightDateBar('home')}
               {JEJU_ORIGINS.map((o, i) => renderFlightRow(o, JEJU_DEST, i === JEJU_ORIGINS.length - 1))}
               <Text style={[styles.hMuted, { marginTop: 6 }]}>
-                왕복 · 1인 · 최근 검색 기준 · 누르면 항공권 검색
+                왕복 · 1인 · 참고용 가격 · 정확한 가격은 눌러서 확인
               </Text>
             </View>
           ) : null}
@@ -8951,6 +9039,17 @@ const styles = themedStyles({
   hCalFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   hCalOk: { backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
   hCalOkText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  fsDim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  fsSheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 24 },
+  fsHandle: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(24,24,27,0.15)', marginBottom: 12 },
+  fsTitle: { fontSize: 15, fontWeight: '700', color: '#18181B' },
+  fsSub: { fontSize: 12, color: '#71717A', marginTop: 2, marginBottom: 12 },
+  fsOpt: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, backgroundColor: 'rgba(24,24,27,0.06)', marginBottom: 8 },
+  fsOptIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: 'rgba(24,24,27,0.08)', alignItems: 'center', justifyContent: 'center' },
+  fsOptTitle: { fontSize: 13, fontWeight: '700', color: '#18181B' },
+  fsOptSub: { fontSize: 11, color: '#71717A', marginTop: 1 },
+  fsCheckRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 2 },
+  fsCheckText: { fontSize: 12, color: '#52525B' },
   appFooter: { alignItems: 'center', marginTop: 14, paddingTop: 14, paddingBottom: 18, borderTopWidth: 1, borderTopColor: 'rgba(24,24,27,0.08)' },
   appFooterLogo: { fontSize: 13, fontWeight: '800', color: '#A1A1AA', letterSpacing: -0.5, marginBottom: 4 },
   appFooterText: { fontSize: 11, color: '#A1A1AA', lineHeight: 18, textAlign: 'center' },
