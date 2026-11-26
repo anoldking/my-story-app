@@ -12,6 +12,7 @@ import {
   ScrollView,
   Dimensions,
   KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   BackHandler,
@@ -2323,6 +2324,18 @@ export default function App() {
   const [postGalleryOpen, setPostGalleryOpen] = useState(false);
   const [homeListWidth, setHomeListWidth] = useState(0);
   const inlineChatScrollRef = useRef(null);
+
+  // 1:1 대화창: 키보드가 다 올라온 뒤 맨 아래(마지막 메시지)로 다시 내림
+  useEffect(() => {
+    if (!chatPartner) return undefined;
+    const toEnd = () => {
+      setTimeout(() => inlineChatScrollRef.current?.scrollToEnd({ animated: true }), 120);
+      setTimeout(() => inlineChatScrollRef.current?.scrollToEnd({ animated: true }), 350);
+    };
+    const s1 = Keyboard.addListener('keyboardDidShow', toEnd);
+    const s2 = Keyboard.addListener('keyboardDidHide', toEnd);
+    return () => { s1.remove(); s2.remove(); };
+  }, [chatPartner]);
 
   const lastBackPressRef = useRef(0);
 
@@ -6959,7 +6972,11 @@ export default function App() {
           nestedScrollEnabled
           showsVerticalScrollIndicator={true}
           onContentSizeChange={() => inlineChatScrollRef.current?.scrollToEnd({ animated: false })}
-          onLayout={() => inlineChatScrollRef.current?.scrollToEnd({ animated: false })}
+          onLayout={() => {
+            inlineChatScrollRef.current?.scrollToEnd({ animated: false });
+            // 키보드가 올라오며 화면 크기가 바뀌는 중에도 마지막 메시지가 보이게 한 번 더 내림
+            setTimeout(() => inlineChatScrollRef.current?.scrollToEnd({ animated: false }), 150);
+          }}
         >
           {chatMessages.length === 0 ? (
             <View style={styles.inlineChatEmpty}>
