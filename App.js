@@ -4132,20 +4132,36 @@ function AppMain() {
   const [musicRepeat, setMusicRepeatState] = useState(true);
   const [musicLoading, setMusicLoading] = useState(false);
   const setMusicRepeat = (v) => { musicRepeatRef.current = v; setMusicRepeatState(v); };
+  // 음악 올리기 / 고치기 창
+  const [musicUp, setMusicUp] = useState(null); // { mode: 'new'|'edit', file?, item?, title, artist, agree }
+  const [musicUpBusy, setMusicUpBusy] = useState(false);
+  // 저장소 파일 목록 + 한글 제목표(music_tracks)를 합쳐서 곡 목록 만들기
+  const loadMusicItems = async () => {
+    const [st, mt] = await Promise.all([
+      supabase.storage.from('bgm-library').list('', { limit: 1000, sortBy: { column: 'name', order: 'asc' } }),
+      supabase.from('music_tracks').select('file_name, title, artist, uploader_id'),
+    ]);
+    if (st.error) throw st.error;
+    const meta = {};
+    if (!mt.error && Array.isArray(mt.data)) mt.data.forEach((r) => { meta[r.file_name] = r; });
+    return (st.data || [])
+      .filter((f) => f && f.name && /\.(mp3|m4a|wav|aac|ogg)$/i.test(f.name))
+      .map((f) => {
+        const m = meta[f.name];
+        return {
+          name: f.name,
+          title: (m && m.title) || f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim(),
+          artist: (m && m.artist) || '',
+          uploaderId: (m && m.uploader_id) || null,
+          hasMeta: !!m,
+          url: supabase.storage.from('bgm-library').getPublicUrl(f.name).data.publicUrl,
+        };
+      });
+  };
   const fetchMusicLibrary = async () => {
     setMusicLoading(true);
     try {
-      const { data, error } = await supabase.storage
-        .from('bgm-library')
-        .list('', { limit: 500, sortBy: { column: 'name', order: 'asc' } });
-      if (error) throw error;
-      const items = (data || [])
-        .filter((f) => f && f.name && /\.(mp3|m4a|wav|aac|ogg)$/i.test(f.name))
-        .map((f) => ({
-          name: f.name,
-          title: f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim(),
-          url: supabase.storage.from('bgm-library').getPublicUrl(f.name).data.publicUrl,
-        }));
+      const items = await loadMusicItems();
       setBgmLibItems(items);
     } catch (e) {
       // 목록을 못 불러오면 빈 목록
@@ -4157,18 +4173,7 @@ function AppMain() {
     setBgmLibOpen(true);
     setBgmLibLoading(true);
     try {
-      const { data, error } = await supabase.storage
-        .from('bgm-library')
-        .list('', { limit: 200, sortBy: { column: 'name', order: 'asc' } });
-      if (error) throw error;
-      const items = (data || [])
-        .filter((f) => f && f.name && /\.(mp3|m4a|wav|aac|ogg)$/i.test(f.name))
-        .map((f) => ({
-          name: f.name,
-          // 파일 이름을 곡 제목으로: calm-piano_01.mp3 → calm piano 01
-          title: f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim(),
-          url: supabase.storage.from('bgm-library').getPublicUrl(f.name).data.publicUrl,
-        }));
+      const items = await loadMusicItems();
       setBgmLibItems(items);
     } catch (e) {
       setBgmLibItems([]);
@@ -6348,7 +6353,7 @@ function AppMain() {
     if (ka !== kb) return ka ? -1 : 1;
     return String(a.title).localeCompare(String(b.title), 'ko');
   });
-  const musicTrackOf = (it) => ({ url: it.url, title: it.title, ownerId: null, ownerLabel: '음악 저장소' });
+  const musicTrackOf = (it) => ({ url: it.url, title: it.artist ? `${it.artist} - ${it.title}` : it.title, ownerId: null, ownerLabel: '음악 저장소' });
   const musicPlayList = (items, startIdx = 0) => {
     if (!items || !items.length) return;
     musicQueueRef.current = items.map(musicTrackOf);
@@ -6365,9 +6370,182 @@ function AppMain() {
     bgmPlay(q[ni]);
   };
 
+  // ---- 음악 올리기 ----
+  const MUSIC_MAX = 50 * 1024 * 1024;
+  const pickMusicToUpload = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      const a = result.assets[0];
+      const name = a.name || 'song.mp3';
+      const ext = ((name.match(/\.([a-zA-Z0-9]+)$/) || [])[1] || 'mp3').toLowerCase();
+      if (!['mp3', 'm4a', 'wav', 'aac', 'ogg'].includes(ext)) {
+        showAlert('올릴 수 없는 파일', 'mp3, m4a, wav, aac, ogg 파일만 올릴 수 있어요.');
+        return;
+      }
+      if (a.size && a.size > MUSIC_MAX) {
+        showAlert('파일이 너무 커요', '50MB 이하의 음악 파일을 골라 주세요.');
+        return;
+      }
+      // 파일 이름 '가수 - 제목' 이면 나눠서 미리 채움
+      const base = name.replace(/\.[^.]+$/, '').trim();
+      const parts = base.split(/\s+-\s+/);
+      const guessArtist = parts.length > 1 ? parts[0].trim() : '';
+      const guessTitle = parts.length > 1 ? parts.slice(1).join(' - ').trim() : base;
+      setMusicUp((prev) => ({
+        mode: 'new',
+        file: { uri: a.uri, name, size: a.size || 0, mime: a.mimeType || 'audio/mpeg', ext },
+        title: guessTitle,
+        artist: guessArtist,
+        agree: prev ? !!prev.agree : false,
+      }));
+    } catch (e) {
+      showAlert('음악 선택 오류', `파일을 불러오지 못했습니다.\n(${e?.message || e})`);
+    }
+  };
+  const openMusicUpload = () => {
+    setMusicUp({ mode: 'new', file: null, title: '', artist: '', agree: false });
+    pickMusicToUpload();
+  };
+  const submitMusicUpload = async () => {
+    const u = musicUp;
+    if (!u || musicUpBusy) return;
+    const title = (u.title || '').trim();
+    const artist = (u.artist || '').trim();
+    if (!title) { showAlert('제목', '노래 제목을 적어 주세요.'); return; }
+    if (u.mode === 'edit') {
+      setMusicUpBusy(true);
+      const { error } = await supabase
+        .from('music_tracks')
+        .upsert({ file_name: u.item.name, title, artist: artist || null, uploader_id: u.item.uploaderId || session.user.id }, { onConflict: 'file_name' });
+      setMusicUpBusy(false);
+      if (error) { showAlert('고치기 실패', error.message); return; }
+      setMusicUp(null);
+      fetchMusicLibrary();
+      return;
+    }
+    if (!u.file) { showAlert('파일', '올릴 음악 파일을 골라 주세요.'); return; }
+    if (!u.agree) { showAlert('확인', '저작권 확인에 체크해 주세요.'); return; }
+    setMusicUpBusy(true);
+    const fileName = `m_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${u.file.ext}`;
+    try {
+      const resp = await fetch(u.file.uri);
+      const buf = await resp.arrayBuffer();
+      const up = await supabase.storage.from('bgm-library').upload(fileName, buf, { contentType: u.file.mime, upsert: false });
+      if (up.error) throw up.error;
+      const ins = await supabase.from('music_tracks').insert({ file_name: fileName, title, artist: artist || null, uploader_id: session.user.id });
+      if (ins.error) {
+        await supabase.storage.from('bgm-library').remove([fileName]).catch(() => {});
+        throw ins.error;
+      }
+      setMusicUpBusy(false);
+      setMusicUp(null);
+      fetchMusicLibrary();
+      showAlert('올리기 완료', `"${title}"을(를) 음악 저장소에 올렸어요.`);
+    } catch (e) {
+      setMusicUpBusy(false);
+      showAlert('올리기 실패', `음악을 올리지 못했습니다.\n(${e?.message || e})`);
+    }
+  };
+  const musicItemActions = (item) => {
+    const mine = item.uploaderId && item.uploaderId === session.user.id;
+    if (!mine && !isAdmin) return;
+    Alert.alert(item.title, item.artist || '음악 저장소', [
+      {
+        text: '제목·가수 고치기',
+        onPress: () => setMusicUp({ mode: 'edit', item, title: item.title, artist: item.artist || '', agree: true }),
+      },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: () => Alert.alert('노래 삭제', `"${item.title}"을(를) 지울까요?\n가족 모두의 목록에서 사라져요.`, [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '삭제',
+            style: 'destructive',
+            onPress: async () => {
+              const rm = await supabase.storage.from('bgm-library').remove([item.name]);
+              if (rm.error) { showAlert('삭제 실패', rm.error.message); return; }
+              await supabase.from('music_tracks').delete().eq('file_name', item.name);
+              setMusicSel((prev) => { const n = { ...prev }; delete n[item.url]; return n; });
+              fetchMusicLibrary();
+            },
+          },
+        ]),
+      },
+      { text: '닫기', style: 'cancel' },
+    ]);
+  };
+  const renderMusicUploadModal = () => {
+    const u = musicUp;
+    return (
+      <Modal visible={!!u} transparent animationType="slide" onRequestClose={() => { if (!musicUpBusy) setMusicUp(null); }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <TouchableOpacity style={styles.fsDim} activeOpacity={1} onPress={() => { if (!musicUpBusy) setMusicUp(null); }}>
+            {u ? (
+              <TouchableOpacity activeOpacity={1} style={[styles.fsSheet, { paddingBottom: 24 + insets.bottom }]} onPress={() => {}}>
+                <View style={styles.fsHandle} />
+                <Text style={[styles.fsTitle, { marginBottom: 12 }]}>{u.mode === 'edit' ? '제목·가수 고치기' : '음악 올리기'}</Text>
+                {u.mode === 'new' ? (
+                  <TouchableOpacity style={styles.muFile} activeOpacity={0.8} onPress={pickMusicToUpload} disabled={musicUpBusy}>
+                    <View style={styles.muFileIcon}><Ionicons name="musical-notes" size={17} color="#FFFFFF" /></View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.muFileName} numberOfLines={1}>{u.file ? u.file.name : '음악 파일 고르기'}</Text>
+                      <Text style={styles.hMuted}>{u.file ? (u.file.size ? fmtBytes(u.file.size) : '') : 'mp3 · m4a · wav · aac · ogg / 50MB까지'}</Text>
+                    </View>
+                    <Text style={styles.muFileChange}>{u.file ? '다른 파일' : '고르기'}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <Text style={styles.muLabel}>제목</Text>
+                <TextInput
+                  style={styles.muInput}
+                  value={u.title}
+                  onChangeText={(t) => setMusicUp((prev) => (prev ? { ...prev, title: t } : prev))}
+                  placeholder="노래 제목"
+                  placeholderTextColor="#A1A1AA"
+                  editable={!musicUpBusy}
+                />
+                <Text style={styles.muLabel}>가수</Text>
+                <TextInput
+                  style={styles.muInput}
+                  value={u.artist}
+                  onChangeText={(t) => setMusicUp((prev) => (prev ? { ...prev, artist: t } : prev))}
+                  placeholder="가수 (모르면 비워 두세요)"
+                  placeholderTextColor="#A1A1AA"
+                  editable={!musicUpBusy}
+                />
+                {u.mode === 'new' ? (
+                  <TouchableOpacity
+                    style={styles.muAgree}
+                    activeOpacity={0.7}
+                    onPress={() => setMusicUp((prev) => (prev ? { ...prev, agree: !prev.agree } : prev))}
+                    disabled={musicUpBusy}
+                  >
+                    <Ionicons name={u.agree ? 'checkbox' : 'square-outline'} size={18} color="#3F3F46" />
+                    <Text style={styles.muAgreeText}>가족끼리 듣는 용도로 올려요. 저작권 문제가 있는 음악은 올리지 않을게요.</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity style={[styles.muSubmit, musicUpBusy && { opacity: 0.7 }]} onPress={submitMusicUpload} disabled={musicUpBusy}>
+                  {musicUpBusy ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                      <Text style={styles.muSubmitText}>{u.mode === 'edit' ? '저장하는 중…' : '올리는 중… 잠시만요'}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.muSubmitText}>{u.mode === 'edit' ? '저장' : '올리기'}</Text>
+                  )}
+                </TouchableOpacity>
+              </TouchableOpacity>
+            ) : null}
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  };
+
   const renderMusicScreen = () => {
     const q = musicQuery.trim().toLowerCase();
-    const shown = q ? musicSorted.filter((it) => String(it.title).toLowerCase().includes(q)) : musicSorted;
+    const shown = q ? musicSorted.filter((it) => `${it.title} ${it.artist || ''}`.toLowerCase().includes(q)) : musicSorted;
     const selUrls = Object.keys(musicSel).filter((k) => musicSel[k]);
     const allSelected = musicSorted.length > 0 && selUrls.length === musicSorted.length;
     const rec = musicSorted.length ? seededPick(musicSorted, 1, dayKeyNum() + musicRecShuffle * 5)[0] : null;
@@ -6395,7 +6573,7 @@ function AppMain() {
               <View style={styles.mRecCover}><Ionicons name="disc-outline" size={24} color="#71717A" /></View>
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={styles.mRecTitle} numberOfLines={1}>{rec.title}</Text>
-                <Text style={styles.hMuted}>음악 저장소 · 오늘의 추천</Text>
+                <Text style={styles.hMuted} numberOfLines={1}>{rec.artist ? `${rec.artist} · ` : ''}오늘의 추천</Text>
               </View>
               <TouchableOpacity
                 style={styles.mRecPlay}
@@ -6409,14 +6587,15 @@ function AppMain() {
           )}
         </View>
 
-        {/* 노래 검색 */}
-        <View style={styles.mSearch}>
+        {/* 노래 검색 + 음악 올리기 */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={[styles.mSearch, { flex: 1 }]}>
           <Ionicons name="search" size={16} color="#A1A1AA" />
           <TextInput
             style={styles.mSearchInput}
             value={musicQuery}
             onChangeText={setMusicQuery}
-            placeholder="노래 제목 검색"
+            placeholder="노래 제목 · 가수 검색"
             placeholderTextColor="#A1A1AA"
             returnKeyType="search"
           />
@@ -6425,6 +6604,11 @@ function AppMain() {
               <Ionicons name="close-circle" size={16} color="#A1A1AA" />
             </TouchableOpacity>
           ) : null}
+        </View>
+        <TouchableOpacity style={styles.muUpBtn} onPress={openMusicUpload} activeOpacity={0.85}>
+          <Ionicons name="add" size={16} color="#FFFFFF" />
+          <Text style={styles.muUpBtnText}>음악 올리기</Text>
+        </TouchableOpacity>
         </View>
 
         {/* 전체 선택 · 곡 수 · 전체 듣기 */}
@@ -6478,6 +6662,8 @@ function AppMain() {
                 style={styles.mRow}
                 activeOpacity={0.7}
                 onPress={() => musicPlayList(musicSorted, musicSorted.findIndex((x) => x.url === item.url))}
+                onLongPress={() => musicItemActions(item)}
+                delayLongPress={350}
               >
                 <TouchableOpacity
                   style={[styles.mCheck, on && styles.mCheckOn]}
@@ -6491,13 +6677,19 @@ function AppMain() {
                 </View>
                 <View style={{ flex: 1, marginLeft: 10 }}>
                   <Text style={[styles.mRowTitle, isNow && { fontWeight: '700' }]} numberOfLines={1}>{item.title}</Text>
-                  <Text style={styles.hMuted} numberOfLines={1}>{isNow ? (bgmPlaying ? '재생 중' : '일시정지') : '음악 저장소'}</Text>
+                  <Text style={styles.hMuted} numberOfLines={1}>
+                    {isNow
+                      ? (bgmPlaying ? '재생 중' : '일시정지')
+                      : [item.artist, item.uploaderId ? `${(item.uploaderId === session.user.id ? (profile.nickname || '나') : (memberById(item.uploaderId)?.nickname || '회원'))} 올림` : '음악 저장소'].filter(Boolean).join(' · ')}
+                  </Text>
                 </View>
                 <Ionicons name="reorder-three-outline" size={22} color="#C4C4C9" />
               </TouchableOpacity>
             );
           }}
         />
+
+        {renderMusicUploadModal()}
 
         {/* 선택한 곡이 있으면: 선택 듣기 / 취소 */}
         {selUrls.length > 0 ? (
@@ -9612,6 +9804,18 @@ const styles = themedStyles({
   hCalFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   hCalOk: { backgroundColor: 'rgba(24,24,27,0.78)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
   hCalOkText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  muUpBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, height: 40, paddingHorizontal: 11, borderRadius: 10, backgroundColor: '#3F3F46', marginBottom: 8 },
+  muUpBtnText: { fontSize: 12, fontWeight: '700', color: '#FFFFFF' },
+  muFile: { flexDirection: 'row', alignItems: 'center', padding: 11, borderRadius: 12, backgroundColor: 'rgba(24,24,27,0.05)', marginBottom: 10 },
+  muFileIcon: { width: 34, height: 34, borderRadius: 9, backgroundColor: '#3F3F46', alignItems: 'center', justifyContent: 'center' },
+  muFileName: { fontSize: 13, fontWeight: '700', color: '#18181B' },
+  muFileChange: { fontSize: 11, color: '#52525B', textDecorationLine: 'underline', marginLeft: 8 },
+  muLabel: { fontSize: 11, color: '#71717A', marginBottom: 4, marginTop: 2 },
+  muInput: { borderWidth: 1, borderColor: 'rgba(24,24,27,0.18)', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, fontSize: 14, color: '#18181B', marginBottom: 8 },
+  muAgree: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: 2, marginBottom: 12 },
+  muAgreeText: { flex: 1, fontSize: 11, color: '#52525B', lineHeight: 17 },
+  muSubmit: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 11, backgroundColor: '#3F3F46' },
+  muSubmitText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   ccTitle: { fontSize: 16, fontWeight: '700', color: '#18181B', marginBottom: 4 },
   ccSub: { fontSize: 12, color: '#71717A', marginBottom: 12 },
   ccStep: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 11, borderRadius: 10, backgroundColor: 'rgba(24,24,27,0.05)', marginBottom: 6 },
