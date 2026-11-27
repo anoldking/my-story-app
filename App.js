@@ -2031,6 +2031,47 @@ function AppMain() {
   // ---- 배경음악 ----
   const soundRef = useRef(null);
   const bgmPlayingRef = useRef(false);
+  // 앱 밖에서도 계속 듣기 (기본: 켬)
+  const BGM_BG_KEY = 'bgm_background_v1';
+  const BGM_BG_GUIDE_KEY = 'bgm_background_guide_v1';
+  const bgmBgRef = useRef(true);
+  const [bgmBackground, setBgmBackgroundState] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(BGM_BG_KEY)
+      .then((v) => { const on = v !== '0'; bgmBgRef.current = on; setBgmBackgroundState(on); })
+      .catch(() => {});
+  }, []);
+  // 배터리 '제한 없음' 안내 (처음 한 번)
+  const showBgmBatteryGuide = (force) => {
+    const show = () => Alert.alert(
+      '음악이 중간에 멈추지 않게',
+      "폰이 배터리를 아끼려고 앱을 잠재우면 음악이 멈출 수 있어요.\n\n설정 › 애플리케이션 › me › 배터리 › '제한 없음'으로 바꿔 주세요.",
+      [
+        { text: '나중에', style: 'cancel' },
+        { text: '설정 열기', onPress: () => Linking.openSettings().catch(() => {}) },
+      ],
+    );
+    if (Platform.OS !== 'android') return;
+    if (force) { show(); return; }
+    AsyncStorage.getItem(BGM_BG_GUIDE_KEY)
+      .then((v) => {
+        if (v === '1') return;
+        AsyncStorage.setItem(BGM_BG_GUIDE_KEY, '1').catch(() => {});
+        setTimeout(show, 1500);
+      })
+      .catch(() => {});
+  };
+  const toggleBgmBackground = () => {
+    const next = !bgmBgRef.current;
+    bgmBgRef.current = next;
+    setBgmBackgroundState(next);
+    AsyncStorage.setItem(BGM_BG_KEY, next ? '1' : '0').catch(() => {});
+    Audio.setAudioModeAsync({ playsInSilentModeIOS: true, staysActiveInBackground: next, shouldDuckAndroid: true }).catch(() => {});
+    if (next) {
+      AsyncStorage.setItem(BGM_BG_GUIDE_KEY, '1').catch(() => {});
+      showBgmBatteryGuide(true);
+    }
+  };
   // 음악 저장소: 연속 재생 목록과 반복 설정
   const musicQueueRef = useRef([]);
   const musicRepeatRef = useRef(true);
@@ -2111,9 +2152,10 @@ function AppMain() {
     try {
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
+        staysActiveInBackground: bgmBgRef.current, // 설정에서 '앱 밖에서도 계속 듣기'가 켜져 있으면 계속 재생
         shouldDuckAndroid: true,
       });
+      if (bgmBgRef.current) showBgmBatteryGuide(false);
       await bgmUnload();
       setBgmTrack(track);
       const playUri = await resolveBgmUri(track.url);
@@ -2170,7 +2212,8 @@ function AppMain() {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => {
-      if (st !== 'active' && soundRef.current && bgmPlayingRef.current) {
+      // '앱 밖에서도 계속 듣기'가 꺼져 있을 때만 앱을 나가면 멈춤
+      if (st !== 'active' && !bgmBgRef.current && soundRef.current && bgmPlayingRef.current) {
         soundRef.current.pauseAsync().catch(() => {});
         setBgmPlaying(false);
       }
@@ -4884,6 +4927,17 @@ function AppMain() {
                     <Text style={styles.accountPopoverActionText}>접속시 음악재생</Text>
                     <View style={styles.applicantCountPill}>
                       <Text style={styles.applicantCountPillText}>{bgmAutoStart ? '켬' : '끔'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.igDropdownDivider} />
+                  <TouchableOpacity
+                    style={styles.accountPopoverActionRow}
+                    onPress={() => { hapticSelect(); toggleBgmBackground(); }}
+                  >
+                    <Ionicons name="headset-outline" size={16} color="#18181B" />
+                    <Text style={styles.accountPopoverActionText}>앱 밖에서도 계속 듣기</Text>
+                    <View style={styles.applicantCountPill}>
+                      <Text style={styles.applicantCountPillText}>{bgmBackground ? '켬' : '끔'}</Text>
                     </View>
                   </TouchableOpacity>
                   <View style={styles.igDropdownDivider} />
